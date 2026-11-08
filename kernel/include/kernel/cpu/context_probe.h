@@ -25,11 +25,22 @@
 
 #include <kernel/cpu/context.h>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+/**
+ * @name Where context_probe.S finds the fields of ContextProbeState_t
+ * @{
+ */
+#define CONTEXT_PROBE_OFFSET_CONTROL_WORD 0 /**< Its control_word. */
+#define CONTEXT_PROBE_OFFSET_SIMD_CONTROL 4 /**< Its simd_control_status. */
+#define CONTEXT_PROBE_OFFSET_VECTORS      8 /**< Its vectors. */
+/** @} */
 
-#define CONTEXT_PROBE_VECTOR_BYTES 256u /**< YMM0-YMM7, 32 bytes each; XMM0-XMM7 take the first 16 of each. */
+#ifndef __ASSEMBLER__
+
+#    ifdef __cplusplus
+extern "C" {
+#    endif
+
+#    define CONTEXT_PROBE_VECTOR_BYTES 256u /**< YMM0-YMM7, 32 bytes each; XMM0-XMM7 take the first 16 of each. */
 
 /**
  * @brief The registers a probe loads or stores: no C code may hold them across a call.
@@ -81,8 +92,10 @@ void context_probe_read(ContextProbeState_t *state, uint32_t wide);
  */
 void context_probe_load(const ContextProbeState_t *state, uint32_t wide);
 
-#ifdef __cplusplus
+#    ifdef __cplusplus
 }
-#endif
+#    endif
+
+#endif /* __ASSEMBLER__ */
 
 #endif /* KERNEL_CPU_CONTEXT_PROBE_H */

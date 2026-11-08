@@ -82,9 +82,11 @@ uint32_t extended_state_components_to_enable(uint32_t offered);
 /**
  * @brief The strongest save the processor offers: XSAVES, then XSAVEOPT, then XSAVE, then FXSAVE.
  *
- * @details CPUID leaf 0xD, sub-leaf 1, says which of XSAVEOPT and XSAVES the processor has; the bootstrap processor's
- *          extended_state_initialize_on_this_processor reads it once. XSAVEC is left out: XSAVES has its compaction and
- *          adds the modified optimisation, which XSAVEOPT has too.
+ * @details CPUID leaf 0xD, sub-leaf 1, says which of XSAVEOPT and XSAVES the processor has; each processor's
+ *          extended_state_initialize_on_this_processor records it, and clears IA32_XSS on itself. The order follows the
+ *          SDM, not a clock: XSAVES writes the compacted format and has the init and the modified optimisations,
+ *          XSAVEOPT has both optimisations, XSAVE neither (Intel SDM vol. 1, 253665-093US, §13.7, §13.9 and §13.11).
+ *          XSAVEC is left out: XSAVES has its compaction and adds the modified optimisation.
  *
  * @return One of the EXTENDED_STATE_SAVE_ values.
  */
@@ -113,9 +115,10 @@ uint32_t extended_state_area_size(ExtendedStateSave_t save);
  * @brief Writes into @p area the initial state a context starts from: every component in its initial configuration,
  *        the x87 control word 0x037F and the MXCSR 0x1F80.
  *
- * @details The header's XSTATE_BV is 0, so XRSTOR and XRSTORS initialise every component without reading it; XCOMP_BV
- *          names the compacted format and the enabled components for XRSTORS. FXRSTOR reads the legacy region, which
- *          holds the two control words and zeros.
+ * @details The header's XSTATE_BV is 0, so XRSTOR and XRSTORS initialise every component; the standard XRSTOR still
+ *          loads the MXCSR from offset 24, and FXRSTOR reads the whole legacy region, both of which hold the initial
+ *          values (Intel SDM vol. 1, 253665-093US, §13.8.1 and §13.8.2). XCOMP_BV names the compacted format and the
+ *          enabled components for XRSTORS.
  *
  * @param area An area of extended_state_area_size(@p save) bytes, EXTENDED_STATE_AREA_ALIGNMENT-aligned.
  * @param save How the area will be saved and restored.

@@ -12,8 +12,15 @@
 
 KERNEL_TEST_SUITE(context_switch, KERNEL_TEST_STAGE_PUBLISHED);
 
+_Static_assert(offsetof(ContextProbeState_t, control_word) == CONTEXT_PROBE_OFFSET_CONTROL_WORD,
+               "context_probe.S reads the control word there");
+_Static_assert(offsetof(ContextProbeState_t, simd_control_status) == CONTEXT_PROBE_OFFSET_SIMD_CONTROL,
+               "context_probe.S reads the MXCSR there");
+_Static_assert(offsetof(ContextProbeState_t, vectors) == CONTEXT_PROBE_OFFSET_VECTORS,
+               "context_probe.S reads the vectors there");
+
 #define CONTEXT_SWITCH_TEST_SAVES       4u          /**< FXSAVE, XSAVE, XSAVEOPT and XSAVES. */
-#define CONTEXT_SWITCH_TEST_AREA_BYTES  3072u       /**< Above the 2,696 bytes of XSAVE's AVX-512 components. */
+#define CONTEXT_SWITCH_TEST_AREA_BYTES  3072u       /**< Above the 2,688 bytes of XSAVE's AVX-512 components. */
 #define CONTEXT_SWITCH_TEST_STACK_BYTES 4096u       /**< A test context's stack. */
 #define CONTEXT_SWITCH_TEST_ROUND_TRIPS 1000u       /**< The switches between two contexts a measure counts. */
 #define CONTEXT_SWITCH_TEST_CR4_OSXSAVE (1u << 18u) /**< CR4.OSXSAVE: XGETBV runs. */
@@ -45,33 +52,24 @@ typedef struct {
     volatile uint32_t entry_frame;    /**< Its entry's frame pointer: 8 past a 16-byte boundary when called aligned. */
 } ContextSwitchTestRole_t;
 
-#define CONTEXT_SWITCH_TEST_HOME_AREAS  12u /**< One per cpu_context_adopt the tests make, none taken twice. */
-#define CONTEXT_SWITCH_TEST_AREA_OTHER  12u /**< The area of the context a test switches to alone. */
-#define CONTEXT_SWITCH_TEST_AREA_FIRST  13u /**< The area of the first context of a pair. */
-#define CONTEXT_SWITCH_TEST_AREA_SECOND 14u /**< The area of the second. */
-#define CONTEXT_SWITCH_TEST_AREA_AGAIN  15u /**< The area a test adopts twice. */
+#define CONTEXT_SWITCH_TEST_AREA_HOME                                                                                  \
+    0u /**< The area of the context the test itself runs in, adopted again by each.                                    \
+        */
+#define CONTEXT_SWITCH_TEST_AREA_OTHER  1u /**< The area of the context a test switches to alone. */
+#define CONTEXT_SWITCH_TEST_AREA_FIRST  2u /**< The area of the first context of a pair. */
+#define CONTEXT_SWITCH_TEST_AREA_SECOND 3u /**< The area of the second. */
 
-static uint8_t context_switch_test_areas[CONTEXT_SWITCH_TEST_AREA_AGAIN + 1u][CONTEXT_SWITCH_TEST_AREA_BYTES]
+static uint8_t context_switch_test_areas[CONTEXT_SWITCH_TEST_AREA_SECOND + 1u][CONTEXT_SWITCH_TEST_AREA_BYTES]
     __attribute__((aligned(EXTENDED_STATE_AREA_ALIGNMENT))); /**< The extended state areas. */
-static uint32_t context_switch_test_home_areas_taken = 0u;   /**< How many home areas the tests took. */
 static uint8_t context_switch_test_stacks[3][CONTEXT_SWITCH_TEST_STACK_BYTES]
     __attribute__((aligned(16))); /**< The stacks of the prepared contexts. */
 
 /**
- * @brief Makes the running code @p here with the save @p save, on a home area no adoption took before.
- *
- * @details A save with XSAVEOPT or XSAVES may skip what an area holds when the processor last restored from it
- *          (Intel SDM vol. 1, §13.6), so an area adopted again after a switch back to it could keep the zeros its
- *          preparation wrote.
- *
- * @return Whether an area was left.
+ * @brief Makes the running code @p here with the save @p save, on the one home area every test adopts again.
  */
-static bool context_switch_test_adopt(CpuContext_t *here, ExtendedStateSave_t save)
+static void context_switch_test_adopt(CpuContext_t *here, ExtendedStateSave_t save)
 {
-    if (context_switch_test_home_areas_taken >= CONTEXT_SWITCH_TEST_HOME_AREAS)
-        return false;
-    cpu_context_adopt(here, context_switch_test_areas[context_switch_test_home_areas_taken++], save);
-    return true;
+    cpu_context_adopt(here, context_switch_test_areas[CONTEXT_SWITCH_TEST_AREA_HOME], save);
 }
 
 /**
@@ -254,8 +252,7 @@ KERNEL_TEST(a_context_finds_its_registers_after_another_ran)
         memset(&after, 0, sizeof(after));
         remaining = 1u;
         role = (ContextSwitchTestRole_t){&other, &here, &here, &remaining, &overwriting, wide, NULL, NULL, 0u};
-        if (!context_switch_test_adopt(&here, save))
-            break;
+        context_switch_test_adopt(&here, save);
         cpu_context_prepare(&other, context_switch_test_stacks[0] + CONTEXT_SWITCH_TEST_STACK_BYTES,
                             context_switch_test_areas[CONTEXT_SWITCH_TEST_AREA_OTHER], save, context_switch_test_play,
                             &role);
@@ -263,10 +260,10 @@ KERNEL_TEST(a_context_finds_its_registers_after_another_ran)
         const uint32_t flags = asmutils_save_flags_and_disable_interrupts();
 
         context_probe_hold_across_switch(&held, &after, &here, &other, wide);
+        context_probe_load(&found, wide);
         asmutils_restore_flags(flags);
         kept += context_switch_test_same(&held, &after, wide) ? 1u : 0u;
     }
-    context_probe_load(&found, wide);
     kernel_test_check(test, offered >= 1u, "the processor offers a save that fits the test's areas");
     kernel_test_check(test, kept == offered, "the registers come back as they were, with every save offered");
     kernel_test_measure(test, "offered", offered);
@@ -277,7 +274,10 @@ KERNEL_TEST(a_context_finds_its_registers_after_another_ran)
 
 /**
  * @brief A prepared context starts with its argument, from the initial x87 and SIMD state, whatever the context that
- *        switched to it held, and that context gets its own registers back.
+ *        switched to it held, and that context gets its own registers back, with every save the processor offers.
+ *
+ * @details The standard XRSTOR loads the MXCSR from the area whatever its header says, while the compacted XRSTORS
+ *          initialises it (Intel SDM vol. 1, 253665-093US, §13.8.1 and §13.8.2): each save starts from its own path.
  */
 KERNEL_TEST(a_prepared_context_starts_from_the_initial_state_with_its_argument)
 {
@@ -291,49 +291,60 @@ KERNEL_TEST(a_prepared_context_starts_from_the_initial_state_with_its_argument)
     static ContextSwitchTestRole_t role;
     static volatile uint32_t remaining;
     const uint32_t wide = context_switch_test_wide();
-    const ExtendedStateSave_t save = extended_state_preferred_save();
+    uint32_t offered = 0u;
+    uint32_t received = 0u;
+    uint32_t aligned = 0u;
+    uint32_t initialised = 0u;
+    uint32_t kept = 0u;
 
     context_probe_read(&found, wide);
     context_switch_test_fill(&held, 0x027Fu, 0x7F80u, 0x10u);
     memset(&initial, 0, sizeof(initial));
     initial.control_word = CONTEXT_SWITCH_TEST_FCW_INITIAL;
     initial.simd_control_status = CONTEXT_SWITCH_TEST_MXCSR_INITIAL;
-    memset(&reported, 0xFF, sizeof(reported));
-    remaining = 0u;
-    role = (ContextSwitchTestRole_t){&fresh, &here, &here, &remaining, NULL, wide, &reported, NULL, 0u};
-    if (!context_switch_test_adopt(&here, save))
+    for (ExtendedStateSave_t save = EXTENDED_STATE_SAVE_FXSAVE; save <= EXTENDED_STATE_SAVE_XSAVES; ++save)
     {
-        kernel_test_check(test, false, "a home area is left");
-        return;
+        if (!extended_state_offers_save(save) || extended_state_area_size(save) > CONTEXT_SWITCH_TEST_AREA_BYTES)
+            continue;
+        ++offered;
+        memset(&reported, 0xFF, sizeof(reported));
+        remaining = 0u;
+        role = (ContextSwitchTestRole_t){&fresh, &here, &here, &remaining, NULL, wide, &reported, NULL, 0u};
+        context_switch_test_adopt(&here, save);
+        cpu_context_prepare(&fresh, context_switch_test_stacks[0] + CONTEXT_SWITCH_TEST_STACK_BYTES,
+                            context_switch_test_areas[CONTEXT_SWITCH_TEST_AREA_OTHER], save, context_switch_test_play,
+                            &role);
+
+        const uint32_t flags = asmutils_save_flags_and_disable_interrupts();
+
+        context_probe_hold_across_switch(&held, &after, &here, &fresh, wide);
+        context_probe_load(&found, wide);
+        asmutils_restore_flags(flags);
+        received += role.received == &role ? 1u : 0u;
+        aligned += (role.entry_frame & 15u) == 8u ? 1u : 0u;
+        initialised += context_switch_test_same(&initial, &reported, wide) ? 1u : 0u;
+        kept += context_switch_test_same(&held, &after, wide) ? 1u : 0u;
     }
-    cpu_context_prepare(&fresh, context_switch_test_stacks[0] + CONTEXT_SWITCH_TEST_STACK_BYTES,
-                        context_switch_test_areas[CONTEXT_SWITCH_TEST_AREA_OTHER], save, context_switch_test_play,
-                        &role);
-
-    const uint32_t flags = asmutils_save_flags_and_disable_interrupts();
-
-    context_probe_hold_across_switch(&held, &after, &here, &fresh, wide);
-    context_probe_load(&found, wide);
-    asmutils_restore_flags(flags);
-
-    kernel_test_check(test, role.received == &role, "the entry receives its argument");
-    kernel_test_check(test, (role.entry_frame & 15u) == 8u,
+    kernel_test_check(test, offered >= 1u, "the processor offers a save that fits the test's areas");
+    kernel_test_check(test, received == offered, "the entry receives its argument");
+    kernel_test_check(test, aligned == offered,
                       "on a stack 16-byte aligned at its call: its frame pointer sits 8 bytes past a boundary");
-    kernel_test_check(test, context_switch_test_same(&initial, &reported, wide),
+    kernel_test_check(test, initialised == offered,
                       "it starts with the control words of FNINIT and a reset, and vector registers at zero");
-    kernel_test_check(test, context_switch_test_same(&held, &after, wide),
-                      "the context that switched to it gets its registers back");
-    kernel_test_measure(test, "save", save);
+    kernel_test_check(test, kept == offered, "the context that switched to it gets its registers back");
+    kernel_test_measure(test, "offered", offered);
+    kernel_test_measure(test, "initialised", initialised);
 }
 
 /**
  * @brief Two contexts that run integer code only write no vector byte when they switch, with XSAVEOPT and XSAVES,
  *        while a context that holds vectors is saved with them.
  *
- * @details Restoring a prepared area puts every component in its initial state, and XSAVEOPT and XSAVES write neither
- *          XSTATE_BV's bit nor the region of a component in that state (Intel SDM vol. 1, §13.6 and §13.11). QEMU's TCG
- *          treats every component as in use (target/i386/tcg/fpu_helper.c, get_xinuse), so there only the control
- *          is checked.
+ * @details Restoring a prepared area puts every component in its initial state. For a component in that state,
+ *          XSAVEOPT and XSAVES write its XSTATE_BV bit as 0 and leave its region alone (Intel SDM vol. 1, 253665-093US,
+ *          §13.9 and §13.11). Only the SSE and AVX bits are checked: the processor may still track x87 as in use after
+ *          the restore (§13.8.3). QEMU's TCG treats every component as in use (target/i386/tcg/fpu_helper.c,
+ *          get_xinuse), so there only the control is checked.
  */
 KERNEL_TEST(switching_between_integer_contexts_writes_no_vector_state)
 {
@@ -356,8 +367,7 @@ KERNEL_TEST(switching_between_integer_contexts_writes_no_vector_state)
     {
         if (!extended_state_offers_save(save) || extended_state_area_size(save) > CONTEXT_SWITCH_TEST_AREA_BYTES)
             continue;
-        if (!context_switch_test_adopt(&here, save))
-            break;
+        context_switch_test_adopt(&here, save);
         ++checked;
         context_switch_test_prepare_pair(&first_role, &second_role, &first, &second, &here, &remaining, save, NULL,
                                          wide);
@@ -367,9 +377,10 @@ KERNEL_TEST(switching_between_integer_contexts_writes_no_vector_state)
                CONTEXT_SWITCH_TEST_MARKER, CONTEXT_SWITCH_TEST_XMM_BYTES);
         (void) context_switch_test_run_pair(&here, &first, &remaining, 4u);
         untouched +=
-            context_switch_test_components_saved(context_switch_test_areas[CONTEXT_SWITCH_TEST_AREA_FIRST]) == 0u &&
-                    context_switch_test_components_saved(context_switch_test_areas[CONTEXT_SWITCH_TEST_AREA_SECOND]) ==
-                        0u &&
+            (context_switch_test_components_saved(context_switch_test_areas[CONTEXT_SWITCH_TEST_AREA_FIRST]) &
+             vector_components) == 0u &&
+                    (context_switch_test_components_saved(context_switch_test_areas[CONTEXT_SWITCH_TEST_AREA_SECOND]) &
+                     vector_components) == 0u &&
                     context_switch_test_marker_kept(context_switch_test_areas[CONTEXT_SWITCH_TEST_AREA_FIRST]) &&
                     context_switch_test_marker_kept(context_switch_test_areas[CONTEXT_SWITCH_TEST_AREA_SECOND]) ?
                 1u :
@@ -409,11 +420,7 @@ KERNEL_TEST(a_thousand_switches_between_two_integer_contexts)
     static volatile uint32_t remaining;
     const ExtendedStateSave_t save = extended_state_preferred_save();
 
-    if (!context_switch_test_adopt(&here, save))
-    {
-        kernel_test_check(test, false, "a home area is left");
-        return;
-    }
+    context_switch_test_adopt(&here, save);
     context_switch_test_prepare_pair(&first_role, &second_role, &first, &second, &here, &remaining, save, NULL, 0u);
 
     const uint64_t ticks = context_switch_test_run_pair(&here, &first, &remaining, CONTEXT_SWITCH_TEST_ROUND_TRIPS);
@@ -425,7 +432,10 @@ KERNEL_TEST(a_thousand_switches_between_two_integer_contexts)
 
 /**
  * @brief The timestamp counter's ticks per switch with each save the processor offers, between two integer contexts
- *        and between two that load their vectors before each switch: what chose the preferred save.
+ *        and between two that load their vectors before each switch.
+ *
+ * @details Printed beside the order extended_state_preferred_save takes from the SDM. A clock varies from one run to
+ *          the next by more than XSAVES and XSAVEOPT differ, so it decides nothing.
  */
 KERNEL_TEST(each_save_takes_its_ticks_per_switch)
 {
@@ -448,8 +458,7 @@ KERNEL_TEST(each_save_takes_its_ticks_per_switch)
     {
         if (!extended_state_offers_save(save) || extended_state_area_size(save) > CONTEXT_SWITCH_TEST_AREA_BYTES)
             continue;
-        if (!context_switch_test_adopt(&here, save))
-            break;
+        context_switch_test_adopt(&here, save);
         context_switch_test_prepare_pair(&first_role, &second_role, &first, &second, &here, &remaining, save, NULL,
                                          wide);
 
@@ -506,12 +515,12 @@ KERNEL_TEST(adopting_the_area_restored_last_keeps_the_registers)
 
         const uint32_t flags = asmutils_save_flags_and_disable_interrupts();
 
-        cpu_context_adopt(&here, context_switch_test_areas[CONTEXT_SWITCH_TEST_AREA_AGAIN], save);
+        cpu_context_adopt(&here, context_switch_test_areas[CONTEXT_SWITCH_TEST_AREA_HOME], save);
         cpu_context_prepare(&other, context_switch_test_stacks[0] + CONTEXT_SWITCH_TEST_STACK_BYTES,
                             context_switch_test_areas[CONTEXT_SWITCH_TEST_AREA_OTHER], save, context_switch_test_play,
                             &role);
         context_probe_hold_across_switch(&held, &after, &here, &other, wide);
-        cpu_context_adopt(&here, context_switch_test_areas[CONTEXT_SWITCH_TEST_AREA_AGAIN], save);
+        cpu_context_adopt(&here, context_switch_test_areas[CONTEXT_SWITCH_TEST_AREA_HOME], save);
         cpu_context_prepare(&other, context_switch_test_stacks[0] + CONTEXT_SWITCH_TEST_STACK_BYTES,
                             context_switch_test_areas[CONTEXT_SWITCH_TEST_AREA_OTHER], save, context_switch_test_play,
                             &role);
@@ -526,4 +535,28 @@ KERNEL_TEST(adopting_the_area_restored_last_keeps_the_registers)
     kernel_test_check(test, kept == offered, "the registers come back from the area adopted again, with every save");
     kernel_test_measure(test, "offered", offered);
     kernel_test_measure(test, "kept", kept);
+}
+
+/**
+ * @brief An entry that returns, which a prepared context's should never do.
+ */
+static void context_switch_test_return_at_once(void *argument) { (void) argument; }
+
+/**
+ * @brief A context whose entry returns says so on COM1, then halts its processor with interrupts disabled.
+ */
+KERNEL_TEST_MANUAL(a_context_whose_entry_returns_halts_its_processor,
+                   "halts the processor once the entry has returned and the message is written")
+{
+    static CpuContext_t here;
+    static CpuContext_t returning;
+    const ExtendedStateSave_t save = extended_state_preferred_save();
+
+    (void) test;
+    context_switch_test_adopt(&here, save);
+    cpu_context_prepare(&returning, context_switch_test_stacks[0] + CONTEXT_SWITCH_TEST_STACK_BYTES,
+                        context_switch_test_areas[CONTEXT_SWITCH_TEST_AREA_OTHER], save,
+                        context_switch_test_return_at_once, NULL);
+    (void) asmutils_save_flags_and_disable_interrupts();
+    cpu_context_switch(&here, &returning);
 }
