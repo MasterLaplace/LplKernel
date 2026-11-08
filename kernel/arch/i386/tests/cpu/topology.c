@@ -179,9 +179,14 @@ KERNEL_TEST(firmware_processors_are_discovered)
 }
 
 /**
- * @brief Changing the running processor's identifier at run time moves it to that identifier's slot.
+ * @brief The running processor keeps the slot of its own APIC ID register when the identifier the topology recorded
+ *        at boot changes.
+ *
+ * @details The slot used to follow that one recorded identifier, the bootstrap processor's, so every application
+ *          processor got the bootstrap processor's slot (#792). The test runs on the bootstrap processor, whose slot
+ *          is the one its recorded identifier got.
  */
-KERNEL_TEST(runtime_identifier_selects_its_slot)
+KERNEL_TEST(the_running_processor_keeps_the_slot_of_its_own_register)
 {
     CpuTopologySnapshot_t found;
     const uint32_t local_apic_before = cpu_topology_get_local_apic_id();
@@ -192,7 +197,7 @@ KERNEL_TEST(runtime_identifier_selects_its_slot)
     if (forced_before)
         cpu_topology_debug_clear_forced_logical_slot();
 
-    const uint32_t current_slot = cpu_topology_register_discovered_apic_id(local_apic_before);
+    const uint32_t own_slot = cpu_topology_register_discovered_apic_id(local_apic_before);
     const uint32_t other_slot = cpu_topology_register_discovered_apic_id(other_identifier);
 
     cpu_topology_set_runtime_local_apic_id(other_identifier);
@@ -202,12 +207,13 @@ KERNEL_TEST(runtime_identifier_selects_its_slot)
 
     cpu_topology_debug_restore(&found);
 
-    kernel_test_check(test, slot_while_other == other_slot, "the slot follows the identifier set at run time");
-    kernel_test_check(test, slot_when_back == current_slot, "setting the identifier back restores the slot");
-    kernel_test_check(test,
-                      cpu_topology_get_local_apic_id() == local_apic_before &&
-                          cpu_topology_get_discovered_cpu_count() == found.discovered_cpu_count,
+    kernel_test_check(test, own_slot != other_slot, "the other identifier has a slot of its own");
+    kernel_test_check(test, slot_while_other == own_slot, "the slot stays the one of the processor's own register");
+    kernel_test_check(test, slot_when_back == own_slot, "and stays it once the identifier is set back");
+    kernel_test_check(test, topology_test_is_restored(&found, forced_before, local_apic_before),
                       "the topology is put back as it was found");
+    kernel_test_measure(test, "own_slot", own_slot);
+    kernel_test_measure(test, "slot_while_other", slot_while_other);
 }
 
 /**
