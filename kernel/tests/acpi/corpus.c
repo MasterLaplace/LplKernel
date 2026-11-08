@@ -347,14 +347,17 @@ static void corpus_initialize(KernelTest_t *test)
                                     advanced_configuration_and_power_interface_processor_idle_fold(&idle));
     kernel_test_measure(test, "prt_bridges", routing.bridges);
     kernel_test_measure(test, "prt_bridges_absent", routing.bridges_absent);
+    kernel_test_measure(test, "prt_bridges_failed", routing.bridges_failed);
     kernel_test_measure(test, "prt_bridges_unrouted", routing.bridges_unrouted);
     kernel_test_measure(test, "prt_tables_failed", routing.tables_failed);
     kernel_test_measure(test, "prt_entries", routing.entries);
     kernel_test_measure(test, "prt_entries_malformed", routing.entries_malformed);
+    kernel_test_measure(test, "prt_entries_repaired", routing.entries_repaired);
     kernel_test_measure(test, "prt_entries_dropped", routing.entries_dropped);
     kernel_test_measure(test, "prt_links", routing.links);
     kernel_test_measure(test, "prt_links_unrouted", routing.links_unrouted);
     kernel_test_measure(test, "prt_links_failed", routing.links_failed);
+    kernel_test_measure(test, "prt_links_dropped", routing.links_dropped);
     kernel_test_measure(test, "prt_routes", routing.count);
     kernel_test_measure_hexadecimal(test, "prt_fold",
                                     advanced_configuration_and_power_interface_interrupt_routing_fold(&routing));

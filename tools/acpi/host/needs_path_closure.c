@@ -71,8 +71,28 @@ static bool needs_path_closure_is_processor(AdvancedConfigurationAndPowerInterfa
 }
 
 /**
- * @brief Whether node @p index is a PCI interrupt link: a Device whose _HID is PNP0C0F, as an EISA identifier or a
- *        string.
+ * @brief Whether object @p name of Device @p index is data that names a PCI interrupt link, PNP0C0F, as an EISA
+ *        identifier, a string or an element of a _CID package, as the routing reads it (§3.11). A method is left to
+ *        the run, which counts what it executes (§4.1 rule 4): taking every Device whose _HID is one would bring in
+ *        the _CRS of controllers no _PRT names.
+ */
+static bool needs_path_closure_names_link(AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
+                                          uint32_t index, const char *name)
+{
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageNode_t *object =
+        advanced_configuration_and_power_interface_machine_language_namespace_node(
+            &load->space,
+            advanced_configuration_and_power_interface_machine_language_namespace_find_child(
+                &load->space, index,
+                advanced_configuration_and_power_interface_machine_language_name_segment((const uint8_t *) name, 0u)));
+
+    return object != NULL && object->type != ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_METHOD &&
+           advanced_configuration_and_power_interface_machine_language_identifies(load, &object->value, 0x0F0CD041u,
+                                                                                  "PNP0C0F");
+}
+
+/**
+ * @brief Whether node @p index is a PCI interrupt link: a Device whose _HID or _CID names PNP0C0F as data.
  */
 static bool needs_path_closure_is_interrupt_link(AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
                                                  uint32_t index)
@@ -80,27 +100,8 @@ static bool needs_path_closure_is_interrupt_link(AdvancedConfigurationAndPowerIn
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageNode_t *node =
         advanced_configuration_and_power_interface_machine_language_namespace_node(&load->space, index);
 
-    if (node == NULL || node->type != ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_DEVICE)
-        return false;
-
-    const AdvancedConfigurationAndPowerInterfaceMachineLanguageNode_t *hardware =
-        advanced_configuration_and_power_interface_machine_language_namespace_node(
-            &load->space, advanced_configuration_and_power_interface_machine_language_namespace_find_child(
-                              &load->space, index,
-                              advanced_configuration_and_power_interface_machine_language_name_segment(
-                                  (const uint8_t *) "_HID", 0u)));
-
-    if (hardware == NULL)
-        return false;
-    if (hardware->value.kind == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_INTEGER)
-        return hardware->value.payload == 0x0F0CD041u;
-
-    const AdvancedConfigurationAndPowerInterfaceMachineLanguageObjectHeader_t *text =
-        (hardware->value.kind == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_STRING) ?
-            advanced_configuration_and_power_interface_machine_language_object(&load->heap, hardware->value.handle) :
-            NULL;
-
-    return text != NULL && text->length == 7u && memcmp(text + 1, "PNP0C0F", 7u) == 0;
+    return node != NULL && node->type == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_DEVICE &&
+           (needs_path_closure_names_link(load, index, "_HID") || needs_path_closure_names_link(load, index, "_CID"));
 }
 
 /**

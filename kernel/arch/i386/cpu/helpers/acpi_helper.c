@@ -683,18 +683,21 @@ void write_advanced_configuration_and_power_interface_interrupt_routing_record(S
         advanced_configuration_and_power_interface_interrupt_routing();
 
     kernel_telemetry_begin_record(serial, "acpi.prt");
-    kernel_telemetry_write_text(
-        "model", (table->model == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_INTERRUPT_MODEL_APIC) ? "apic" : "pic");
+    kernel_telemetry_write_text("model",
+                                advanced_configuration_and_power_interface_interrupt_routing_model_name(table->model));
     kernel_telemetry_write_unsigned("bridges", table->bridges);
     kernel_telemetry_write_unsigned("bridges_absent", table->bridges_absent);
+    kernel_telemetry_write_unsigned("bridges_failed", table->bridges_failed);
     kernel_telemetry_write_unsigned("bridges_unrouted", table->bridges_unrouted);
     kernel_telemetry_write_unsigned("tables_failed", table->tables_failed);
     kernel_telemetry_write_unsigned("entries", table->entries);
     kernel_telemetry_write_unsigned("entries_malformed", table->entries_malformed);
+    kernel_telemetry_write_unsigned("entries_repaired", table->entries_repaired);
     kernel_telemetry_write_unsigned("entries_dropped", table->entries_dropped);
     kernel_telemetry_write_unsigned("links", table->links);
     kernel_telemetry_write_unsigned("links_unrouted", table->links_unrouted);
     kernel_telemetry_write_unsigned("links_failed", table->links_failed);
+    kernel_telemetry_write_unsigned("links_dropped", table->links_dropped);
     kernel_telemetry_write_unsigned("routes", table->count);
     kernel_telemetry_write_hexadecimal("fold",
                                        advanced_configuration_and_power_interface_interrupt_routing_fold(table));

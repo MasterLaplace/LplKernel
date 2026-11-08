@@ -898,7 +898,8 @@ static uint32_t harness_unimplemented[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE
  * @brief The machine a namespace is initialised for: the CPU slots of @p directory's MADT and its FADT,
  *        none without a directory, a processor that implements MONITOR/MWAIT, since a recorded machine's
  *        processor is not recorded, the platform as step 0 left it: not run for raw definition blocks,
- *        which come without a FADT, and the APIC model when the MADT declares an I/O APIC, as the boot chooses.
+ *        which come without a FADT, and the APIC model when the MADT declares an I/O APIC, so that the routes read
+ *        are those an I/O APIC takes.
  */
 static const AdvancedConfigurationAndPowerInterfaceInitializationMachine_t *
 harness_machine(const AdvancedConfigurationAndPowerInterfaceDirectory_t *directory)
@@ -1033,20 +1034,22 @@ static void harness_print_idle(AdvancedConfigurationAndPowerInterfaceMachineLang
 }
 
 /**
- * @brief Prints what reading the root bridges' _PRT counted, then each route published, with the path of the link
- *        that gave it, or `wired`.
+ * @brief Prints what reading the root bridges' _PRT counted, then each entry published, with the path of the Device
+ *        its Source names, or `wired`: its interrupt and how it signals, or `none` when its link gives none.
  */
 static void harness_print_routing(AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load)
 {
     char path[HARNESS_PATH_BYTES];
 
-    printf("aml prt model=%s bridges=%u bridges_absent=%u bridges_unrouted=%u tables_failed=%u entries=%u "
-           "entries_malformed=%u entries_dropped=%u links=%u links_unrouted=%u links_failed=%u routes=%u fold=0x%08X\n",
-           (harness_routing.model == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_INTERRUPT_MODEL_APIC) ? "apic" : "pic",
-           harness_routing.bridges, harness_routing.bridges_absent, harness_routing.bridges_unrouted,
-           harness_routing.tables_failed, harness_routing.entries, harness_routing.entries_malformed,
-           harness_routing.entries_dropped, harness_routing.links, harness_routing.links_unrouted,
-           harness_routing.links_failed, harness_routing.count,
+    printf("aml prt model=%s bridges=%u bridges_absent=%u bridges_failed=%u bridges_unrouted=%u tables_failed=%u "
+           "entries=%u entries_malformed=%u entries_repaired=%u entries_dropped=%u links=%u links_unrouted=%u "
+           "links_failed=%u links_dropped=%u routes=%u fold=0x%08X\n",
+           advanced_configuration_and_power_interface_interrupt_routing_model_name(harness_routing.model),
+           harness_routing.bridges, harness_routing.bridges_absent, harness_routing.bridges_failed,
+           harness_routing.bridges_unrouted, harness_routing.tables_failed, harness_routing.entries,
+           harness_routing.entries_malformed, harness_routing.entries_repaired, harness_routing.entries_dropped,
+           harness_routing.links, harness_routing.links_unrouted, harness_routing.links_failed,
+           harness_routing.links_dropped, harness_routing.count,
            advanced_configuration_and_power_interface_interrupt_routing_fold(&harness_routing));
     for (uint32_t index = 0u; index < harness_routing.count; ++index)
     {
@@ -1057,9 +1060,13 @@ static void harness_print_routing(AdvancedConfigurationAndPowerInterfaceMachineL
         else if (advanced_configuration_and_power_interface_machine_language_namespace_path(&load->space, route->link,
                                                                                             path, sizeof(path)) == 0u)
             memcpy(path, "too_deep", sizeof("too_deep"));
-        printf("aml route %04X:%02X:%02X.%c interrupt=%u %s %s %s\n", route->segment, route->bus, route->device,
-               'A' + route->pin, route->interrupt, route->level ? "level" : "edge", route->active_low ? "low" : "high",
-               path);
+        if (route->interrupt == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_INTERRUPT_ROUTING_NO_INTERRUPT)
+            printf("aml route %04X:%02X:%02X.%c none %s\n", route->segment, route->bus, route->device, 'A' + route->pin,
+                   path);
+        else
+            printf("aml route %04X:%02X:%02X.%c interrupt=%u %s %s %s\n", route->segment, route->bus, route->device,
+                   'A' + route->pin, route->interrupt, route->level ? "level" : "edge",
+                   route->active_low ? "low" : "high", path);
     }
 }
 
