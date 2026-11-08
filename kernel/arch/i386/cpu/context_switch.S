@@ -12,8 +12,6 @@
 cpu_context_switch:
     movl 4(%esp), %ecx
     movl 8(%esp), %edx
-    cmpl %ecx, %edx
-    je 9f
     pushl %ebp
     pushl %ebx
     pushl %esi
@@ -60,7 +58,6 @@ cpu_context_switch:
     popl %esi
     popl %ebx
     popl %ebp
-9:
     ret
 
 .globl cpu_context_start

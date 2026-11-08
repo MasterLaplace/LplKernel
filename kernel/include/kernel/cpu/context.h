@@ -98,7 +98,7 @@ void cpu_context_prepare(CpuContext_t *context, void *stack_top, void *extended_
  * @details It saves EBP, EBX, ESI, EDI and the stack pointer, the registers the System V i386 ABI asks a callee to
  *          keep, then the extended state with @p from's save, and restores @p to's with its own. The flags are not
  *          saved: the caller disables interrupts, and @p to resumes with them disabled. Switching to @p from itself
- *          does nothing.
+ *          saves and restores it, which no test on the common path is spent on.
  *
  * @param from Where the running code is saved.
  * @param to   What runs next, on the same processor.
