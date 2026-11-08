@@ -590,6 +590,8 @@ KERNEL_TEST(an_io_apic_keeps_the_inputs_its_index_reaches)
                       "one of 121 keeps 120");
     kernel_test_check(test, input_output_advanced_programmable_interrupt_controller_reachable_inputs(256u) == 120u,
                       "one of 256, the most its version register declares, keeps 120");
+    kernel_test_check(test, input_output_advanced_programmable_interrupt_controller_get_unreachable_inputs() == 0u,
+                      "no I/O APIC of this machine declares an input past entry 0x77");
     kernel_test_measure(test, "unreachable_inputs",
                         input_output_advanced_programmable_interrupt_controller_get_unreachable_inputs());
 }

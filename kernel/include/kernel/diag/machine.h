@@ -42,6 +42,8 @@ extern "C" {
  *          - `acpi`, `ioapic`, `topology`: the state each of those probes ended in;
  *          - `ioapic_lines_refused`: the lines the I/O APIC's routing refused because no redirection
  *            entry can name the bootstrap processor;
+ *          - `ioapic_inputs_unreachable`: the inputs the I/O APICs declare past entry 0x77, the last an 8-bit
+ *            register index reaches, which no route reaches;
  *          - `apic`: `x2apic`, `xapic` or `absent`;
  *          - `apic_reason`: why the local APIC runs that mode, as apic_mode_reason_name names it;
  *          - `audio_controller`: 1 when the bus holds a high-definition audio controller.
