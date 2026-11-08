@@ -4,11 +4,11 @@
 # the kernel runs x2APIC under -icount. Checked by tools/instructions.sh --budget tools/budgets/context-switch.debug.budget
 # kernel/lpl.kernel; a change of cpu_context_switch records the new counts. On QEMU's own processor, which has no XSAVE,
 # the same window takes FXSAVE: tools/instructions.sh --inside <this window's function> --times 1 --append <its line>
-# counts 58,178 instructions and 106,062 accesses there.
+# counts 58,195 instructions and 106,077 accesses there.
 inside=kernel_test_body_a_thousand_switches_between_two_integer_contexts
 times=1
 cpu=max,-x2apic
 append=lpl.test=context_switch.a_thousand_switches_between_two_integer_contexts
-instructions=58817
-accesses=143280
+instructions=58852
+accesses=143307
 tolerance=1
