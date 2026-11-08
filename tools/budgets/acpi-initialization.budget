@@ -1,10 +1,11 @@
 # Window W2 of the ACPI specification (§7.4): the initialisation of q35's namespace, steps 2 to 9 of §3.8, on
 # a release server kernel (SMOKE_TESTS=0 ./build.sh --server). Checked by
 # tools/instructions.sh --budget tools/budgets/acpi-initialization.budget kernel/lpl.kernel; a change that moves the
-# initialisation records the new counts.
+# initialisation records the new counts. The boot tells firmware the APIC model, q35's MADT declaring an I/O APIC: step
+# 5 calls \_PIC (1), 3,066 instructions of these.
 inside=advanced_configuration_and_power_interface_initialize_namespace
 times=1
 machine=q35
-instructions=73237
-accesses=34835
+instructions=76303
+accesses=36326
 tolerance=1
