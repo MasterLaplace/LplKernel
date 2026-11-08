@@ -71,10 +71,46 @@ static bool needs_path_closure_is_processor(AdvancedConfigurationAndPowerInterfa
 }
 
 /**
+ * @brief Whether object @p name of Device @p index is data that names a PCI interrupt link, PNP0C0F, as an EISA
+ *        identifier, a string or an element of a _CID package, as the routing reads it (§3.11). A method is left to
+ *        the run, which counts what it executes (§4.1 rule 4): taking every Device whose _HID is one would bring in
+ *        the _CRS of controllers no _PRT names.
+ */
+static bool needs_path_closure_names_link(AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
+                                          uint32_t index, const char *name)
+{
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageNode_t *object =
+        advanced_configuration_and_power_interface_machine_language_namespace_node(
+            &load->space,
+            advanced_configuration_and_power_interface_machine_language_namespace_find_child(
+                &load->space, index,
+                advanced_configuration_and_power_interface_machine_language_name_segment((const uint8_t *) name, 0u)));
+
+    return object != NULL && object->type != ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_METHOD &&
+           advanced_configuration_and_power_interface_machine_language_identifies(load, &object->value, 0x0F0CD041u,
+                                                                                  "PNP0C0F");
+}
+
+/**
+ * @brief Whether node @p index is a PCI interrupt link: a Device whose _HID or _CID names PNP0C0F as data.
+ */
+static bool needs_path_closure_is_interrupt_link(AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
+                                                 uint32_t index)
+{
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageNode_t *node =
+        advanced_configuration_and_power_interface_machine_language_namespace_node(&load->space, index);
+
+    return node != NULL && node->type == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_DEVICE &&
+           (needs_path_closure_names_link(load, index, "_HID") || needs_path_closure_names_link(load, index, "_CID"));
+}
+
+/**
  * @brief Whether a method is an entry of the needs path: `_INI`, `_REG`, `_STA` and `_CST`
- *        anywhere, `_OSC` of `\_SB_` or of a processor, `_PDC` and `_UID` of a processor, and the
+ *        anywhere, `_OSC` of `\_SB_` or of a processor, `_PDC` and `_UID` of a processor, the
  *        evaluations a PCI_Config region needs as it attaches, `_ADR`, `_SEG`, `_BBN`, `_HID` and
- *        `_CID`, anywhere: the static closure cannot tell which device holds such a region.
+ *        `_CID`, anywhere: the static closure cannot tell which device holds such a region; and the
+ *        routing of PCI interrupts (§3.11), `\_PIC` and `_PRT` anywhere, the static closure telling no root
+ *        bridge apart, and `_PRS` and `_CRS` of an interrupt link.
  */
 static bool needs_path_closure_is_entry(AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
                                         const AdvancedConfigurationAndPowerInterfaceMachineLanguageNode_t *node)
@@ -86,6 +122,10 @@ static bool needs_path_closure_is_entry(AdvancedConfigurationAndPowerInterfaceMa
         memcmp(name, "_CST", 4u) == 0 || memcmp(name, "_ADR", 4u) == 0 || memcmp(name, "_SEG", 4u) == 0 ||
         memcmp(name, "_BBN", 4u) == 0 || memcmp(name, "_HID", 4u) == 0 || memcmp(name, "_CID", 4u) == 0)
         return true;
+    if (memcmp(name, "_PRT", 4u) == 0 || memcmp(name, "_PIC", 4u) == 0)
+        return true;
+    if (memcmp(name, "_CRS", 4u) == 0 || memcmp(name, "_PRS", 4u) == 0)
+        return needs_path_closure_is_interrupt_link(load, node->parent);
     if (memcmp(name, "_PDC", 4u) == 0 || memcmp(name, "_UID", 4u) == 0)
         return needs_path_closure_is_processor(load, node->parent);
     if (memcmp(name, "_OSC", 4u) != 0)

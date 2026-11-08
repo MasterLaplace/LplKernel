@@ -3,6 +3,7 @@
 #include "recorded_machine.h"
 
 #include <kernel/acpi/initialization.h>
+#include <kernel/acpi/interrupt_routing.h>
 #include <kernel/acpi/processor_idle.h>
 #include <kernel/acpi/tables.h>
 #include <kernel/testing/test.h>
@@ -889,14 +890,16 @@ typedef enum HarnessView {
 static NeedsPathClosure_t harness_closure;
 static AdvancedConfigurationAndPowerInterfaceInitialization_t harness_initialization;
 static AdvancedConfigurationAndPowerInterfaceProcessorIdleTable_t harness_idle;
+static AdvancedConfigurationAndPowerInterfaceInterruptRoutingTable_t harness_routing;
 static AdvancedConfigurationAndPowerInterfaceModeSwitch_t harness_mode;
 static uint32_t harness_unimplemented[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_COUNT];
 
 /**
  * @brief The machine a namespace is initialised for: the CPU slots of @p directory's MADT and its FADT,
  *        none without a directory, a processor that implements MONITOR/MWAIT, since a recorded machine's
- *        processor is not recorded, and the platform as step 0 left it: not run for raw definition blocks,
- *        which come without a FADT.
+ *        processor is not recorded, the platform as step 0 left it: not run for raw definition blocks,
+ *        which come without a FADT, and the APIC model when the MADT declares an I/O APIC, so that the routes read
+ *        are those an I/O APIC takes.
  */
 static const AdvancedConfigurationAndPowerInterfaceInitializationMachine_t *
 harness_machine(const AdvancedConfigurationAndPowerInterfaceDirectory_t *directory)
@@ -912,6 +915,9 @@ harness_machine(const AdvancedConfigurationAndPowerInterfaceDirectory_t *directo
     machine.monitor_wait = true;
     machine.fadt = (directory != NULL) ? &directory->fixed_description : NULL;
     machine.mode = harness_mode.outcome;
+    machine.interrupt_model = (machine.madt != NULL && madt.io_apic_count != 0u) ?
+                                  ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_INTERRUPT_MODEL_APIC :
+                                  ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_INTERRUPT_MODEL_PIC;
     return &machine;
 }
 
@@ -1028,6 +1034,43 @@ static void harness_print_idle(AdvancedConfigurationAndPowerInterfaceMachineLang
 }
 
 /**
+ * @brief Prints what reading the root bridges' _PRT counted, then each entry published, with the path of the Device
+ *        its Source names, or `wired`: its interrupt and how it signals, or `none` when its link gives none.
+ */
+static void harness_print_routing(AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load)
+{
+    char path[HARNESS_PATH_BYTES];
+
+    printf("aml prt model=%s bridges=%u bridges_absent=%u bridges_failed=%u bridges_unrouted=%u tables_failed=%u "
+           "entries=%u entries_malformed=%u entries_repaired=%u entries_dropped=%u links=%u links_unrouted=%u "
+           "links_failed=%u links_dropped=%u routes=%u fold=0x%08X\n",
+           advanced_configuration_and_power_interface_interrupt_routing_model_name(harness_routing.model),
+           harness_routing.bridges, harness_routing.bridges_absent, harness_routing.bridges_failed,
+           harness_routing.bridges_unrouted, harness_routing.tables_failed, harness_routing.entries,
+           harness_routing.entries_malformed, harness_routing.entries_repaired, harness_routing.entries_dropped,
+           harness_routing.links, harness_routing.links_unrouted, harness_routing.links_failed,
+           harness_routing.links_dropped, harness_routing.count,
+           advanced_configuration_and_power_interface_interrupt_routing_fold(&harness_routing));
+    for (uint32_t index = 0u; index < harness_routing.count; ++index)
+    {
+        const AdvancedConfigurationAndPowerInterfaceInterruptRoute_t *route = &harness_routing.routes[index];
+
+        if (route->link == 0u)
+            memcpy(path, "wired", sizeof("wired"));
+        else if (advanced_configuration_and_power_interface_machine_language_namespace_path(&load->space, route->link,
+                                                                                            path, sizeof(path)) == 0u)
+            memcpy(path, "too_deep", sizeof("too_deep"));
+        if (route->interrupt == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_INTERRUPT_ROUTING_NO_INTERRUPT)
+            printf("aml route %04X:%02X:%02X.%c none %s\n", route->segment, route->bus, route->device, 'A' + route->pin,
+                   path);
+        else
+            printf("aml route %04X:%02X:%02X.%c interrupt=%u %s %s %s\n", route->segment, route->bus, route->device,
+                   'A' + route->pin, route->interrupt, route->level ? "level" : "edge",
+                   route->active_low ? "low" : "high", path);
+    }
+}
+
+/**
  * @brief Initialises a decoded load's namespace as the boot does, for the machine @p directory describes,
  *        and prints how step 0 left the platform, what the initialisation ran and counted, each status a
  *        failure ended with, each unimplemented opcode it reached, the first object whose evaluation failed,
@@ -1040,20 +1083,25 @@ static void harness_print_initialization(AdvancedConfigurationAndPowerInterfaceM
     char path[HARNESS_PATH_BYTES] = "none";
 
     memcpy(harness_unimplemented, load->evaluation.unimplemented, sizeof(harness_unimplemented));
-    advanced_configuration_and_power_interface_initialize_namespace(load, harness_machine(directory),
-                                                                    &harness_initialization, &harness_idle);
+    const AdvancedConfigurationAndPowerInterfaceInitializationMachine_t *machine = harness_machine(directory);
+
+    advanced_configuration_and_power_interface_initialize_namespace(load, machine, &harness_initialization,
+                                                                    &harness_idle);
+    advanced_configuration_and_power_interface_interrupt_routing_publish(load, machine, &harness_initialization,
+                                                                         &harness_routing);
     printf("aml mode outcome=%s enables_cleared=%u polls=%u waited_ms=%u fadt_revision=%u\n",
            advanced_configuration_and_power_interface_mode_outcome_name(harness_mode.outcome),
            harness_mode.enable_registers_cleared, harness_mode.polls, harness_mode.waited_milliseconds,
            (directory != NULL) ? directory->fixed_description.revision : 0u);
     printf("aml init initializations=%u initialization_failed=%u registrations=%u region_registration_failed=%u "
-           "devices=%u status_evaluations=%u status_failed=%u status_invalid=%u pic_mode_deferred=%u "
+           "devices=%u status_evaluations=%u status_failed=%u status_invalid=%u pic_mode_deferred=%u pic_mode_told=%u "
+           "pic_mode_failed=%u "
            "platform_capabilities=%s processor_capabilities=%u processor_capabilities_legacy=%u "
            "processor_capabilities_refused=%u processor_capabilities_failed=%u processors_unbound=%u tables=%u "
            "late_initializations=%u\n",
            counts->initializations, counts->initialization_failed, counts->registrations,
            counts->region_registration_failed, counts->devices, counts->status_evaluations, counts->status_failed,
-           counts->status_invalid, counts->pic_mode_deferred,
+           counts->status_invalid, counts->pic_mode_deferred, counts->pic_mode_told, counts->pic_mode_failed,
            advanced_configuration_and_power_interface_platform_capabilities_name(counts->platform_capabilities),
            counts->processor_capabilities, counts->processor_capabilities_legacy,
            counts->processor_capabilities_refused, counts->processor_capabilities_failed, counts->processors_unbound,
@@ -1078,6 +1126,7 @@ static void harness_print_initialization(AdvancedConfigurationAndPowerInterfaceM
                advanced_configuration_and_power_interface_machine_language_status_name(counts->first_failure));
     }
     harness_print_idle(load, counts);
+    harness_print_routing(load);
 }
 
 /**

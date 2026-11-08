@@ -51,6 +51,18 @@ typedef enum AdvancedConfigurationAndPowerInterfacePlatformCapabilities {
 } AdvancedConfigurationAndPowerInterfacePlatformCapabilities_t;
 
 /**
+ * @brief The interrupt model step 5 tells firmware through \_PIC (ACPI 6.6 §5.8.1).
+ */
+typedef enum AdvancedConfigurationAndPowerInterfaceInterruptModel {
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_INTERRUPT_MODEL_PIC = 0,  /**< PCI interrupts go through the 8259:
+                                                                              \_PIC is not called, as firmware
+                                                                              assumes this model until told. */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_INTERRUPT_MODEL_APIC = 1, /**< They go through an I/O APIC: \_PIC (1). */
+    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_INTERRUPT_MODEL_UNKNOWN =
+        0xFF, /**< \_PIC (1) failed: firmware may route in either model, so no route is taken (§3.11). */
+} AdvancedConfigurationAndPowerInterfaceInterruptModel_t;
+
+/**
  * @brief What the initialisation needs to know of the machine whose namespace it initialises.
  */
 typedef struct AdvancedConfigurationAndPowerInterfaceInitializationMachine {
@@ -59,7 +71,10 @@ typedef struct AdvancedConfigurationAndPowerInterfaceInitializationMachine {
     bool monitor_wait; /**< The processors implement MONITOR/MWAIT, so _CST may name MWAIT hints. */
     const AdvancedConfigurationAndPowerInterfaceFixedDescription_t *fadt; /**< SMI_CMD and CST_CNT, which step 8
                                                                                writes, or NULL: nothing written. */
-    uint8_t mode; /**< How step 0 ended: an ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MODE_* outcome. */
+    uint8_t mode;            /**< How step 0 ended: an ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MODE_* outcome. */
+    uint8_t interrupt_model; /**< Where the kernel sends PCI interrupts: an
+                                  ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_INTERRUPT_MODEL_* value, which step 5
+                                  tells firmware. */
 } AdvancedConfigurationAndPowerInterfaceInitializationMachine_t;
 
 /**
@@ -79,7 +94,9 @@ typedef struct AdvancedConfigurationAndPowerInterfaceInitialization {
                                                  or Buffer. */
     uint32_t status_invalid;                /**< Of those, the results ACPI 6.6 calls invalid, walked as any other. */
     uint32_t pic_mode_deferred;             /**< 1 when \_PIC exists and was not called: PCI interrupts go through the
-                                                 8259 until #59. */
+                                                 8259. */
+    uint32_t pic_mode_told;                 /**< 1 when \_PIC (1) ran and returned: they go through an I/O APIC. */
+    uint32_t pic_mode_failed;               /**< 1 when \_PIC (1) failed, counted under its status. */
     uint32_t platform_capabilities;         /**< An ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_PLATFORM_CAPABILITIES_*
                                                  value. */
     uint32_t processor_capabilities;        /**< Processors bound to a CPU slot that were handed the capabilities,
@@ -115,24 +132,24 @@ typedef struct AdvancedConfigurationAndPowerInterfaceInitialization {
  * @brief Initialises a loaded namespace as firmware expects (§3.8 steps 2 to 9): runs \_INI then
  *        \_SB._INI; runs _REG (PCI_Config, 1) once in every scope that declares a PCI_Config region,
  *        after which a region a method creates gets its _REG at once; walks the devices, processors and
- *        thermal zones in declaration order, evaluating _STA only in subtrees that hold an _INI; leaves
- *        \_PIC uncalled; asks \_SB._OSC for nothing, a query then a commit; gives every processor object
- *        bound to a CPU slot the capabilities of its C-states through its _OSC, or its _PDC, one that a table
- *        loaded meanwhile declares, or gives its first _OSC or _PDC, behind that walk as soon as the evaluation
- *        that loaded it returns;
- *        publishes the C-states of each CPU slot from its processor object's _CST, a processor object a table
- *        loaded meanwhile declares given those capabilities first, after the others; then takes the Notifies
- *        the load and the sequence raised, a _CST changed since its evaluation evaluated once more, the tables
- *        these evaluations load published as the others, then their Notifies taken. A table Load or
- *        LoadTable adds once step 2 is over gets its late initialisation as soon as the evaluation that
- *        loaded it returns, or once step 3 is over for a table a _REG loaded: the _REG of step 3 in its
- *        scopes, then the _STA and _INI walk of step 4 over the device subtrees step 4 has gone past, once
- *        the devices above them whose _STA step 4 did not read are found present or functioning, and never
- *        under an absent one; step 4 initialises the devices it has not reached yet, so that no _INI runs
- *        twice.
+ *        thermal zones in declaration order, evaluating _STA only in subtrees that hold an _INI; calls
+ *        \_PIC (1) in the APIC model and leaves it uncalled in the PIC model; asks \_SB._OSC for nothing, a
+ *        query then a commit; gives every processor object bound to a CPU slot the capabilities of its C-states
+ *        through its _OSC, or its _PDC, one that a table loaded meanwhile declares, or gives its first _OSC or
+ *        _PDC, behind that walk as soon as the evaluation that loaded it returns; publishes the C-states of each
+ *        CPU slot from its processor object's _CST, a processor object a table loaded meanwhile declares given
+ *        those capabilities first, after the others; then takes the Notifies the load and the sequence raised, a
+ *        _CST changed since its evaluation evaluated once more, the tables these evaluations load published as
+ *        the others, then their Notifies taken. A table Load or LoadTable adds once step 2 is over gets its late
+ *        initialisation as soon as the evaluation that loaded it returns, or once step 3 is over for a table a
+ *        _REG loaded: the _REG of step 3 in its scopes, then the _STA and _INI walk of step 4 over the device
+ *        subtrees step 4 has gone past, once the devices above them whose _STA step 4 did not read are found
+ *        present or functioning, and never under an absent one; step 4 initialises the devices it has not
+ *        reached yet, so that no _INI runs twice.
  *
  * @param load               A load whose tables are decoded, its stacks free.
- * @param machine            The CPU slots, the processor features, the FADT and how step 0 ended.
+ * @param machine            The CPU slots, the processor features, the FADT, how step 0 ended and the interrupt
+ *                           model.
  * @param out_initialization Receives what the sequence ran and counted; zeroed first.
  * @param out_idle           Receives the C-states of every CPU slot of the MADT, those slots zeroed first.
  */
@@ -156,6 +173,20 @@ extern void advanced_configuration_and_power_interface_initialize_namespace(
 extern bool advanced_configuration_and_power_interface_initialization_read_status(
     AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
     AdvancedConfigurationAndPowerInterfaceInitialization_t *initialization, uint32_t device, uint64_t *out_status);
+
+/**
+ * @brief Evaluates @p object, data or a method, and converts what it gives into an Integer as an operand is
+ *        converted (§5.2); a failure is counted under its status.
+ *
+ * @param load           The load.
+ * @param initialization The counts the sequence keeps.
+ * @param object         The node.
+ * @param out_value      Receives the Integer.
+ * @return false when the evaluation failed or gave nothing an Integer converts from, counted.
+ */
+extern bool advanced_configuration_and_power_interface_initialization_read_integer(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
+    AdvancedConfigurationAndPowerInterfaceInitialization_t *initialization, uint32_t object, uint64_t *out_value);
 
 /**
  * @brief Gives @p processor what step 7 gives a processor object (§3.8 step 7): when it has an _OSC or a
@@ -207,11 +238,15 @@ extern const char *advanced_configuration_and_power_interface_platform_capabilit
 /**
  * @brief Loads this machine's definition blocks at boot, into the boot's load, with the caps of the
  *        build's profile, and initialises the namespace they build (§3.8 steps 1 to 9), its processor
- *        objects bound to the boot's MADT, after the boot's switch to ACPI mode.
+ *        objects bound to the boot's MADT, after the boot's switch to ACPI mode; then publishes the routes of
+ *        the PCI interrupt pins of its root buses (§3.11).
  *
- * @param monitor_wait The processors implement MONITOR/MWAIT.
+ * @param monitor_wait    The processors implement MONITOR/MWAIT.
+ * @param interrupt_model Where the kernel sends PCI interrupts: an
+ *                        ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_INTERRUPT_MODEL_* value.
  */
-extern void advanced_configuration_and_power_interface_machine_language_initialize(bool monitor_wait);
+extern void advanced_configuration_and_power_interface_machine_language_initialize(bool monitor_wait,
+                                                                                   uint8_t interrupt_model);
 
 /**
  * @brief The boot's load, which advanced_configuration_and_power_interface_machine_language_initialize fills.

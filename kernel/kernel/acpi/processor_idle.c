@@ -289,31 +289,6 @@ static void processor_idle_take_notifications(ProcessorIdleLoad_t *load, const P
 }
 
 /**
- * @brief Evaluates @p object and converts what it gives into @p out_value, as an operand is converted
- *        (§5.2); a failure is counted.
- *
- * @return Whether it could.
- */
-static bool processor_idle_integer(ProcessorIdleLoad_t *load, ProcessorIdleCounts_t *counts, uint32_t object,
-                                   uint64_t *out_value)
-{
-    ProcessorIdleValue_t result;
-    bool forbidden = false;
-    ProcessorIdleStatus_t status =
-        advanced_configuration_and_power_interface_machine_language_evaluate_node(load, object, NULL, 0u, &result);
-
-    if (status == PROCESSOR_IDLE_OK)
-        status = advanced_configuration_and_power_interface_machine_language_value_to_integer(
-            &load->heap, &result, (load->integer_bits == 32u) ? 32u : 64u, out_value, &forbidden);
-    load->evaluation.forbidden_conversions += forbidden ? 1u : 0u;
-    processor_idle_release(load, &result);
-    if (status == PROCESSOR_IDLE_OK)
-        return true;
-    advanced_configuration_and_power_interface_initialization_count_failure(counts, object, status);
-    return false;
-}
-
-/**
  * @brief The highest device above @p index whose presence step 8 has not decided, or 0, also when one above
  *        it is a device step 8 found absent, which @p out_absent then tells.
  */
@@ -552,7 +527,8 @@ uint32_t advanced_configuration_and_power_interface_processor_slot(ProcessorIdle
     {
         const uint32_t object = processor_idle_object(load, node, "_UID");
 
-        if (object == 0u || !processor_idle_integer(load, initialization, object, &identifier))
+        if (object == 0u || !advanced_configuration_and_power_interface_initialization_read_integer(
+                                load, initialization, object, &identifier))
             return PROCESSOR_IDLE_NO_SLOT;
     }
     for (uint32_t slot = 0u; machine->madt != NULL && slot < machine->madt->processor_count; ++slot)

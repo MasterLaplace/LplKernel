@@ -590,6 +590,21 @@ advanced_configuration_and_power_interface_machine_language_peripheral_component
     AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load, uint32_t region_node);
 
 /**
+ * @brief Whether a _HID or a _CID names a device: as the EisaId @p eisa_identifier, as the String @p text, or, for a
+ *        _CID, as one element of its Package.
+ *
+ * @param load            The load whose heap holds the identifier's String or Package.
+ * @param identifier      What a _HID or a _CID gave.
+ * @param eisa_identifier The device's EisaId, as an Integer, such as 0x030AD041 for PNP0A03.
+ * @param text            The same identifier as seven characters, such as "PNP0A03".
+ * @return true when it names that device.
+ */
+extern bool advanced_configuration_and_power_interface_machine_language_identifies(
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *identifier, uint32_t eisa_identifier,
+    const char *text);
+
+/**
  * @brief Says that the initialisation has run the _REG of every scope that declares a PCI_Config
  *        region (§3.8 step 3): from now on, a PCI_Config region a method creates gets its _REG at once.
  *
@@ -960,6 +975,22 @@ advanced_configuration_and_power_interface_machine_language_package_element(
     AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *package, uint32_t element,
     AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *out_value);
+
+/**
+ * @brief Finds the node a name one element of a Package holds refers to, from the scope it was read in, without
+ *        reading the node: a Device, which holds no data, is found as any other object.
+ *
+ * @param load     The load.
+ * @param package  A Package value.
+ * @param element  The element, counted from 0.
+ * @param out_node Receives the node, or 0 on failure.
+ * @return TYPE_MISMATCH when @p package is no Package or the element holds no name; INDEX_OUT_OF_RANGE past its
+ *         last element; why its name could not be resolved; OK otherwise.
+ */
+extern AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
+advanced_configuration_and_power_interface_machine_language_package_element_node(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
+    const AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t *package, uint32_t element, uint32_t *out_node);
 
 /**
  * @brief Opens a load: an empty namespace with its predefined objects, and no table.

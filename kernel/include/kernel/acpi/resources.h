@@ -36,6 +36,10 @@
     0x0Fu /**< The name of the small End Tag descriptor (ACPI 6.6 §6.4.2.9). */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_RESOURCE_GENERIC_REGISTER                                           \
     0x82u /**< The name of the large Generic Register descriptor, bit 7 set (ACPI 6.6 §6.4.3.7). */
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_RESOURCE_INTERRUPT_REQUEST                                          \
+    0x04u /**< The name of the small IRQ descriptor (ACPI 6.6 §6.4.2.1). */
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_RESOURCE_EXTENDED_INTERRUPT                                         \
+    0x89u /**< The name of the large Extended Interrupt descriptor, bit 7 set (ACPI 6.6 §6.4.3.6). */
 
 /**
  * @brief What reading the next descriptor of a template found.
@@ -55,6 +59,15 @@ typedef struct AdvancedConfigurationAndPowerInterfaceResource {
     uint16_t length;     /**< How many. */
     uint8_t name;        /**< A small descriptor's name (bits 3 to 6 of its tag), a large one's with bit 7 set. */
 } AdvancedConfigurationAndPowerInterfaceResource_t;
+
+/**
+ * @brief One interrupt an IRQ or an Extended Interrupt descriptor names, and how it signals.
+ */
+typedef struct AdvancedConfigurationAndPowerInterfaceResourceInterrupt {
+    uint32_t number; /**< The interrupt: an ISA IRQ for an IRQ descriptor, any interrupt for an Extended one. */
+    bool level;      /**< Level-triggered; edge-triggered otherwise. */
+    bool active_low; /**< Active-low; active-high otherwise. */
+} AdvancedConfigurationAndPowerInterfaceResourceInterrupt_t;
 
 /**
  * @brief Where the iterator stands in a template.
@@ -98,5 +111,22 @@ extern AdvancedConfigurationAndPowerInterfaceResourceStep_t advanced_configurati
 extern bool advanced_configuration_and_power_interface_resources_generic_register(
     const AdvancedConfigurationAndPowerInterfaceResource_t *resource,
     AdvancedConfigurationAndPowerInterfaceGenericAddress_t *out_register);
+
+/**
+ * @brief Decodes interrupt @p index of an IRQ descriptor (ACPI 6.6 §6.4.2.1) or of an Extended Interrupt descriptor
+ *        (§6.4.3.6).
+ *
+ * @details An IRQ descriptor names the bits set in its mask, the lowest first; without its information byte, its
+ *          interrupts are edge-triggered and active-high, as §6.4.2.1 says.
+ *
+ * @param resource      A descriptor the iterator read.
+ * @param index         Which of its interrupts, counted from 0.
+ * @param out_interrupt Receives the interrupt when there is one.
+ * @return false when the descriptor is neither, holds fewer bytes than its form needs, or names fewer than
+ *         @p index + 1 interrupts.
+ */
+extern bool advanced_configuration_and_power_interface_resources_interrupt(
+    const AdvancedConfigurationAndPowerInterfaceResource_t *resource, uint32_t index,
+    AdvancedConfigurationAndPowerInterfaceResourceInterrupt_t *out_interrupt);
 
 #endif /* KERNEL_ACPI_RESOURCES_H */

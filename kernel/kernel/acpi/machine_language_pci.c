@@ -621,3 +621,26 @@ void advanced_configuration_and_power_interface_machine_language_peripheral_comp
 {
     load->regions.registers_at_creation = true;
 }
+
+bool advanced_configuration_and_power_interface_machine_language_identifies(const MachineLanguageLoad_t *load,
+                                                                            const MachineLanguageValue_t *identifier,
+                                                                            uint32_t eisa_identifier, const char *text)
+{
+    if (identifier->kind == MACHINE_LANGUAGE_VALUE(INTEGER))
+        return identifier->payload == eisa_identifier;
+    if (identifier->kind == MACHINE_LANGUAGE_VALUE(STRING))
+        return machine_language_pci_string_is(load, identifier->handle, text);
+    if (identifier->kind != MACHINE_LANGUAGE_VALUE(PACKAGE))
+        return false;
+
+    const MachineLanguageHeader_t *header =
+        advanced_configuration_and_power_interface_machine_language_object(&load->heap, identifier->handle);
+    const MachineLanguageValue_t *elements = (const MachineLanguageValue_t *) (header + 1);
+
+    for (uint32_t index = 0u; header != NULL && index < header->length; ++index)
+        if (elements[index].kind != MACHINE_LANGUAGE_VALUE(PACKAGE) &&
+            advanced_configuration_and_power_interface_machine_language_identifies(load, &elements[index],
+                                                                                   eisa_identifier, text))
+            return true;
+    return false;
+}

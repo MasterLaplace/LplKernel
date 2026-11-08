@@ -393,10 +393,11 @@ __attribute__((constructor)) void kernel_initialize(void)
     write_acpi_mode_record(&com1);
     advanced_configuration_and_power_interface_power_management_timer_initialize();
     advanced_configuration_and_power_interface_machine_language_initialize(
-        kernel_processor_sleep_monitor_implemented());
+        kernel_processor_sleep_monitor_implemented(), ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_INTERRUPT_MODEL_PIC);
     write_acpi_machine_language_record(&com1);
     write_advanced_configuration_and_power_interface_power_management_timer_record(&com1);
     write_advanced_configuration_and_power_interface_processor_idle_record(&com1);
+    write_advanced_configuration_and_power_interface_interrupt_routing_record(&com1);
 
     if (advanced_configuration_and_power_interface_madt_is_available())
     {

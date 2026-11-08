@@ -6,6 +6,14 @@
 #define RESOURCES_SMALL_NAME_SHIFT      3u    /**< Where a small descriptor's name starts in its tag. */
 #define RESOURCES_SMALL_NAME            0x0Fu /**< A small descriptor's name, once shifted. */
 #define RESOURCES_GENERIC_REGISTER_DATA 12u   /**< Bytes of a Generic Register after its header. */
+#define RESOURCES_IRQ_MASK              2u    /**< Bytes of an IRQ descriptor's mask. */
+#define RESOURCES_IRQ_INFORMATION       3u    /**< Bytes of an IRQ descriptor that holds its information byte too. */
+#define RESOURCES_IRQ_EDGE              0x01u /**< IRQ information bit 0, _HE: edge-triggered. */
+#define RESOURCES_IRQ_ACTIVE_LOW        0x08u /**< IRQ information bit 3, _LL: active-low. */
+#define RESOURCES_EXTENDED_HEADER       2u    /**< Bytes of an Extended Interrupt's flags and count. */
+#define RESOURCES_EXTENDED_EDGE         0x02u /**< Extended Interrupt flags bit 1, _HE: edge-triggered. */
+#define RESOURCES_EXTENDED_ACTIVE_LOW   0x04u /**< Extended Interrupt flags bit 2, _LL: active-low. */
+#define RESOURCES_EXTENDED_NUMBER       4u    /**< Bytes of one interrupt number of an Extended Interrupt. */
 
 /**
  * @brief The little-endian integer of @p count bytes at @p bytes.
@@ -17,6 +25,52 @@ static uint64_t resources_little_endian(const uint8_t *bytes, uint32_t count)
     for (uint32_t index = count; index != 0u; --index)
         value = (value << 8u) | bytes[index - 1u];
     return value;
+}
+
+/**
+ * @brief Decodes interrupt @p index of an IRQ descriptor: the @p index-th bit set in its mask, the lowest first.
+ */
+static bool resources_interrupt_request(const AdvancedConfigurationAndPowerInterfaceResource_t *resource,
+                                        uint32_t index, AdvancedConfigurationAndPowerInterfaceResourceInterrupt_t *out)
+{
+    if (resource->length < RESOURCES_IRQ_MASK)
+        return false;
+
+    const uint32_t mask = (uint32_t) resources_little_endian(resource->data, RESOURCES_IRQ_MASK);
+    const uint8_t information =
+        (resource->length >= RESOURCES_IRQ_INFORMATION) ? resource->data[2] : RESOURCES_IRQ_EDGE;
+
+    for (uint32_t number = 0u; number < 16u; ++number)
+    {
+        if ((mask & (1u << number)) == 0u || index-- != 0u)
+            continue;
+        out->number = number;
+        out->level = (information & RESOURCES_IRQ_EDGE) == 0u;
+        out->active_low = (information & RESOURCES_IRQ_ACTIVE_LOW) != 0u;
+        return true;
+    }
+    return false;
+}
+
+/**
+ * @brief Decodes interrupt @p index of an Extended Interrupt descriptor: the @p index-th number of its table.
+ */
+static bool resources_extended_interrupt(const AdvancedConfigurationAndPowerInterfaceResource_t *resource,
+                                         uint32_t index, AdvancedConfigurationAndPowerInterfaceResourceInterrupt_t *out)
+{
+    if (resource->length < RESOURCES_EXTENDED_HEADER)
+        return false;
+
+    const uint8_t flags = resource->data[0];
+    const uint32_t count = resource->data[1];
+
+    if (index >= count || (uint32_t) resource->length < RESOURCES_EXTENDED_HEADER + count * RESOURCES_EXTENDED_NUMBER)
+        return false;
+    out->number = (uint32_t) resources_little_endian(
+        resource->data + RESOURCES_EXTENDED_HEADER + index * RESOURCES_EXTENDED_NUMBER, RESOURCES_EXTENDED_NUMBER);
+    out->level = (flags & RESOURCES_EXTENDED_EDGE) == 0u;
+    out->active_low = (flags & RESOURCES_EXTENDED_ACTIVE_LOW) != 0u;
+    return true;
 }
 
 void advanced_configuration_and_power_interface_resources_begin(
@@ -76,4 +130,15 @@ bool advanced_configuration_and_power_interface_resources_generic_register(
     out_register->access_size = resource->data[3];
     out_register->address = resources_little_endian(resource->data + 4u, 8u);
     return true;
+}
+
+bool advanced_configuration_and_power_interface_resources_interrupt(
+    const AdvancedConfigurationAndPowerInterfaceResource_t *resource, uint32_t index,
+    AdvancedConfigurationAndPowerInterfaceResourceInterrupt_t *out_interrupt)
+{
+    if (resource->name == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_RESOURCE_INTERRUPT_REQUEST)
+        return resources_interrupt_request(resource, index, out_interrupt);
+    if (resource->name == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_RESOURCE_EXTENDED_INTERRUPT)
+        return resources_extended_interrupt(resource, index, out_interrupt);
+    return false;
 }
