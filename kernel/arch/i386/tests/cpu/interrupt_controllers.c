@@ -300,7 +300,7 @@ KERNEL_TEST(the_bootstrap_processor_runs_the_mode_this_machine_gets)
     kernel_test_measure(test, "x2apic_offered", offered ? 1u : 0u);
     kernel_test_measure(test, "hypervisor", identity.hypervisor ? 1u : 0u);
     kernel_test_measure(test, "x2apic", extended ? 1u : 0u);
-    kernel_test_measure(test, "mode", (uint32_t) mode);
+    kernel_test_measure(test, "from_firmware", from_firmware ? 1u : 0u);
 }
 
 /**

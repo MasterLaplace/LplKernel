@@ -49,8 +49,7 @@ static uint8_t kernel_symmetric_multiprocessing_park(uint32_t apic_id)
 static uint32_t smp_ap_attempted = 0u;
 static uint32_t smp_ap_delivered = 0u;
 static uint32_t smp_ap_parked = 0u;
-static uint32_t smp_ap_unaddressable =
-    0u; /**< APs refused before any start-up interrupt: the mode cannot address them. */
+static uint32_t smp_ap_unaddressable = 0u; /**< APs the local APIC mode cannot address. */
 
 void kernel_symmetric_multiprocessing_try_start_discovered_aps(Serial_t *com1)
 {
