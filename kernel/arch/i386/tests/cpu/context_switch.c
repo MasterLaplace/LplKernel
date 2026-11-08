@@ -49,8 +49,9 @@ typedef struct {
 #define CONTEXT_SWITCH_TEST_AREA_OTHER  12u /**< The area of the context a test switches to alone. */
 #define CONTEXT_SWITCH_TEST_AREA_FIRST  13u /**< The area of the first context of a pair. */
 #define CONTEXT_SWITCH_TEST_AREA_SECOND 14u /**< The area of the second. */
+#define CONTEXT_SWITCH_TEST_AREA_AGAIN  15u /**< The area a test adopts twice. */
 
-static uint8_t context_switch_test_areas[CONTEXT_SWITCH_TEST_AREA_SECOND + 1u][CONTEXT_SWITCH_TEST_AREA_BYTES]
+static uint8_t context_switch_test_areas[CONTEXT_SWITCH_TEST_AREA_AGAIN + 1u][CONTEXT_SWITCH_TEST_AREA_BYTES]
     __attribute__((aligned(EXTENDED_STATE_AREA_ALIGNMENT))); /**< The extended state areas. */
 static uint32_t context_switch_test_home_areas_taken = 0u;   /**< How many home areas the tests took. */
 static uint8_t context_switch_test_stacks[3][CONTEXT_SWITCH_TEST_STACK_BYTES]
@@ -469,4 +470,60 @@ KERNEL_TEST(each_save_takes_its_ticks_per_switch)
     }
     kernel_test_check(test, measured >= 1u, "at least one save was measured");
     kernel_test_measure(test, "measured", measured);
+}
+
+/**
+ * @brief The running code adopts the area the processor last restored from, and its next switch away saves its
+ *        registers there, with every save the processor offers.
+ *
+ * @details After a switch back to a context, the processor tracks its area as the source of the last XRSTOR, and
+ *          XSAVEOPT and XSAVES skip a component unmodified since (Intel SDM vol. 1, 253665-093US, §13.6 and §13.8.3):
+ *          adopted again, the area kept the initial state its preparation wrote, and the registers came back as it.
+ */
+KERNEL_TEST(adopting_the_area_restored_last_keeps_the_registers)
+{
+    static ContextProbeState_t found;
+    static ContextProbeState_t held;
+    static ContextProbeState_t after;
+    static ContextProbeState_t again;
+    static CpuContext_t here;
+    static CpuContext_t other;
+    static ContextSwitchTestRole_t role;
+    static volatile uint32_t remaining;
+    const uint32_t wide = context_switch_test_wide();
+    uint32_t offered = 0u;
+    uint32_t kept = 0u;
+
+    context_probe_read(&found, wide);
+    context_switch_test_fill(&held, 0x027Fu, 0x7F80u, 0x10u);
+    for (ExtendedStateSave_t save = EXTENDED_STATE_SAVE_FXSAVE; save <= EXTENDED_STATE_SAVE_XSAVES; ++save)
+    {
+        if (!extended_state_offers_save(save) || extended_state_area_size(save) > CONTEXT_SWITCH_TEST_AREA_BYTES)
+            continue;
+        ++offered;
+        remaining = 0u;
+        role = (ContextSwitchTestRole_t){&other, &here, &here, &remaining, NULL, wide, NULL, NULL, 0u};
+
+        const uint32_t flags = asmutils_save_flags_and_disable_interrupts();
+
+        cpu_context_adopt(&here, context_switch_test_areas[CONTEXT_SWITCH_TEST_AREA_AGAIN], save);
+        cpu_context_prepare(&other, context_switch_test_stacks[0] + CONTEXT_SWITCH_TEST_STACK_BYTES,
+                            context_switch_test_areas[CONTEXT_SWITCH_TEST_AREA_OTHER], save, context_switch_test_play,
+                            &role);
+        context_probe_hold_across_switch(&held, &after, &here, &other, wide);
+        cpu_context_adopt(&here, context_switch_test_areas[CONTEXT_SWITCH_TEST_AREA_AGAIN], save);
+        cpu_context_prepare(&other, context_switch_test_stacks[0] + CONTEXT_SWITCH_TEST_STACK_BYTES,
+                            context_switch_test_areas[CONTEXT_SWITCH_TEST_AREA_OTHER], save, context_switch_test_play,
+                            &role);
+        cpu_context_switch(&here, &other);
+        context_probe_read(&again, wide);
+        context_probe_load(&found, wide);
+        asmutils_restore_flags(flags);
+        kept +=
+            context_switch_test_same(&held, &after, wide) && context_switch_test_same(&held, &again, wide) ? 1u : 0u;
+    }
+    kernel_test_check(test, offered >= 1u, "the processor offers a save that fits the test's areas");
+    kernel_test_check(test, kept == offered, "the registers come back from the area adopted again, with every save");
+    kernel_test_measure(test, "offered", offered);
+    kernel_test_measure(test, "kept", kept);
 }
