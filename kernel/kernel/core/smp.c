@@ -49,6 +49,8 @@ static uint8_t kernel_symmetric_multiprocessing_park(uint32_t apic_id)
 static uint32_t smp_ap_attempted = 0u;
 static uint32_t smp_ap_delivered = 0u;
 static uint32_t smp_ap_parked = 0u;
+static uint32_t smp_ap_unaddressable =
+    0u; /**< APs refused before any start-up interrupt: the mode cannot address them. */
 
 void kernel_symmetric_multiprocessing_try_start_discovered_aps(Serial_t *com1)
 {
@@ -90,10 +92,17 @@ void kernel_symmetric_multiprocessing_try_start_discovered_aps(Serial_t *com1)
     uint32_t acknowledgement_timeouts = 0u;
     uint32_t c_entry_timeouts = 0u;
     uint32_t parked = 0u;
+    uint32_t unaddressable = 0u;
     ApplicationProcessorBootstrapEntry_t *entry = NULL;
 
     while ((entry = application_processor_bootstrap_next_unbooted_ap()) != NULL)
     {
+        if (!advanced_pic_ipi_can_address(entry->apic_id))
+        {
+            ++unaddressable;
+            write_ap_startup_refused_unaddressable_info(com1, entry);
+            continue;
+        }
         ++attempted;
 
         uint8_t sequence_ok = 0u;
@@ -162,6 +171,7 @@ void kernel_symmetric_multiprocessing_try_start_discovered_aps(Serial_t *com1)
     smp_ap_attempted = attempted;
     smp_ap_delivered = delivered;
     smp_ap_parked = parked;
+    smp_ap_unaddressable = unaddressable;
 }
 
 void kernel_symmetric_multiprocessing_report(Serial_t *serial)
@@ -184,6 +194,7 @@ void kernel_symmetric_multiprocessing_report(Serial_t *serial)
     kernel_telemetry_write_unsigned("ap_attempted", smp_ap_attempted);
     kernel_telemetry_write_unsigned("ap_delivered", smp_ap_delivered);
     kernel_telemetry_write_unsigned("ap_parked", smp_ap_parked);
+    kernel_telemetry_write_unsigned("ap_unaddressable", smp_ap_unaddressable);
     kernel_telemetry_write_unsigned("shootdowns", advanced_pic_ipi_get_tlb_shootdown_broadcast_count());
     kernel_telemetry_write_unsigned("ranges_unmapped", kernel_vmm_get_unmapped_range_count());
     kernel_telemetry_write_unsigned("device_windows_refused", kernel_vmm_get_device_windows_refused_count());

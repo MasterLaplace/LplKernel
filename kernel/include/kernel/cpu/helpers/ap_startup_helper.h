@@ -31,6 +31,16 @@ extern void write_ap_startup_skipped_ipi_not_ready_info(Serial_t *serial);
 extern void write_ap_startup_skipped_identity_map_unavailable_info(Serial_t *serial);
 extern void write_ap_startup_skipped_trampoline_install_failed_info(Serial_t *serial);
 extern void write_ap_trampoline_installed_info(Serial_t *serial);
+
+/**
+ * @brief Writes that an application processor is refused before any start-up interrupt, since the local APIC mode
+ *        cannot address its identifier: in xAPIC mode, 0xFF and past it.
+ *
+ * @param serial The port written to.
+ * @param entry The refused processor.
+ */
+extern void write_ap_startup_refused_unaddressable_info(Serial_t *serial,
+                                                        const ApplicationProcessorBootstrapEntry_t *entry);
 extern void write_ap_startup_dispatch_info(Serial_t *serial, ApplicationProcessorBootstrapEntry_t *entry,
                                            uint8_t sequence_ok, uint8_t ack_ok, uint8_t c_entry_ok,
                                            uint8_t attempts_used);

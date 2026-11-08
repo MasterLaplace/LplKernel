@@ -37,6 +37,15 @@ void write_ap_trampoline_installed_info(Serial_t *serial)
     serial_write_string(serial, "\n");
 }
 
+void write_ap_startup_refused_unaddressable_info(Serial_t *serial, const ApplicationProcessorBootstrapEntry_t *entry)
+{
+    serial_write_string(serial, "[" KERNEL_SYSTEM_STRING "]: AP startup refused apic_id=");
+    serial_write_int(serial, (int32_t) entry->apic_id);
+    serial_write_string(serial, ", slot=");
+    serial_write_int(serial, (int32_t) entry->logical_slot);
+    serial_write_string(serial, ", reason=apic-mode-cannot-address-identifier\n");
+}
+
 void write_ap_startup_dispatch_info(Serial_t *serial, ApplicationProcessorBootstrapEntry_t *entry, uint8_t sequence_ok,
                                     uint8_t ack_ok, uint8_t c_entry_ok, uint8_t attempts_used)
 {
