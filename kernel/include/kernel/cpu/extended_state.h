@@ -23,6 +23,8 @@
 #ifndef KERNEL_CPU_EXTENDED_STATE_H
 #define KERNEL_CPU_EXTENDED_STATE_H
 
+#include <stdint.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
