@@ -102,4 +102,15 @@ void apic_send_eoi(void);
  */
 bool apic_is_x2apic_active(void);
 
+/**
+ * @brief The local APIC ID of the processor that runs the call, read from its own ID register.
+ *
+ * @details Bits 31:24 of the register in xAPIC mode, all 32 bits in x2APIC mode (Intel SDM vol. 3, 325384-093US,
+ *          §13.4.6 and §13.12.5.1). cpu_topology_get_local_apic_id gives one identifier for every processor; this
+ *          one differs on each.
+ *
+ * @return The identifier.
+ */
+uint32_t apic_get_id(void);
+
 #endif /* KERNEL_CPU_ADVANCED_PROGRAMMABLE_INTERRUPT_CONTROLLER_H */

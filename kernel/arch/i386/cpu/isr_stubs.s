@@ -96,6 +96,25 @@ ISR_NOERR 47    # IRQ15 Secondary ATA / spurious
 ISR_NOERR 64    # 0x40: TLB Shootdown IPI
 ISR_NOERR 128   # 0x80: syscall gate (DPL3)
 
+# ---- Message-signaled interrupt stubs (vectors 0x50-0x6F, #59) -------------
+#
+# A device's MSI-X entry names one of them (kernel/include/kernel/cpu/msi.h);
+# the table below lists them in order, for the IDT.
+
+.irp n, 80,81,82,83,84,85,86,87,88,89,90,91,92,93,94,95,96,97,98,99,100,101,102,103,104,105,106,107,108,109,110,111
+ISR_NOERR \n
+.endr
+
+.section .rodata
+.align 4
+.global interrupt_service_routine_message_signaled_stubs
+interrupt_service_routine_message_signaled_stubs:
+.irp n, 80,81,82,83,84,85,86,87,88,89,90,91,92,93,94,95,96,97,98,99,100,101,102,103,104,105,106,107,108,109,110,111
+    .long isr\n
+.endr
+
+.section .text
+
 # ---- FPU / SSE state save area ---------------------------------------------
 #
 # CR4.OSFXSR is set in boot.S so FXSAVE/FXRSTOR cover all 512 bytes of FPU+SSE

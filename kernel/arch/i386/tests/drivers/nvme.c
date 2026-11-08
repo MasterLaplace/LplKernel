@@ -1,3 +1,5 @@
+#include <kernel/cpu/cpu_topology.h>
+#include <kernel/cpu/msi.h>
 #include <kernel/cpu/pci.h>
 #include <kernel/drivers/nvme.h>
 #include <kernel/memory/pinned_memory.h>
@@ -394,4 +396,128 @@ KERNEL_TEST(three_hundred_reads_are_in_flight_at_once)
     kernel_test_measure(test, "most_in_flight", state->most_in_flight);
     kernel_test_measure(test, "mismatched_bytes", mismatches);
     kernel_pinned_free(data, data_bytes);
+}
+
+/**
+ * @brief Entries of the MSI-X table of the NVM Express controller on the bus, or 0 when it has none.
+ */
+static uint32_t non_volatile_memory_express_test_message_entries(void)
+{
+    const PeripheralComponentInterconnectDevice_t *const device = peripheral_component_interconnect_find_by_class(
+        NON_VOLATILE_MEMORY_EXPRESS_CLASS, NON_VOLATILE_MEMORY_EXPRESS_SUBCLASS);
+    const uint8_t capability =
+        device == NULL ?
+            0u :
+            peripheral_component_interconnect_find_capability(device->bus, device->device, device->function,
+                                                              MESSAGE_SIGNALED_INTERRUPT_CAPABILITY_EXTENDED);
+
+    if (capability == 0u)
+        return 0u;
+    return (peripheral_component_interconnect_config_read_word(device->bus, device->device, device->function,
+                                                               (uint8_t) (capability + 2u)) &
+            0x07FFu) +
+           1u;
+}
+
+/**
+ * @brief The slot pair @p pair must interrupt: the online processors taken in slot order, the pairs dealt round them.
+ */
+static uint32_t non_volatile_memory_express_test_expected_slot(uint32_t pair)
+{
+    const uint32_t online = cpu_topology_get_online_cpu_count();
+    uint32_t rank = online == 0u ? 0u : pair % online;
+
+    for (uint32_t slot = 0u; slot < CPU_TOPOLOGY_MAX_LOGICAL_CPUS_PUBLIC; ++slot)
+        if (cpu_topology_is_logical_slot_online(slot) && rank-- == 0u)
+            return slot;
+    return CPU_TOPOLOGY_NO_SLOT;
+}
+
+/**
+ * @brief Each I/O completion queue interrupts the core it must, and no other: the pairs go round the online
+ *        processors in slot order, so with two of them, pairs 0, 2 and 4 interrupt the first and pairs 1 and 3 the
+ *        second. A pair whose entry lies past the MSI-X table raises no interrupt, and its reads still come back.
+ *
+ * @details `qemu-system-i386 -machine q35 -smp 2 -drive file=<image>,if=none,id=lplnvme,format=raw
+ *          -device nvme,serial=lplnvme0,drive=lplnvme -kernel kernel/lpl.kernel`, the image from
+ *          tools/nvme-test-image.py; `-device nvme,...,msix_qsize=2` leaves pairs 1 to 4 past the table. A
+ *          controller without an MSI-X capability skips it.
+ */
+KERNEL_TEST(each_queue_interrupts_the_core_its_entry_names)
+{
+    uint8_t *const buffer = (uint8_t *) kernel_pinned_alloc(NON_VOLATILE_MEMORY_EXPRESS_TEST_BUFFER_BYTES);
+    const NonVolatileMemoryExpressState_t *const state = non_volatile_memory_express_state();
+    const uint32_t entries = non_volatile_memory_express_test_message_entries();
+    uint32_t before[NON_VOLATILE_MEMORY_EXPRESS_INPUT_OUTPUT_PAIRS][CPU_TOPOLOGY_MAX_LOGICAL_CPUS_PUBLIC] = {{0u}};
+    uint32_t as_expected = 0u;
+    uint32_t aimable = 0u;
+    uint32_t delivered = 0u;
+    uint32_t elsewhere = 0u;
+
+    if (!non_volatile_memory_express_test_on_an_image(test, buffer))
+    {
+        if (buffer != NULL)
+            kernel_pinned_free(buffer, NON_VOLATILE_MEMORY_EXPRESS_TEST_BUFFER_BYTES);
+        return;
+    }
+    kernel_pinned_free(buffer, NON_VOLATILE_MEMORY_EXPRESS_TEST_BUFFER_BYTES);
+    if (entries == 0u)
+    {
+        kernel_test_skip(test, "the controller has no MSI-X capability");
+        return;
+    }
+
+    const uint32_t reads = 2u * NON_VOLATILE_MEMORY_EXPRESS_INPUT_OUTPUT_PAIRS;
+    uint8_t *const data = (uint8_t *) kernel_pinned_alloc(reads * state->block_bytes);
+
+    if (data == NULL)
+    {
+        kernel_test_skip(test, "no pinned memory for ten blocks");
+        return;
+    }
+    for (uint32_t pair = 0u; pair < NON_VOLATILE_MEMORY_EXPRESS_INPUT_OUTPUT_PAIRS; ++pair)
+        for (uint32_t slot = 0u; slot < CPU_TOPOLOGY_MAX_LOGICAL_CPUS_PUBLIC; ++slot)
+            before[pair][slot] = message_signaled_interrupt_count(state->interrupt_vectors[pair], slot);
+    for (uint32_t i = 0u; i < reads; ++i)
+    {
+        non_volatile_memory_express_test_batch[i].first_block = 1u + i;
+        non_volatile_memory_express_test_batch[i].block_count = 1u;
+        non_volatile_memory_express_test_batch[i].buffer = data + i * state->block_bytes;
+    }
+
+    const uint32_t succeeded = non_volatile_memory_express_read_batch(non_volatile_memory_express_test_batch, reads);
+
+    for (uint32_t pair = 0u; pair < NON_VOLATILE_MEMORY_EXPRESS_INPUT_OUTPUT_PAIRS; ++pair)
+    {
+        const bool in_table = 1u + pair < entries;
+        const uint32_t expected =
+            in_table ? non_volatile_memory_express_test_expected_slot(pair) : CPU_TOPOLOGY_NO_SLOT;
+
+        aimable += in_table ? 1u : 0u;
+        as_expected +=
+            (state->interrupt_slots[pair] == expected && (state->interrupt_vectors[pair] != 0u) == in_table) ? 1u : 0u;
+        if (!in_table)
+            continue;
+        for (uint32_t slot = 0u; slot < CPU_TOPOLOGY_MAX_LOGICAL_CPUS_PUBLIC; ++slot)
+        {
+            const uint32_t taken =
+                message_signaled_interrupt_count(state->interrupt_vectors[pair], slot) - before[pair][slot];
+
+            if (slot == expected)
+                delivered += taken != 0u ? 1u : 0u;
+            else
+                elsewhere += taken;
+        }
+    }
+    kernel_pinned_free(data, reads * state->block_bytes);
+    kernel_test_check(test, succeeded == reads, "two reads on each pair came back, interrupting or not");
+    kernel_test_check(test, as_expected == NON_VOLATILE_MEMORY_EXPRESS_INPUT_OUTPUT_PAIRS,
+                      "each pair inside the table was aimed at its core, and each past it was left polled");
+    kernel_test_check(test, state->interrupting_queues == aimable, "the aimed pairs' completion queues interrupt");
+    kernel_test_check(test, delivered == aimable, "each aimed queue's completions interrupted its core");
+    kernel_test_check(test, elsewhere == 0u, "and no other core");
+    kernel_test_measure(test, "online", cpu_topology_get_online_cpu_count());
+    kernel_test_measure(test, "table_entries", entries);
+    kernel_test_measure(test, "aimed_pairs", aimable);
+    kernel_test_measure(test, "interrupts_elsewhere", elsewhere);
 }

@@ -17,7 +17,8 @@
  *
  * The controller is brought out of reset with its admin queue pair, answers Identify for itself
  * and for its first namespace, and takes one I/O queue pair through which namespace 1 is read and
- * written. Everything is polled; no interrupt is used. Everything here is spelled out in
+ * written. Every completion is polled; with MSI-X, each I/O completion queue also interrupts the core its entry
+ * names (#59). Everything here is spelled out in
  *`non_volatile_memory_express_*` per the naming convention; the file name keeps the acronym, which is the documented
  *exemption.
  *
@@ -51,6 +52,8 @@ extern "C" {
 /** Bytes kept of the model number Identify Controller reports, its terminating NUL included. */
 #define NON_VOLATILE_MEMORY_EXPRESS_MODEL_NUMBER_CAPACITY 41u
 
+#define NON_VOLATILE_MEMORY_EXPRESS_INPUT_OUTPUT_PAIRS 5u /**< I/O queue pairs: 5 x 63 commands in flight. */
+
 /**
  * @brief How far the bring-up went, and what the controller said about itself.
  *
@@ -72,8 +75,11 @@ typedef struct NonVolatileMemoryExpressState {
     uint32_t block_bytes;                /**< Bytes in a block of namespace 1. */
     uint32_t maximum_transfer_bytes;     /**< The most one read or write moves. */
     uint32_t most_in_flight;             /**< The most commands a batch had in flight at once. */
-    char serial_number[NON_VOLATILE_MEMORY_EXPRESS_SERIAL_NUMBER_CAPACITY]; /**< Without its padding spaces. */
-    char model_number[NON_VOLATILE_MEMORY_EXPRESS_MODEL_NUMBER_CAPACITY];   /**< Without its padding spaces. */
+    uint32_t interrupting_queues;        /**< I/O completion queues whose completions interrupt a core (MSI-X). */
+    uint8_t interrupt_vectors[NON_VOLATILE_MEMORY_EXPRESS_INPUT_OUTPUT_PAIRS]; /**< Each pair's vector, or 0. */
+    uint32_t interrupt_slots[NON_VOLATILE_MEMORY_EXPRESS_INPUT_OUTPUT_PAIRS]; /**< Its slot, or CPU_TOPOLOGY_NO_SLOT. */
+    char serial_number[NON_VOLATILE_MEMORY_EXPRESS_SERIAL_NUMBER_CAPACITY];   /**< Without its padding spaces. */
+    char model_number[NON_VOLATILE_MEMORY_EXPRESS_MODEL_NUMBER_CAPACITY];     /**< Without its padding spaces. */
 } NonVolatileMemoryExpressState_t;
 
 /**

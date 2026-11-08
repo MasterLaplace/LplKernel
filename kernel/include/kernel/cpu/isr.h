@@ -117,6 +117,14 @@ extern void isr47(void);
 extern void isr64(void);
 extern void isr128(void);
 
+#define INTERRUPT_SERVICE_ROUTINE_MESSAGE_SIGNALED_STUBS 32u /**< The stubs isr_stubs.s lists for message vectors. */
+
+/**
+ * @brief The stubs of the message-signaled vectors, MESSAGE_SIGNALED_INTERRUPT_VECTOR_BASE and on, in order.
+ */
+extern void (*const interrupt_service_routine_message_signaled_stubs[INTERRUPT_SERVICE_ROUTINE_MESSAGE_SIGNALED_STUBS])(
+    void);
+
 /**
  * @brief Register a handler for a given interrupt vector.
  *
