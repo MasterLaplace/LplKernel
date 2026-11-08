@@ -197,6 +197,27 @@ extern bool input_output_advanced_programmable_interrupt_controller_redirection_
                                                                                          uint8_t *out_register);
 
 /**
+ * @brief The inputs, among the @p declared ones of an I/O APIC, that a redirection register reaches.
+ *
+ * @details The version register declares up to 256 inputs in its 8-bit Maximum Redirection Entry field, while the
+ *          8-bit register index reaches entry 0x77 at most (Intel 82093AA datasheet, §3.1.1 and §3.2.4). The routing
+ *          scaffold keeps these inputs only, so a Global System Interrupt past them belongs to no unit and no route
+ *          reaches it.
+ *
+ * @param declared The inputs the version register declares.
+ * @return @p declared, or 120, the inputs of entries 0 to 0x77, when it declares more.
+ */
+extern uint32_t input_output_advanced_programmable_interrupt_controller_reachable_inputs(uint32_t declared);
+
+/**
+ * @brief How many inputs the mapped I/O APICs declare past the last entry their register index reaches, at the
+ *        routing scaffold's last run.
+ *
+ * @return The inputs left out, which no route reaches.
+ */
+extern uint32_t input_output_advanced_programmable_interrupt_controller_get_unreachable_inputs(void);
+
+/**
  * @brief Routes the interrupt pin of PCI function @p device through its I/O APIC line to the processor of logical slot
  *        @p slot with @p vector, and unmasks the line.
  *

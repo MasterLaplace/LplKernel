@@ -43,6 +43,7 @@ static const char *io_apic_state_name = "ioapic-not-initialized";
 static uint8_t io_apic_mapped_count = 0u;
 static uint8_t io_apic_route_count = 0u;
 static uint32_t io_apic_lines_refused = 0u;
+static uint32_t io_apic_unreachable_inputs = 0u; /**< Inputs declared past the last entry the register index reaches. */
 static InputOutputApicUnit_t io_apic_units[INPUT_OUTPUT_APIC_MAX_COUNT] = {0};
 static InputOutputApicRouteInfo_t io_apic_routes[INPUT_OUTPUT_APIC_MAX_ROUTES] = {0};
 
@@ -349,6 +350,7 @@ void input_output_advanced_programmable_interrupt_controller_initialize_routing_
     io_apic_mapped_count = 0u;
     io_apic_route_count = 0u;
     io_apic_lines_refused = 0u;
+    io_apic_unreachable_inputs = 0u;
     io_apic_device_line_count = 0u;
 
     for (uint8_t index = 0u; index < INPUT_OUTPUT_APIC_MAX_COUNT; ++index)
@@ -398,7 +400,11 @@ void input_output_advanced_programmable_interrupt_controller_initialize_routing_
             return;
         }
 
-        unit->redirection_entry_count = io_apic_extract_redirection_count(unit->virtual_base);
+        const uint32_t declared = io_apic_extract_redirection_count(unit->virtual_base);
+
+        unit->redirection_entry_count =
+            input_output_advanced_programmable_interrupt_controller_reachable_inputs(declared);
+        io_apic_unreachable_inputs += declared - unit->redirection_entry_count;
         (void) io_apic_register_read(unit->virtual_base, IOAPIC_REGISTER_ID);
         io_apic_mapped_count++;
     }
@@ -612,6 +618,16 @@ bool input_output_advanced_programmable_interrupt_controller_redirection_registe
         return false;
     *out_register = (uint8_t) (IOAPIC_REGISTER_REDIRECT + entry * 2u);
     return true;
+}
+
+uint32_t input_output_advanced_programmable_interrupt_controller_reachable_inputs(uint32_t declared)
+{
+    return declared <= IOAPIC_LAST_REACHABLE_ENTRY + 1u ? declared : IOAPIC_LAST_REACHABLE_ENTRY + 1u;
+}
+
+uint32_t input_output_advanced_programmable_interrupt_controller_get_unreachable_inputs(void)
+{
+    return io_apic_unreachable_inputs;
 }
 
 bool input_output_advanced_programmable_interrupt_controller_route_device(
