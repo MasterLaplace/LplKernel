@@ -9,6 +9,7 @@ Usage: tools/acpi/corpus.sh fetch [quick|corpus|full|acpica|qemu|uacpi]
        tools/acpi/corpus.sh closure [quick|corpus|full|qemu]
        tools/acpi/corpus.sh initialize [quick|corpus|full|qemu]
        tools/acpi/corpus.sh idle [quick|corpus|full]
+       tools/acpi/corpus.sh routing [quick|corpus|full]
        tools/acpi/corpus.sh slack [quick|corpus|full]
        tools/acpi/corpus.sh load [quick|corpus|full]
        tools/acpi/corpus.sh differential [quick|corpus|full] [<mutants>]
@@ -75,6 +76,11 @@ pinned commit into build/acpi-corpus/, never committed and never put in an image
          decoded MADT, their states from the _CST acpiexec evaluates after the same handshake, given the
          tables the initialisation ended with and the same presets; a machine where acpiexec stops before an
          evaluation it was given is counted apart
+  routing  initialises each machine of a list with `test-acpi --loaded`, its presets given, then compares the
+         PCI interrupt routes it publishes with those tools/acpi/oracles/acpiexec_routing.py works out apart from
+         the kernel's code, in the sandbox of tools/acpi/sandbox.sh: the root bridges and their _PRT entries from
+         what acpiexec evaluates once told the APIC model, the links they name decoded from their _PRS and _CRS,
+         given the tables the initialisation ended with and the same presets (specification §3.11)
   slack  initialises each machine of a list with `test-acpi --loaded`, its presets given; then
          tools/acpi/oracles/acpiexec_slack.py has acpiexec evaluate the needs path a host can ask it for, in the
          order of §3.8, on the tables the initialisation ended with, once as acpiexec runs and once in its
@@ -398,13 +404,13 @@ initialize_check() {
             continue
         fi
         modes+="$(grep '^aml mode ' "$output")"$'\n'
-        counts+="$(grep -E '^aml (init|idle|load) |^aml run (tables|limits|pci) ' "$output")"$'\n'
+        counts+="$(grep -E '^aml (init|idle|load|prt) |^aml run (tables|limits|pci) ' "$output")"$'\n'
         echo "ok $number $subject: $(grep '^aml init initializations=' "$output" | cut -d' ' -f3-)"
     done < <(if [[ "$1" == qemu ]]; then qemu_configurations; else reports "$1"; fi)
     rm -f "$output"
     echo -n "# initialization of $((number - failed)) of $number:"
     for key in initializations initialization_failed registrations region_registration_failed devices \
-        status_evaluations status_failed status_invalid pic_mode_deferred processor_capabilities \
+        status_evaluations status_failed status_invalid pic_mode_deferred pic_mode_told pic_mode_failed processor_capabilities \
         processor_capabilities_legacy processor_capabilities_refused processor_capabilities_failed processors_unbound \
         late_initializations; do
         echo -n " $key=$(grep '^aml init initializations=' <<<"$counts" | grep -o " $key=[0-9]*" | cut -d= -f2 |
@@ -433,6 +439,14 @@ initialize_check() {
         echo -n " $key=$(grep '^aml idle control=' <<<"$counts" | grep -o " $key=[0-9]*" | cut -d= -f2 | paste -sd+ | bc)"
     done
     echo
+    echo -n "# PCI interrupt routing of"
+    for key in bridges bridges_absent bridges_unrouted tables_failed entries entries_malformed entries_dropped links \
+        links_unrouted links_failed routes; do
+        echo -n " $key=$(grep '^aml prt model=' <<<"$counts" | grep -o " $key=[0-9]*" | cut -d= -f2 | paste -sd+ | bc)"
+    done
+    echo
+    echo "# PCI interrupt routing, machines per model:" \
+        $(grep -o '^aml prt model=[a-z]*' <<<"$counts" | cut -d= -f2 | sort | uniq -c | awk '{ printf " %s=%s", $2, $1 }')
     echo "# step 0, machines per outcome:" \
         $(grep -o '^aml mode outcome=[a-z-]*' <<<"$modes" | cut -d= -f2 | sort | uniq -c | awk '{ printf " %s=%s", $2, $1 }')
     echo "# CST_CNT, machines per outcome:" \
@@ -791,6 +805,36 @@ idle_check() {
     echo "# idle: $agree of $((number - stopped)) agree with acpiexec, $slots CPU slots and $states states, $none" \
         "publishing none on both sides; acpiexec stops before the evaluations it was given on $stopped"
     [[ "$agree" -eq $((number - stopped)) ]]
+}
+
+# Compares the PCI interrupt routes each machine of the list $1 publishes with those
+# tools/acpi/oracles/acpiexec_routing.py works out apart from the kernel's code, run in the sandbox, from what acpiexec
+# evaluates on the tables the initialisation ended with, told the APIC model (specification §3.11).
+routing_check() {
+    [[ -x "$ACPICA_BIN/acpiexec" ]] || { echo "routing: no acpiexec, run fetch acpica first" >&2; exit 1; }
+    (cd "$ROOT" && xmake build -q test-acpi)
+    local number=0 agree=0 none=0 routes=0 subject ours theirs tables
+    ours="$(mktemp)" theirs="$(mktemp)" tables="$(mktemp -d)"
+    while IFS= read -r subject; do
+        number=$((number + 1))
+        rm -rf "${tables:?}"/*
+        "$HARNESS" --loaded "$LINUXHW/$subject.bin" "$PRESETS" "$tables" 2>&1 | grep -E '^aml route ' >"$ours" || true
+        cp "$PRESETS" "$tables/presets.txt"
+        "$ROOT/tools/acpi/sandbox.sh" "$tables" /usr/bin/python3 -I "$ROOT/tools/acpi/oracles/acpiexec_routing.py" \
+            "$ACPICA_BIN" "$tables/presets.txt" $(ls "$tables"/*.dat | sort) >"$theirs" 2>&1 || true
+        if cmp -s "$ours" "$theirs"; then
+            agree=$((agree + 1))
+            [[ -s "$ours" ]] || none=$((none + 1))
+            routes=$((routes + $(grep -c '^aml route ' "$ours" || true)))
+            echo "ok $number $subject"
+        else
+            echo "not ok $number $subject"
+            diff "$ours" "$theirs" | head -8 | sed 's/^/    # /' || true
+        fi
+    done < <(reports "$1")
+    rm -rf "$ours" "$theirs" "$tables"
+    echo "# routing: $agree of $number agree with acpiexec, $routes routes, $none publishing none on both sides"
+    [[ "$number" -gt 0 && "$agree" -eq "$number" ]]
 }
 
 # Prints, over the `aml run limits` lines of the runs $1, the times each limit of §6.1 was reached, summed, and the
@@ -1272,6 +1316,7 @@ case "${1:-}" in
     closure) [[ "${2:-corpus}" == qemu ]] || known_list "${2:-corpus}"; closure_table "${2:-corpus}" ;;
     initialize) [[ "${2:-corpus}" == qemu ]] || known_list "${2:-corpus}"; initialize_check "${2:-corpus}" ;;
     idle) known_list "${2:-corpus}"; idle_check "${2:-corpus}" ;;
+    routing) known_list "${2:-corpus}"; routing_check "${2:-corpus}" ;;
     slack) known_list "${2:-corpus}"; slack_check "${2:-corpus}" ;;
     load) known_list "${2:-corpus}"; load_check "${2:-corpus}" ;;
     differential) known_list "${2:-corpus}"; differential_check "${2:-corpus}" "${3:-0}" ;;
