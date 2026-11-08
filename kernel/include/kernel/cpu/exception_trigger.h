@@ -61,4 +61,21 @@ extern void exception_trigger_general_protection(void);
  */
 extern void exception_trigger_double_fault_vector(void);
 
+/**
+ * @brief Raises #BP with INT3 while XMM0-XMM7 hold @p held, then copies what they hold once it returned to @p out.
+ *
+ * @details No C code runs between the loads, INT3 and the stores, so the copy is what the interrupt handed back.
+ *
+ * @param held 128 bytes, XMM0 first.
+ * @param out  128 bytes, XMM0 first.
+ */
+extern void exception_trigger_breakpoint_holding_vector_registers(const void *held, void *out);
+
+/**
+ * @brief Loads @p values into XMM0-XMM7, as a handler that uses them would change them.
+ *
+ * @param values 128 bytes, XMM0 first.
+ */
+extern void exception_trigger_fill_vector_registers(const void *values);
+
 #endif /* !KERNEL_CPU_EXCEPTION_TRIGGER_H_ */

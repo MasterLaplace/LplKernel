@@ -118,14 +118,11 @@ interrupt_service_routine_message_signaled_stubs:
 # ---- FPU / SSE state save area ---------------------------------------------
 #
 # CR4.OSFXSR is set in boot.S so FXSAVE/FXRSTOR cover all 512 bytes of FPU+SSE
-# state (x87 + MMX + XMM0-XMM7 + MXCSR). Single static buffer — one CPU for now.
+# state (x87 + MMX + XMM0-XMM7 + MXCSR). Each interrupt saves it on its own
+# stack, below the frame, aligned to the 16 bytes FXSAVE needs: two CPUs in the
+# stub at once, or a fault taken inside a handler, each restore their own (#560).
 
-.section .bss
-.align 16
-isr_fpu_save_area:
-    .skip 512
-
-.section .text
+.set ISR_FPU_SAVE_AREA_SIZE, 512
 
 # ---- Common ISR stub ------------------------------------------------------
 #
@@ -145,6 +142,12 @@ isr_fpu_save_area:
 #   [esp+36]  int_no
 #   [esp+40]  err_code
 #   [esp+44]  eip, cs, eflags  (CPU pushed)
+#
+# Below the frame, at the call to the dispatcher (high→low):
+#
+#   0 to 15 bytes      left by aligning the save area down to 16
+#   512 bytes          this interrupt's FXSAVE area, 16-aligned
+#   12 bytes, then 4   padding, then the frame pointer: ESP is 16-aligned at the call
 
 .type isr_common_stub, @function
 isr_common_stub:
@@ -159,13 +162,18 @@ isr_common_stub:
     movw %ax, %fs
     movw %ax, %gs
 
-    fxsave isr_fpu_save_area    # preserve x87/MMX/XMM0-7/MXCSR across C dispatch
+    movl  %esp, %ebx            # the InterruptFrame_t; EBX survives the call (cdecl)
+    subl  $ISR_FPU_SAVE_AREA_SIZE, %esp
+    andl  $-16, %esp            # this interrupt's save area, below the frame
+    fxsave (%esp)               # preserve x87/MMX/XMM0-7/MXCSR across C dispatch
 
-    pushl %esp                  # pass pointer to InterruptFrame_t as argument
+    subl  $12, %esp             # 16-aligned at the call, as the System V i386 ABI asks
+    pushl %ebx                  # pass pointer to InterruptFrame_t as argument
     call  interrupt_service_routine_dispatch
-    addl  $4, %esp              # discard argument
+    addl  $16, %esp             # discard argument and padding
 
-    fxrstor isr_fpu_save_area   # restore FPU/SSE state
+    fxrstor (%esp)              # restore this interrupt's FPU/SSE state
+    movl  %ebx, %esp            # back to the frame
 
     popl  %eax                  # restore original data segment
     movw %ax, %ds

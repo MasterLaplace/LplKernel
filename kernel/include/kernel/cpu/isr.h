@@ -29,7 +29,7 @@
 #include <stdint.h>
 
 /**
- * @brief CPU interrupt frame — layout of the stack when dispatch is called.
+ * @brief CPU interrupt frame — layout of the frame the dispatcher receives a pointer to.
  *
  * The `isr_common_stub` (isr_stubs.s) builds this frame in two phases:
  *   1. The stub macro pushes: err_code (or dummy 0) + int_no
