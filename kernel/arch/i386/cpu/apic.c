@@ -185,6 +185,8 @@ void apic_send_eoi(void) { apic_write(LAPIC_REG_EOI, 0u); }
 
 bool apic_is_x2apic_active(void) { return g_x2apic_active; }
 
+bool apic_is_running(void) { return g_x2apic_active || g_apic_mmio_base != 0u; }
+
 uint32_t apic_get_id(void)
 {
     const uint32_t identifier = apic_read(LAPIC_REG_ID);

@@ -1,3 +1,4 @@
+#include <kernel/cpu/apic.h>
 #include <kernel/cpu/cpu_topology.h>
 
 #define CPU_TOPOLOGY_CPUID_LEAF_MAXIMUM           0x00000000u
@@ -97,6 +98,15 @@ static void cpu_topology_detect_from_cpuid(void)
     (void) cpu_topology_register_apic_id_internal(cpu_topology_local_apic_id);
 }
 
+/**
+ * @brief The APIC ID of the processor that runs the call: its own ID register once the local APICs run, and before that
+ *        the identifier recorded at boot, the bootstrap processor's, the only processor running then.
+ */
+static uint32_t cpu_topology_running_processor_apic_id(void)
+{
+    return apic_is_running() ? apic_get_id() : cpu_topology_local_apic_id;
+}
+
 void cpu_topology_initialize(void)
 {
     cpu_topology_reset_discovery();
@@ -117,11 +127,10 @@ uint32_t cpu_topology_get_logical_slot(void)
     if (cpu_topology_forced_slot_enabled)
         return cpu_topology_forced_slot;
 
-    if (cpu_topology_apic_id_valid)
-        return cpu_topology_register_apic_id_internal(cpu_topology_local_apic_id);
+    if (!cpu_topology_apic_id_valid)
+        return 0u;
 
-    (void) cpu_topology_initialized;
-    return 0u;
+    return cpu_topology_get_slot_for_apic_id(cpu_topology_running_processor_apic_id());
 }
 
 uint32_t cpu_topology_register_discovered_apic_id(uint32_t apic_id)

@@ -176,6 +176,17 @@ void apic_send_eoi(void);
 bool apic_is_x2apic_active(void);
 
 /**
+ * @brief Whether apic_initialize_on_cpu has run on the bootstrap processor, after which apic_read and apic_get_id read
+ *        the local APIC of the processor that runs the call.
+ *
+ * @details No other processor runs before that call: each is started through the bootstrap processor's local APIC, and
+ *          runs apic_initialize_on_cpu before any code that reads its own register.
+ *
+ * @return true once the bootstrap processor's local APIC is reachable, through MMIO or its x2APIC registers.
+ */
+bool apic_is_running(void);
+
+/**
  * @brief The local APIC ID of the processor that runs the call, read from its own ID register.
  *
  * @details Bits 31:24 of the register in xAPIC mode, all 32 bits in x2APIC mode (Intel SDM vol. 3, 325384-093US,
