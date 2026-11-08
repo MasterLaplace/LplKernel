@@ -20,15 +20,11 @@ KERNEL_TEST_SUITE(extended_state, KERNEL_TEST_STAGE_PUBLISHED);
 #define EXTENDED_STATE_TEST_CR0_NE            (1u << 5u)  /**< CR0.NE: x87 errors raise #MF rather than FERR#. */
 #define EXTENDED_STATE_TEST_CR4_OSXSAVE       (1u << 18u) /**< CR4.OSXSAVE: XSAVE, XGETBV and XSETBV are enabled. */
 #define EXTENDED_STATE_TEST_CPUID_XSAVE       (1u << 26u) /**< CPUID.1:ECX.XSAVE. */
-#define EXTENDED_STATE_TEST_X87               0x01u       /**< XCR0 bit 0, which is always set. */
-#define EXTENDED_STATE_TEST_SSE               0x02u       /**< XCR0 bit 1. */
-#define EXTENDED_STATE_TEST_AVX               0x04u       /**< XCR0 bit 2. */
-#define EXTENDED_STATE_TEST_AVX_512           0xE0u       /**< XCR0 bits 5 to 7: opmask, ZMM_Hi256, Hi16_ZMM. */
 #define EXTENDED_STATE_TEST_FCW_AFTER_FNINIT                                                                           \
     0x037Fu /**< The x87 control word FNINIT leaves: every exception masked, double extended precision, round to       \
-                 nearest (Intel SDM vol. 1, 253665-087US, Table 8-4). */
+                 nearest (Intel SDM vol. 1, 253665-093US, §8.1.5). */
 #define EXTENDED_STATE_TEST_MXCSR_DEFAULT                                                                              \
-    0x1F80u /**< The MXCSR after a reset: every exception masked, round to nearest (Intel SDM vol. 1, §10.2.3). */
+    0x1F80u /**< The MXCSR after a reset: every exception masked, round to nearest (Intel SDM vol. 1, Table 11-2). */
 #define EXTENDED_STATE_TEST_MXCSR_FLAGS                                                                                \
     0x3Fu /**< The six exception flags of the MXCSR, which SSE arithmetic sets and only software clears. */
 #define EXTENDED_STATE_TEST_FXSAVE_BYTES 512u    /**< The FXSAVE image. */
@@ -50,7 +46,7 @@ typedef struct {
     uint64_t extended_control_register_0; /**< XCR0, or 0 when CR4.OSXSAVE is clear. */
     uint32_t floating_point_control_word; /**< The x87 control word. */
     uint32_t simd_control_status;         /**< MXCSR. */
-    volatile uint32_t answered;           /**< Non-zero once the fields above are written. */
+    uint32_t answered; /**< Non-zero once the fields above are written, stored with release, read with acquire. */
 } ExtendedStateTestReading_t;
 
 /** What each slot's processor read, indexed by the slot its own APIC ID register names. */
@@ -83,7 +79,7 @@ __attribute__((target("fxsr"))) static void extended_state_test_read(ExtendedSta
                                    ((uint32_t) image[EXTENDED_STATE_TEST_FXSAVE_MXCSR + 1u] << 8u) |
                                    ((uint32_t) image[EXTENDED_STATE_TEST_FXSAVE_MXCSR + 2u] << 16u) |
                                    ((uint32_t) image[EXTENDED_STATE_TEST_FXSAVE_MXCSR + 3u] << 24u);
-    reading->answered = 1u;
+    __atomic_store_n(&reading->answered, 1u, __ATOMIC_RELEASE);
 }
 
 /**
@@ -127,23 +123,15 @@ static bool extended_state_test_offers_xsave(void)
 }
 
 /**
- * @brief The XCR0 the kernel enables: of the components CPUID leaf 0xD offers, x87, SSE, AVX and the three AVX-512
- *        ones, each only with those XSETBV requires it with (Intel SDM vol. 1, §13.3).
+ * @brief The XCR0 the kernel enables on this processor, from the components CPUID leaf 0xD offers; the rule itself is
+ *        checked against values computed by hand, in the_components_xcr0_enables_follow_the_rules_of_xsetbv.
  */
 static uint64_t extended_state_test_expected_xcr0(void)
 {
     uint32_t offered = 0u;
-    uint32_t components;
 
     asmutils_cpuid(0xDu, 0u, &offered, NULL, NULL, NULL);
-    components = offered & (EXTENDED_STATE_TEST_X87 | EXTENDED_STATE_TEST_SSE | EXTENDED_STATE_TEST_AVX |
-                            EXTENDED_STATE_TEST_AVX_512);
-    if ((components & EXTENDED_STATE_TEST_SSE) == 0u)
-        components &= ~(EXTENDED_STATE_TEST_AVX | EXTENDED_STATE_TEST_AVX_512);
-    if ((components & EXTENDED_STATE_TEST_AVX) == 0u ||
-        (components & EXTENDED_STATE_TEST_AVX_512) != EXTENDED_STATE_TEST_AVX_512)
-        components &= ~EXTENDED_STATE_TEST_AVX_512;
-    return (uint64_t) (components | EXTENDED_STATE_TEST_X87);
+    return (uint64_t) extended_state_components_to_enable(offered);
 }
 
 /**
@@ -173,13 +161,14 @@ static bool extended_state_test_ask(uint32_t slot, uint8_t vector)
 {
     InterruptRequestDeadline_t deadline;
 
-    extended_state_test_readings[slot].answered = 0u;
+    __atomic_store_n(&extended_state_test_readings[slot].answered, 0u, __ATOMIC_RELAXED);
     if (advanced_pic_ipi_send_fixed(cpu_topology_get_apic_id_at_slot(slot), vector, ADVANCED_PIC_IPI_SHORT_NONE) == 0u)
         return false;
     interrupt_request_deadline_start(&deadline, EXTENDED_STATE_TEST_WAIT_MICROSECONDS);
-    while (extended_state_test_readings[slot].answered == 0u && !interrupt_request_deadline_passed(&deadline))
+    while (__atomic_load_n(&extended_state_test_readings[slot].answered, __ATOMIC_ACQUIRE) == 0u &&
+           !interrupt_request_deadline_passed(&deadline))
         asmutils_pause();
-    return extended_state_test_readings[slot].answered != 0u;
+    return __atomic_load_n(&extended_state_test_readings[slot].answered, __ATOMIC_ACQUIRE) != 0u;
 }
 
 /**
@@ -210,8 +199,11 @@ KERNEL_TEST(every_processor_runs_from_the_known_extended_state)
     kernel_test_check(test, extended_state_test_is_known(&extended_state_test_readings[here], xsave, expected_xcr0),
                       "the bootstrap processor runs from the known state");
     kernel_test_measure(test, "cr0", extended_state_test_readings[here].control_register_0);
-    kernel_test_measure(test, "xcr0", (uint32_t) extended_state_test_readings[here].extended_control_register_0);
-    kernel_test_measure(test, "expected_xcr0", (uint32_t) expected_xcr0);
+    if (xsave)
+    {
+        kernel_test_measure(test, "xcr0", (uint32_t) extended_state_test_readings[here].extended_control_register_0);
+        kernel_test_measure(test, "expected_xcr0", (uint32_t) expected_xcr0);
+    }
     kernel_test_measure(test, "xsave", xsave ? 1u : 0u);
     kernel_test_measure(test, "fcw", extended_state_test_readings[here].floating_point_control_word);
     kernel_test_measure(test, "mxcsr", extended_state_test_readings[here].simd_control_status);
@@ -272,4 +264,28 @@ KERNEL_TEST(initialising_a_processor_resets_its_x87_and_simd_controls)
                           after.control_register_4 == before.control_register_4 &&
                           after.extended_control_register_0 == before.extended_control_register_0,
                       "its control registers and XCR0 stay as they were");
+}
+
+/**
+ * @brief XCR0 keeps, of the components a processor offers, x87, SSE, AVX and the three AVX-512 ones, each only with
+ *        those XSETBV requires it with, on any processor: the AVX-512 rule runs here though no machine at hand has it.
+ *
+ * @details Each expected value is worked out by hand from the Intel SDM vol. 1, 253665-093US, §13.3: bit 0 is always
+ *          set, bit 2 needs bit 1, and bits 5 to 7 go together, with bits 1 and 2. A wrong XCR0 makes XSETBV raise #GP
+ *          before the IDT is loaded, and the machine restarts without a word on the serial port.
+ */
+KERNEL_TEST(the_components_xcr0_enables_follow_the_rules_of_xsetbv)
+{
+    static const uint32_t offered[] = {0x000u, 0x001u, 0x003u, 0x007u, 0x005u,   0x0E7u,
+                                       0x067u, 0x0E3u, 0x2FFu, 0x0FFu, 0x60007u, 0x0E5u};
+    static const uint32_t enabled[] = {0x001u, 0x001u, 0x003u, 0x007u, 0x001u, 0x0E7u,
+                                       0x007u, 0x003u, 0x0E7u, 0x0E7u, 0x007u, 0x001u};
+    const uint32_t cases = sizeof(offered) / sizeof(offered[0]);
+    uint32_t agreeing = 0u;
+
+    for (uint32_t index = 0u; index < cases; ++index)
+        agreeing += extended_state_components_to_enable(offered[index]) == enabled[index] ? 1u : 0u;
+    kernel_test_check(test, agreeing == cases, "each offered set gives the XCR0 worked out by hand");
+    kernel_test_measure(test, "cases", cases);
+    kernel_test_measure(test, "agreeing", agreeing);
 }

@@ -38,22 +38,6 @@ static uint32_t extended_state_compacted_bytes = EXTENDED_STATE_FXSAVE_BYTES;   
 static uint32_t extended_state_enabled_components = 0u;                          /**< What XCR0 enables. */
 
 /**
- * @brief The components XCR0 enables among the @p offered ones: x87, SSE, AVX and the three AVX-512 ones, each only
- *        with those XSETBV requires it with.
- */
-static uint32_t extended_state_components_to_enable(uint32_t offered)
-{
-    uint32_t components =
-        offered & (EXTENDED_STATE_X87 | EXTENDED_STATE_SSE | EXTENDED_STATE_AVX | EXTENDED_STATE_AVX_512);
-
-    if ((components & EXTENDED_STATE_SSE) == 0u)
-        components &= ~(EXTENDED_STATE_AVX | EXTENDED_STATE_AVX_512);
-    if ((components & EXTENDED_STATE_AVX) == 0u || (components & EXTENDED_STATE_AVX_512) != EXTENDED_STATE_AVX_512)
-        components &= ~EXTENDED_STATE_AVX_512;
-    return components | EXTENDED_STATE_X87;
-}
-
-/**
  * @brief Records which saves the processor offers and the sizes of their areas, once XCR0 enables @p components:
  *        CPUID leaf 0xD gives the sizes for the components enabled then. IA32_XSS is cleared first where XSAVES
  *        exists, so XSAVES saves no supervisor component.
@@ -70,7 +54,8 @@ static void extended_state_record_saves(uint32_t components)
     asmutils_cpuid(EXTENDED_STATE_CPUID_COMPONENTS, 0u, NULL, &standard_bytes, NULL, NULL);
     asmutils_cpuid(EXTENDED_STATE_CPUID_COMPONENTS, EXTENDED_STATE_CPUID_SAVES, NULL, &compacted_bytes, NULL, NULL);
     extended_state_offered_saves =
-        (1u << EXTENDED_STATE_SAVE_FXSAVE) | (1u << EXTENDED_STATE_SAVE_XSAVE) |
+        ((components & ~(EXTENDED_STATE_X87 | EXTENDED_STATE_SSE)) == 0u ? 1u << EXTENDED_STATE_SAVE_FXSAVE : 0u) |
+        (1u << EXTENDED_STATE_SAVE_XSAVE) |
         ((saves & EXTENDED_STATE_CPUID_XSAVEOPT) != 0u ? 1u << EXTENDED_STATE_SAVE_XSAVEOPT : 0u) |
         ((saves & EXTENDED_STATE_CPUID_XSAVES) != 0u ? 1u << EXTENDED_STATE_SAVE_XSAVES : 0u);
     extended_state_standard_bytes = standard_bytes;
@@ -108,6 +93,18 @@ static void extended_state_write_bytes(uint8_t *at, uint64_t value, uint32_t byt
 __attribute__((target("sse"))) static void extended_state_load_default_simd_control(void)
 {
     __builtin_ia32_ldmxcsr(EXTENDED_STATE_MXCSR_DEFAULT);
+}
+
+uint32_t extended_state_components_to_enable(uint32_t offered)
+{
+    uint32_t components =
+        offered & (EXTENDED_STATE_X87 | EXTENDED_STATE_SSE | EXTENDED_STATE_AVX | EXTENDED_STATE_AVX_512);
+
+    if ((components & EXTENDED_STATE_SSE) == 0u)
+        components &= ~(EXTENDED_STATE_AVX | EXTENDED_STATE_AVX_512);
+    if ((components & EXTENDED_STATE_AVX) == 0u || (components & EXTENDED_STATE_AVX_512) != EXTENDED_STATE_AVX_512)
+        components &= ~EXTENDED_STATE_AVX_512;
+    return components | EXTENDED_STATE_X87;
 }
 
 void extended_state_initialize_on_this_processor(void)
