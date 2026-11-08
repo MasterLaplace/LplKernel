@@ -396,6 +396,8 @@ KERNEL_TEST(an_interrupt_descriptor_names_its_interrupts_and_how_they_signal)
     static const uint8_t shared_high[] = {0x23u, 0x00u, 0x02u, 0x10u, 0x79u, 0x00u};
     static const uint8_t extended[] = {0x89u, 0x0Au, 0x00u, 0x07u, 0x02u, 0x11u, 0x00u,
                                        0x00u, 0x00u, 0x00u, 0x01u, 0x00u, 0x00u, 0x79u};
+    static const uint8_t extended_level_low[] = {0x89u, 0x06u, 0x00u, 0x05u, 0x01u, 0x14u, 0x00u, 0x00u, 0x00u, 0x79u};
+    static const uint8_t extended_edge_high[] = {0x89u, 0x06u, 0x00u, 0x03u, 0x01u, 0x15u, 0x00u, 0x00u, 0x00u, 0x79u};
     static const uint8_t truncated[] = {0x89u, 0x06u, 0x00u, 0x09u, 0x02u, 0x11u, 0x00u, 0x00u, 0x00u};
     static const uint8_t register_descriptor[] = {0x82u, 0x0Cu, 0x00u, 0x7Fu, 0x01u, 0x02u, 0x01u, 0x00u,
                                                   0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u};
@@ -425,6 +427,13 @@ KERNEL_TEST(an_interrupt_descriptor_names_its_interrupts_and_how_they_signal)
                           routing_test_names(&resource, 1u, 0x100u, false, true) &&
                           !advanced_configuration_and_power_interface_resources_interrupt(&resource, 2u, &interrupt),
                       "Interrupt (Edge, ActiveLow) {17, 256}: both numbers, nothing third");
+    kernel_test_check(test,
+                      routing_test_descriptor(extended_level_low, sizeof(extended_level_low), &resource) &&
+                          routing_test_names(&resource, 0u, 20u, true, true) &&
+                          routing_test_descriptor(extended_edge_high, sizeof(extended_edge_high), &resource) &&
+                          routing_test_names(&resource, 0u, 21u, false, false),
+                      "the trigger is bit 1 and the polarity bit 2: Interrupt (Level, ActiveLow) {20} and Interrupt "
+                      "(Edge, ActiveHigh) {21}");
     kernel_test_check(test,
                       routing_test_descriptor(truncated, sizeof(truncated), &resource) &&
                           !advanced_configuration_and_power_interface_resources_interrupt(&resource, 0u, &interrupt),
