@@ -11,20 +11,24 @@ written by hand, and exits 1 when one differs.
 The tables are those `test-acpi --loaded` writes, the DSDT first. acpiexec loads them without running them to list the
 namespace (tools/acpi/oracles/acpiexec_namespace.py). Its debugger buffer holds 16 KiB, which a _PRT of 128 entries
 overflows, so an SSDT written and compiled here with the pinned iasl gives each Device that holds a _PRT two methods:
-one the count of its entries, one an entry by its index. A first run, with region fill 0, no repair of return values
-and the presets as NVS values (`-fv 0 -dr -fi nvs.txt`), which runs _REG, _STA and _INI, evaluates `\\_PIC 1`, then
-the _HID, _CID, _STA, _SEG and _BBN of each such Device, then its entries, and lists the namespace, whose node addresses
-tell which link an entry names. A second run evaluates `\\_PIC 1` again, then the _HID, _CID, _STA, _PRS and _CRS of
-each link.
+one the count of its entries, one an entry by its index. Each run has region fill 0, no repair of return values and
+the presets as NVS values (`-fv 0 -dr -fi nvs.txt`), runs _REG, _STA and _INI, and evaluates `\\_PIC 1` first. The
+first evaluates the _HID, _CID, _STA, _SEG and _BBN of each such Device, the _STA of each Device above it, and the count
+of its entries; the second its entries, then lists the namespace, whose node addresses tell which link an entry names;
+the third the _HID, _CID, _STA, _PRS and _CRS of each link.
 
-A root bridge is a Device whose _HID or _CID names PNP0A03 or PNP0A08, as an EisaId or a String; its _PRT is read when
-its _STA, 0x0F without one, says present or functioning, and one that fails keeps it out. An entry is a Package of four:
-an Integer Address whose bits 16 to 31 name a device below 32, an Integer Pin below 4, a Source and an Integer
-SourceIndex. A Source that is an Integer wires the pin to the SourceIndex, level-triggered and active-low. A Source that
-references a Device names a link, read when the SourceIndex is 0: present or functioning by its _STA, whose _HID or _CID
-names PNP0C0F; its current interrupt the first one of the first IRQ or Extended Interrupt descriptor of its _CRS that
-names one; kept when the first such descriptor of its _PRS lists it, 0 never listed, with that descriptor's trigger
-and polarity. Anything else is no route.
+A root bridge is a Device whose _HID or _CID names PNP0A03, as an EisaId or a String; its _PRT is read when its _STA,
+0x0F without one, and that of each Device above it say present or functioning, one that fails keeping it out, and when
+its _SEG and _BBN, 0 without one, do not fail. An entry is a Package of four: an Integer Address whose bits 16 to 31
+name a device below 32, an Integer Pin below 4, a Source and an Integer SourceIndex, the two read swapped when the
+SourceIndex is no Integer, as ACPICA repairs a _PRT, which `-dr` and the helper's names keep acpiexec from doing. A
+Source that is an Integer wires the pin to the SourceIndex, level-triggered and active-low. A Source that references a
+Device names it, and the pin goes to the interrupt it gives as a link, read when the SourceIndex is 0: present or
+functioning by its _STA, whose _HID or _CID names PNP0C0F; its current interrupt the first one of the first IRQ or
+Extended Interrupt descriptor of its _CRS that names one; kept when the first such descriptor of its _PRS lists it, 0
+never listed, with that descriptor's trigger and polarity; each template read only when ACPICA would convert it: each
+descriptor within its bytes, each interrupt descriptor whole, an End Tag of two bytes closing it. Such an entry whose
+Device gives no interrupt is printed `none`. Any other entry is left out.
 """
 import os
 import re
@@ -39,7 +43,7 @@ import acpiexec_idle  # noqa: E402
 import acpiexec_namespace  # noqa: E402
 
 OPTIONS = ["-fv", acpiexec_namespace.REGION_FILL, "-dr", "-fi", "nvs.txt"]
-ROOTS = ((0x030AD041, "PNP0A03"), (0x080AD041, "PNP0A08"))
+ROOT = (0x030AD041, "PNP0A03")
 LINK = (0x0F0CD041, "PNP0C0F")
 PRESENT_OR_FUNCTIONING = 0x09
 NO_STATUS = 0x0F
@@ -90,9 +94,20 @@ def results(output):
     return found, addresses
 
 
+def whole(name, data):
+    """Whether an IRQ (0x04) or Extended Interrupt (0x89) descriptor holds the bytes its form takes, as ACPICA
+    validates it: an IRQ two or three, an Extended Interrupt at least six and its table of at least one interrupt."""
+    if name == 0x04:
+        return len(data) in (2, 3)
+    if name == 0x89:
+        return len(data) >= 6 and data[1] >= 1 and 2 + 4 * data[1] <= len(data)
+    return True
+
+
 def descriptors(template):
-    """Each descriptor of a resource template before its End Tag, as (name, data); None once one runs past the
-    bytes."""
+    """Each descriptor of a resource template before its End Tag, as (name, data); None when one runs past the bytes,
+    an interrupt descriptor is not whole, or no End Tag of two bytes closes the template, as ACPICA refuses such a
+    template (AcpiUtWalkAmlResources)."""
     offset, found = 0, []
     while offset < len(template):
         tag = template[offset]
@@ -104,12 +119,12 @@ def descriptors(template):
         else:
             name, length, start = (tag >> 3) & 0x0F, tag & 0x07, offset + 1
             if name == 0x0F:
-                return found
-        if start + length > len(template):
+                return found if offset + 2 <= len(template) else None
+        if start + length > len(template) or not whole(name, template[start:start + length]):
             return None
         found.append((name, template[start:start + length]))
         offset = start + length
-    return found
+    return None
 
 
 def interrupts(name, data):
@@ -157,6 +172,20 @@ def present(found, nodes, path):
     return value is not None and value & PRESENT_OR_FUNCTIONING != 0
 
 
+def ancestors(nodes, path):
+    """The Devices above @p path, nearest first."""
+    parts = path.split(".")
+    above = [".".join(parts[:end]) for end in range(len(parts) - 1, 0, -1)]
+    return [node for node in above if nodes.get(node, ("",))[0] == "Device"]
+
+
+def number(found, nodes, path, name):
+    """The Integer @p path's @p name gives, 0 without one, None when it fails."""
+    if path + "." + name not in nodes:
+        return 0
+    return acpiexec_idle.integer_of(found.get(path + "." + name))
+
+
 def read_link(found, nodes, path):
     """The (interrupt, level, active_low) link @p path gives, or None."""
     if not (names(found.get(path + "._HID"), LINK) or names(found.get(path + "._CID"), LINK)) or \
@@ -180,6 +209,8 @@ def routes(bridges, entries, links):
             if entry is None or entry[0] != "package" or len(entry[1]) != 4:
                 continue
             address, pin, source, index = entry[1]
+            if index[0] != "integer":
+                source, index = index, source
             if address[0] != "integer" or pin[0] != "integer" or index[0] != "integer":
                 continue
             device, pin = address[1] >> 16 & 0xFFFF, pin[1]
@@ -190,6 +221,8 @@ def routes(bridges, entries, links):
             elif source[0] == "reference" and source[2] == "Device" and source[1] in links:
                 read = links[source[1]][1] if index[1] == 0 else None
                 if read is None:
+                    lines.append("aml route %04X:%02X:%02X.%c none %s" % (
+                        segment & 0xFFFF, bus & 0xFF, device, "ABCD"[pin], links[source[1]][0]))
                     continue
                 route = read + (links[source[1]][0],)
             else:
@@ -243,6 +276,15 @@ def self_test():
             b"".join(number.to_bytes(4, "little") for number in numbers)
 
     cases = [
+        ("IRQ 11 before an Extended Interrupt that runs past its bytes in _CRS", irq(1 << 11, 0x18) +
+         bytes([0x89, 0x10, 0x00]), irq(1 << 11, 0x18), None, False),
+        ("IRQ 11 in _CRS without an End Tag", irq(1 << 11, 0x18), irq(1 << 11, 0x18), None, False),
+        ("IRQ 11 in _CRS closed by one byte of an End Tag", irq(1 << 11, 0x18) + bytes([0x79]), irq(1 << 11, 0x18),
+         None, False),
+        ("an IRQ of one byte before IRQ 11 in _CRS", bytes([0x21, 0x00]) + irq(1 << 11, 0x18), irq(1 << 11, 0x18),
+         None),
+        ("an Extended Interrupt that names none before IRQ 11 in _CRS", bytes([0x89, 0x06, 0x00, 0x09, 0x00, 0, 0, 0, 0]) +
+         irq(1 << 11, 0x18), irq(1 << 11, 0x18), None),
         ("IRQ 11 in _CRS, IRQ 10 and 11 level low in _PRS", irq(1 << 11, 0x18), irq(0x0C00, 0x18), (11, True, True)),
         ("Extended 17 edge low in _CRS, 16 and 17 level high in _PRS", extended(0x07, 17), extended(0x09, 16, 17),
          (17, True, False)),
@@ -256,8 +298,8 @@ def self_test():
         ("a _CRS that runs past its bytes", bytes([0x89, 0x10, 0x00, 0x09]), extended(0x09, 16), None),
     ]
     failures = 0
-    for what, current, possible, expected in cases:
-        found = {"\\LNKA._HID": ("integer", LINK[0]), "\\LNKA._CRS": ("buffer", current + end),
+    for what, current, possible, expected, *closed in cases:
+        found = {"\\LNKA._HID": ("integer", LINK[0]), "\\LNKA._CRS": ("buffer", current + (end if closed != [False] else b"")),
                  "\\LNKA._PRS": ("buffer", possible + end)}
         got = read_link(found, {"\\LNKA": ("Device", "")}, "\\LNKA")
         if got != expected:
@@ -298,18 +340,20 @@ def main():
             return
         identity = ["evaluate %s.%s" % (path, name) for path in candidates
                     for name in ("_HID", "_CID", "_STA", "_SEG", "_BBN") if path + "." + name in nodes]
+        identity += ["evaluate %s._STA" % path for path in sorted({above for candidate in candidates
+                                                                    for above in ancestors(nodes, candidate)})
+                     if path + "._STA" in nodes]
         counts = ["evaluate \\%s%03X" % (letters[0], index) for index in range(len(candidates))]
         found, _ = results(run(bin_directory, work, tables + [compiled], ["evaluate \\_PIC 1"] + identity + counts))
         bridges, commands = [], []
         for index, path in enumerate(candidates):
-            if not (any(names(found.get(path + "._HID"), root) or names(found.get(path + "._CID"), root)
-                        for root in ROOTS)) or not present(found, nodes, path):
+            if not (names(found.get(path + "._HID"), ROOT) or names(found.get(path + "._CID"), ROOT)) or \
+                    not all(present(found, nodes, device) for device in [path] + ancestors(nodes, path)):
                 continue
+            segment, bus = number(found, nodes, path, "_SEG"), number(found, nodes, path, "_BBN")
             count = acpiexec_idle.integer_of(found.get("\\%s%03X" % (letters[0], index)))
-            if count is None:
+            if count is None or segment is None or bus is None:
                 continue
-            segment = acpiexec_idle.integer_of(found.get(path + "._SEG")) or 0
-            bus = acpiexec_idle.integer_of(found.get(path + "._BBN")) or 0
             bridges.append((path, index, segment, bus, count))
             commands += ["evaluate \\%s%03X %u" % (letters[1], index, entry) for entry in range(count)]
         entries_found, addresses = results(run(bin_directory, work, tables + [compiled],

@@ -20,9 +20,16 @@
 #define ROUTING_PINS           4u      /**< INTA to INTD. */
 #define ROUTING_PRESENT        0x01u   /**< _STA bit 0: the device is present. */
 #define ROUTING_FUNCTIONING    0x08u   /**< _STA bit 3: the device works. */
-#define ROUTING_HOST_BRIDGE    0x030AD041u /**< EisaId ("PNP0A03"): a PCI host bridge. */
-#define ROUTING_EXPRESS_ROOT   0x080AD041u /**< EisaId ("PNP0A08"): a PCI Express root complex. */
-#define ROUTING_LINK           0x0F0CD041u /**< EisaId ("PNP0C0F"): a PCI interrupt link. */
+#define ROUTING_HOST_BRIDGE                                                                                            \
+    0x030AD041u                          /**< EisaId ("PNP0A03"): a PCI host bridge, which a PCI Express root          \
+                                              complex (PNP0A08) names in its _CID. */
+#define ROUTING_LINK         0x0F0CD041u /**< EisaId ("PNP0C0F"): a PCI interrupt link. */
+#define ROUTING_NO_INTERRUPT ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_INTERRUPT_ROUTING_NO_INTERRUPT
+#define ROUTING_IRQ_SHORT    2u /**< Bytes of an IRQ descriptor without its information byte (ACPI 6.6 §6.4.2.1). */
+#define ROUTING_IRQ_FULL     3u /**< With it. */
+#define ROUTING_EXTENDED_SHORTEST                                                                                      \
+    6u /**< Bytes of the shortest Extended Interrupt descriptor: flags, count and one interrupt (§6.4.3.6). */
+#define ROUTING_EXTENDED_TABLE 2u          /**< Where its table of interrupts starts. */
 #define ROUTING_SCRATCH_BYTES  8u          /**< What an Integer converted to bytes may take. */
 #define ROUTING_FOLD_OFFSET    0x811C9DC5u /**< FNV-1a's offset basis. */
 #define ROUTING_FOLD_PRIME     0x01000193u /**< FNV-1a's prime. */
@@ -43,7 +50,9 @@ typedef AdvancedConfigurationAndPowerInterfaceResource_t RoutingResource_t;
 typedef enum RoutingOutcome {
     ROUTING_OUTCOME_ROUTED = 0,   /**< Its current interrupt, which its _PRS lists. */
     ROUTING_OUTCOME_UNROUTED = 1, /**< No interrupt the kernel may take without choosing one through _SRS. */
-    ROUTING_OUTCOME_FAILED = 2,   /**< Its _STA, _PRS or _CRS failed, or gave no Buffer. */
+    ROUTING_OUTCOME_FAILED = 2,   /**< Its _STA, _PRS or _CRS failed, gave no Buffer, or gave a template ACPICA
+                                       refuses. */
+    ROUTING_OUTCOME_DROPPED = 3,  /**< It came past the links one publication resolves. */
 } RoutingOutcome_t;
 
 /**
@@ -133,12 +142,12 @@ static bool routing_identifies(RoutingLoad_t *load, RoutingCounts_t *counts, uin
 }
 
 /**
- * @brief Whether @p device is a PCI root bridge: its _HID or its _CID names PNP0A03 or PNP0A08.
+ * @brief Whether @p device is a PCI root bridge: its _HID or its _CID names PNP0A03, as Linux v6.17 binds its PCI
+ *        root driver (pci_root.c), a PCI Express root complex naming it in its _CID.
  */
 static bool routing_is_root_bridge(RoutingLoad_t *load, RoutingCounts_t *counts, uint32_t device)
 {
-    return routing_identifies(load, counts, device, ROUTING_HOST_BRIDGE, "PNP0A03") ||
-           routing_identifies(load, counts, device, ROUTING_EXPRESS_ROOT, "PNP0A08");
+    return routing_identifies(load, counts, device, ROUTING_HOST_BRIDGE, "PNP0A03");
 }
 
 /**
@@ -156,18 +165,39 @@ static bool routing_present(RoutingLoad_t *load, RoutingCounts_t *counts, uint32
 }
 
 /**
- * @brief The Integer the object named @p name of @p bridge gives, or 0 when it has none or it fails, counted.
+ * @brief Whether @p device and every Device above it are present or functioning by their _STA, as Linux v6.17
+ *        attaches no device below one that is neither (acpi_bus_attach).
  */
-static uint64_t routing_bridge_number(RoutingLoad_t *load, RoutingCounts_t *counts, uint32_t bridge, const char *name)
+static bool routing_present_with_its_ancestors(RoutingLoad_t *load, RoutingCounts_t *counts, uint32_t device)
+{
+    for (uint32_t node = device; node != ROUTING_ROOT && node != 0u;
+         node = advanced_configuration_and_power_interface_machine_language_namespace_node(&load->space, node)->parent)
+        if (advanced_configuration_and_power_interface_machine_language_namespace_node(&load->space, node)->type ==
+                ROUTING_NODE(DEVICE) &&
+            !routing_present(load, counts, node))
+            return false;
+    return true;
+}
+
+/**
+ * @brief Reads the Integer the object named @p name of @p bridge gives into @p out_value, 0 when it has none.
+ *
+ * @return false when it fails, counted, as Linux v6.17 then refuses the root bridge (acpi_pci_root_add).
+ */
+static bool routing_bridge_number(RoutingLoad_t *load, RoutingCounts_t *counts, uint32_t bridge, const char *name,
+                                  uint64_t *out_value)
 {
     const uint32_t object = routing_object(load, bridge, name);
-    uint64_t value = 0u;
 
-    if (object == 0u ||
-        !advanced_configuration_and_power_interface_initialization_read_integer(load, counts, object, &value))
-        return 0u;
+    *out_value = 0u;
+    if (object == 0u)
+        return true;
+
+    const bool read =
+        advanced_configuration_and_power_interface_initialization_read_integer(load, counts, object, out_value);
+
     advanced_configuration_and_power_interface_initialization_settle(load, counts);
-    return value;
+    return read;
 }
 
 /**
@@ -188,6 +218,39 @@ static RoutingStatus_t routing_integer(RoutingLoad_t *load, const RoutingValue_t
         *out_value = value.payload;
     routing_release(load, &value);
     return status;
+}
+
+/**
+ * @brief Whether an IRQ or Extended Interrupt descriptor holds the bytes its form takes, as ACPICA validates it
+ *        (AcpiUtValidateResource): an IRQ two or three, an Extended Interrupt at least six and its table of at least
+ *        one interrupt; any other descriptor is not checked.
+ */
+static bool routing_descriptor_is_whole(const RoutingResource_t *resource)
+{
+    if (resource->name == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_RESOURCE_INTERRUPT_REQUEST)
+        return resource->length == ROUTING_IRQ_SHORT || resource->length == ROUTING_IRQ_FULL;
+    if (resource->name != ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_RESOURCE_EXTENDED_INTERRUPT)
+        return true;
+    return resource->length >= ROUTING_EXTENDED_SHORTEST && resource->data[1] != 0u &&
+           ROUTING_EXTENDED_TABLE + 4u * (uint32_t) resource->data[1] <= resource->length;
+}
+
+/**
+ * @brief Whether a resource template is one ACPICA converts (AcpiUtWalkAmlResources): each descriptor within its
+ *        bytes, each interrupt descriptor whole, and an End Tag of two bytes that closes it.
+ */
+static bool routing_template_is_whole(const uint8_t *bytes, uint32_t length)
+{
+    AdvancedConfigurationAndPowerInterfaceResourceIterator_t iterator;
+    RoutingResource_t resource;
+    AdvancedConfigurationAndPowerInterfaceResourceStep_t step;
+
+    advanced_configuration_and_power_interface_resources_begin(&iterator, bytes, length);
+    while ((step = advanced_configuration_and_power_interface_resources_next(&iterator, &resource)) ==
+           ROUTING_STEP(DESCRIPTOR))
+        if (!routing_descriptor_is_whole(&resource))
+            return false;
+    return step == ROUTING_STEP(END) && iterator.offset + 1u < length;
 }
 
 /**
@@ -227,8 +290,8 @@ static bool routing_lists(const RoutingResource_t *resource, uint32_t number)
  * @brief Evaluates the resource template @p name of @p link, and finds its first interrupt descriptor.
  *
  * @param out_found Set when the template holds one, @p out_resource then pointing into @p out_result.
- * @return NAME_NOT_FOUND when @p link has no such object; TYPE_MISMATCH, counted, when it gives no Buffer; why its
- *         evaluation failed; OK otherwise. The caller releases @p out_result.
+ * @return NAME_NOT_FOUND when @p link has no such object; TYPE_MISMATCH, counted, when it gives no Buffer or a
+ *         template ACPICA refuses; why its evaluation failed; OK otherwise. The caller releases @p out_result.
  */
 static RoutingStatus_t routing_template(RoutingLoad_t *load, RoutingCounts_t *counts, uint32_t link, const char *name,
                                         RoutingValue_t *out_result, RoutingResource_t *out_resource, bool *out_found)
@@ -248,6 +311,12 @@ static RoutingStatus_t routing_template(RoutingLoad_t *load, RoutingCounts_t *co
     if (status == ROUTING_OK)
         status = advanced_configuration_and_power_interface_machine_language_value_bytes(&load->heap, out_result, 64u,
                                                                                          scratch, &bytes, &length);
+    if (status == ROUTING_OK && !routing_template_is_whole(bytes, length))
+    {
+        status = ROUTING_MALFORMED;
+        advanced_configuration_and_power_interface_initialization_count_failure(
+            counts, routing_object(load, link, name), status);
+    }
     if (status == ROUTING_OK)
         *out_found = routing_first_interrupt_descriptor(bytes, length, out_resource);
     return status;
@@ -255,8 +324,9 @@ static RoutingStatus_t routing_template(RoutingLoad_t *load, RoutingCounts_t *co
 
 /**
  * @brief Reads interrupt link @p link as Linux v6.17 does: present or functioning by its _STA; then its _PRS and
- *        its _CRS, in that order; its current interrupt the first one its _CRS names, kept when the first interrupt
- *        descriptor of its _PRS lists it, whose trigger and polarity it then takes.
+ *        its _CRS, in that order, either absent giving no interrupt; its current interrupt the first one its _CRS
+ *        names, kept when the first interrupt descriptor of its _PRS lists it, whose trigger and polarity it then
+ *        takes.
  */
 static RoutingOutcome_t routing_read_link(RoutingLoad_t *load, RoutingCounts_t *counts, uint32_t link,
                                           RoutingInterrupt_t *out_interrupt)
@@ -284,7 +354,8 @@ static RoutingOutcome_t routing_read_link(RoutingLoad_t *load, RoutingCounts_t *
     const RoutingStatus_t read_current =
         routing_template(load, counts, link, "_CRS", &current_template, &current, &has_current);
 
-    if (read_current != ROUTING_OK || (read_possible != ROUTING_OK && read_possible != ROUTING_STATUS(NAME_NOT_FOUND)))
+    if ((read_current != ROUTING_OK && read_current != ROUTING_STATUS(NAME_NOT_FOUND)) ||
+        (read_possible != ROUTING_OK && read_possible != ROUTING_STATUS(NAME_NOT_FOUND)))
         outcome = ROUTING_OUTCOME_FAILED;
     else if (!has_current || !has_possible ||
              !advanced_configuration_and_power_interface_resources_interrupt(&current, 0u, out_interrupt) ||
@@ -305,7 +376,7 @@ static RoutingOutcome_t routing_read_link(RoutingLoad_t *load, RoutingCounts_t *
 
 /**
  * @brief What link @p node gives: read the first time it is named, then taken from @p links; a link past the ones
- *        @p links holds is unrouted.
+ *        @p links holds is dropped.
  */
 static RoutingOutcome_t routing_link(RoutingLoad_t *load, RoutingCounts_t *counts, RoutingLinks_t *links, uint32_t node,
                                      RoutingInterrupt_t *out_interrupt)
@@ -318,7 +389,7 @@ static RoutingOutcome_t routing_link(RoutingLoad_t *load, RoutingCounts_t *count
         return links->links[index].outcome;
     }
     if (links->count == ROUTING_MAX_LINKS)
-        return ROUTING_OUTCOME_UNROUTED;
+        return ROUTING_OUTCOME_DROPPED;
 
     RoutingLink_t *link = &links->links[links->count++];
 
@@ -332,15 +403,16 @@ static RoutingOutcome_t routing_link(RoutingLoad_t *load, RoutingCounts_t *count
 }
 
 /**
- * @brief Reads the Source of an entry: an Integer wires the pin, a name gives the link it names in @p out_link.
+ * @brief Reads the Source of an entry, element @p element: an Integer wires the pin, a name gives the link it names
+ *        in @p out_link.
  *
  * @return false when the Source is neither, or its name resolves to no Device.
  */
-static bool routing_source(RoutingLoad_t *load, const RoutingValue_t *entry, uint32_t *out_link)
+static bool routing_source(RoutingLoad_t *load, const RoutingValue_t *entry, uint32_t element, uint32_t *out_link)
 {
     RoutingValue_t source;
-    const RoutingStatus_t read =
-        advanced_configuration_and_power_interface_machine_language_package_element_node(load, entry, 2u, out_link);
+    const RoutingStatus_t read = advanced_configuration_and_power_interface_machine_language_package_element_node(
+        load, entry, element, out_link);
 
     if (read == ROUTING_OK)
         return advanced_configuration_and_power_interface_machine_language_namespace_node(&load->space, *out_link)
@@ -348,7 +420,7 @@ static bool routing_source(RoutingLoad_t *load, const RoutingValue_t *entry, uin
     *out_link = 0u;
 
     const bool wired = advanced_configuration_and_power_interface_machine_language_package_element(
-                           load, entry, 2u, &source) == ROUTING_OK &&
+                           load, entry, element, &source) == ROUTING_OK &&
                        source.kind == ROUTING_VALUE(INTEGER);
 
     routing_release(load, &source);
@@ -357,9 +429,10 @@ static bool routing_source(RoutingLoad_t *load, const RoutingValue_t *entry, uin
 
 /**
  * @brief Reads one mapping package of a _PRT into @p out_route: its device, pin and Source, and the interrupt its
- *        SourceIndex or its link gives; counts what it found.
+ *        SourceIndex or its link gives, none when the link gives none; counts what it found. A SourceIndex that is
+ *        no Integer is read swapped with the Source, as ACPICA repairs it (AcpiNsRepair_PRT).
  *
- * @return true when the route is published.
+ * @return true when the entry is published.
  */
 static bool routing_read_entry(RoutingLoad_t *load, RoutingCounts_t *counts, RoutingTable_t *table,
                                RoutingLinks_t *links, const RoutingValue_t *entry, Route_t *out_route)
@@ -369,16 +442,20 @@ static bool routing_read_entry(RoutingLoad_t *load, RoutingCounts_t *counts, Rou
     uint64_t index = 0u;
     uint32_t link = 0u;
     RoutingInterrupt_t interrupt = {.level = true, .active_low = true};
+    const bool shaped =
+        entry->kind == ROUTING_VALUE(PACKAGE) && routing_elements(load, entry) == ROUTING_ENTRY_ELEMENTS;
+    const bool swapped = shaped && routing_integer(load, entry, 3u, &index) != ROUTING_OK;
 
-    if (entry->kind != ROUTING_VALUE(PACKAGE) || routing_elements(load, entry) != ROUTING_ENTRY_ELEMENTS ||
-        routing_integer(load, entry, 0u, &address) != ROUTING_OK ||
+    if (!shaped || routing_integer(load, entry, 0u, &address) != ROUTING_OK ||
         routing_integer(load, entry, 1u, &pin) != ROUTING_OK ||
-        routing_integer(load, entry, 3u, &index) != ROUTING_OK || !routing_source(load, entry, &link) ||
+        (swapped && routing_integer(load, entry, 2u, &index) != ROUTING_OK) ||
+        !routing_source(load, entry, swapped ? 3u : 2u, &link) ||
         ((address >> ROUTING_DEVICE_SHIFT) & ROUTING_DEVICE_MASK) >= ROUTING_DEVICES || pin >= ROUTING_PINS)
     {
         ++table->entries_malformed;
         return false;
     }
+    table->entries_repaired += swapped ? 1u : 0u;
     if (link != 0u)
     {
         ++table->links;
@@ -387,8 +464,9 @@ static bool routing_read_entry(RoutingLoad_t *load, RoutingCounts_t *counts, Rou
 
         table->links_unrouted += (outcome == ROUTING_OUTCOME_UNROUTED) ? 1u : 0u;
         table->links_failed += (outcome == ROUTING_OUTCOME_FAILED) ? 1u : 0u;
+        table->links_dropped += (outcome == ROUTING_OUTCOME_DROPPED) ? 1u : 0u;
         if (outcome != ROUTING_OUTCOME_ROUTED)
-            return false;
+            interrupt = (RoutingInterrupt_t){.number = ROUTING_NO_INTERRUPT};
     }
     else
         interrupt.number = (uint32_t) index;
@@ -402,14 +480,12 @@ static bool routing_read_entry(RoutingLoad_t *load, RoutingCounts_t *counts, Rou
 }
 
 /**
- * @brief Evaluates the _PRT of root bridge @p bridge and publishes each entry it routes, once the table is full
- *        only counting them.
+ * @brief Evaluates the _PRT of root bridge @p bridge, on segment @p segment and bus @p bus, and publishes each entry
+ *        it holds, once the table is full only counting them.
  */
 static void routing_read_bridge(RoutingLoad_t *load, RoutingCounts_t *counts, RoutingTable_t *table,
-                                RoutingLinks_t *links, uint32_t bridge)
+                                RoutingLinks_t *links, uint32_t bridge, uint16_t segment, uint8_t bus)
 {
-    const uint16_t segment = (uint16_t) routing_bridge_number(load, counts, bridge, "_SEG");
-    const uint8_t bus = (uint8_t) routing_bridge_number(load, counts, bridge, "_BBN");
     RoutingValue_t routes;
     RoutingStatus_t status = routing_evaluate(load, counts, bridge, "_PRT", &routes);
 
@@ -461,7 +537,10 @@ void advanced_configuration_and_power_interface_interrupt_routing_publish(Routin
 
     links.count = 0u;
     memset(out_table, 0, offsetof(RoutingTable_t, routes));
-    out_table->model = machine->interrupt_model;
+    out_table->model = (machine->interrupt_model == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_INTERRUPT_MODEL_APIC &&
+                        initialization->pic_mode_failed != 0u) ?
+                           ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_INTERRUPT_MODEL_UNKNOWN :
+                           machine->interrupt_model;
     for (uint32_t index = advanced_configuration_and_power_interface_machine_language_namespace_next(
              &load->space, ROUTING_ROOT, true);
          index != 0u;
@@ -471,13 +550,19 @@ void advanced_configuration_and_power_interface_interrupt_routing_publish(Routin
                 ROUTING_NODE(DEVICE) ||
             !routing_is_root_bridge(load, initialization, index))
             continue;
+        uint64_t segment = 0u;
+        uint64_t bus = 0u;
+
         ++out_table->bridges;
-        if (!routing_present(load, initialization, index))
+        if (!routing_present_with_its_ancestors(load, initialization, index))
             ++out_table->bridges_absent;
+        else if (!routing_bridge_number(load, initialization, index, "_SEG", &segment) ||
+                 !routing_bridge_number(load, initialization, index, "_BBN", &bus))
+            ++out_table->bridges_failed;
         else if (routing_object(load, index, "_PRT") == 0u)
             ++out_table->bridges_unrouted;
         else
-            routing_read_bridge(load, initialization, out_table, &links, index);
+            routing_read_bridge(load, initialization, out_table, &links, index, (uint16_t) segment, (uint8_t) bus);
     }
 }
 
@@ -492,9 +577,16 @@ bool advanced_configuration_and_power_interface_interrupt_routing_find(const Rou
         if (route->segment != segment || route->bus != bus || route->device != device || route->pin != pin)
             continue;
         *out_route = *route;
-        return true;
+        return route->interrupt != ROUTING_NO_INTERRUPT;
     }
     return false;
+}
+
+const char *advanced_configuration_and_power_interface_interrupt_routing_model_name(uint8_t model)
+{
+    if (model == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_INTERRUPT_MODEL_PIC)
+        return "pic";
+    return (model == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_INTERRUPT_MODEL_APIC) ? "apic" : "unknown";
 }
 
 uint32_t advanced_configuration_and_power_interface_interrupt_routing_fold(const RoutingTable_t *table)

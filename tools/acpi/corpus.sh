@@ -440,8 +440,8 @@ initialize_check() {
     done
     echo
     echo -n "# PCI interrupt routing of"
-    for key in bridges bridges_absent bridges_unrouted tables_failed entries entries_malformed entries_dropped links \
-        links_unrouted links_failed routes; do
+    for key in bridges bridges_absent bridges_failed bridges_unrouted tables_failed entries entries_malformed \
+        entries_repaired entries_dropped links links_unrouted links_failed links_dropped routes; do
         echo -n " $key=$(grep '^aml prt model=' <<<"$counts" | grep -o " $key=[0-9]*" | cut -d= -f2 | paste -sd+ | bc)"
     done
     echo

@@ -17,11 +17,13 @@ KERNEL_TEST_SUITE(advanced_configuration_and_power_interface_interrupt_routing, 
 #define ROUTING_TEST_APIC      ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_INTERRUPT_MODEL_APIC
 #define ROUTING_TEST_PIC       ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_INTERRUPT_MODEL_PIC
 #define ROUTING_TEST_STATUS(x) ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_##x
-#define ROUTING_TEST_LEVEL     1u          /**< A route's level field when level-triggered. */
-#define ROUTING_TEST_EDGE      0u          /**< When edge-triggered. */
-#define ROUTING_TEST_LOW       1u          /**< Its active_low field when active-low. */
-#define ROUTING_TEST_HIGH      0u          /**< When active-high. */
-#define ROUTING_TEST_TABLE     1024u       /**< Bytes of AML the largest made-up table holds, and more. */
+#define ROUTING_TEST_LEVEL     1u    /**< A route's level field when level-triggered. */
+#define ROUTING_TEST_EDGE      0u    /**< When edge-triggered. */
+#define ROUTING_TEST_LOW       1u    /**< Its active_low field when active-low. */
+#define ROUTING_TEST_HIGH      0u    /**< When active-high. */
+#define ROUTING_TEST_TABLE     2048u /**< Bytes of AML the largest made-up table holds, and more. */
+#define ROUTING_TEST_UNKNOWN   ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_INTERRUPT_MODEL_UNKNOWN
+#define ROUTING_TEST_NONE      ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_INTERRUPT_ROUTING_NO_INTERRUPT
 #define ROUTING_TEST_OFFSET    0x811C9DC5u /**< FNV-1a's offset basis. */
 #define ROUTING_TEST_PRIME     0x01000193u /**< FNV-1a's prime. */
 
@@ -129,6 +131,18 @@ static bool routing_test_unrouted(uint8_t device, uint8_t pin)
 }
 
 /**
+ * @brief How many entries of the table give no interrupt.
+ */
+static uint32_t routing_test_without_interrupt(void)
+{
+    uint32_t count = 0u;
+
+    for (uint32_t index = 0u; index < routing_test_table.count; ++index)
+        count += (routing_test_table.routes[index].interrupt == ROUTING_TEST_NONE) ? 1u : 0u;
+    return count;
+}
+
+/**
  * @brief A wired pin goes to the Global System Interrupt its SourceIndex gives, level-triggered and active-low, the
  *        first entry of two for the same pin winning, as Linux takes the first match.
  */
@@ -162,7 +176,9 @@ KERNEL_TEST(a_wired_pin_goes_to_the_interrupt_its_source_index_gives)
 
 /**
  * @brief A link gives its current interrupt, read once however many entries name it, with the trigger and polarity
- *        of the first interrupt descriptor of its _PRS; an entry whose SourceIndex is not 0 is unrouted.
+ *        of the first interrupt descriptor of its _PRS, a link that functions without being present included; an
+ *        entry whose SourceIndex is not 0 is unrouted; an entry whose Source and SourceIndex are swapped is read as
+ *        ACPICA repairs it; the first entry for a pin decides, even when its link gives no interrupt.
  */
 KERNEL_TEST(a_link_gives_its_current_interrupt_with_the_signalling_of_its_possible_settings)
 {
@@ -180,33 +196,72 @@ KERNEL_TEST(a_link_gives_its_current_interrupt_with_the_signalling_of_its_possib
                       "device 2 INTB goes there too");
     kernel_test_check(test, routing_test_routes(0u, 0u, 4u, 0u, 11u, ROUTING_TEST_LEVEL, ROUTING_TEST_LOW, second),
                       "device 4 INTA goes to LNKB's IRQ 11, level-triggered, active-low");
-    kernel_test_check(test, routing_test_unrouted(4u, 1u) && routing_test_table.links_unrouted == 1u,
-                      "device 4 INTB, whose SourceIndex is 1, is unrouted and counted");
-    kernel_test_check(test, routing_test_table.links == 4u && routing_test_table.count == 3u,
-                      "four entries name a link, three are published");
+    kernel_test_check(test, routing_test_unrouted(4u, 1u), "device 4 INTB, whose SourceIndex is 1, is unrouted");
+    kernel_test_check(test,
+                      routing_test_routes(0u, 0u, 6u, 0u, 10u, ROUTING_TEST_LEVEL, ROUTING_TEST_LOW,
+                                          routing_test_below_system_bus("LNKJ")),
+                      "device 6 INTA goes to LNKJ's IRQ 10, its _STA saying functioning but not present");
+    kernel_test_check(test, routing_test_unrouted(7u, 0u),
+                      "device 7 INTA has no route: its first entry names LNKU, which gives none, and the entry that "
+                      "wires it comes second");
+    kernel_test_check(test,
+                      routing_test_routes(0u, 0u, 8u, 0u, 11u, ROUTING_TEST_LEVEL, ROUTING_TEST_LOW, second) &&
+                          routing_test_table.entries_repaired == 1u,
+                      "device 8 INTA, its Source and SourceIndex swapped, goes to LNKB's IRQ 11, a repair counted");
+    kernel_test_check(test, routing_test_table.links_unrouted == 2u && routing_test_without_interrupt() == 2u,
+                      "the SourceIndex of 1 and LNKU are unrouted, and their entries published without an interrupt");
+    kernel_test_check(test, routing_test_table.links == 7u && routing_test_table.count == 8u,
+                      "seven of the eight entries name a link, and all eight are published");
     kernel_test_check(test, routing_test_integer("\\CRSN") == 1u, "LNKA's _CRS runs once for its three entries");
     routing_test_close(test);
 }
 
 /**
- * @brief A link routes nothing unless it is present, is a link, and its _CRS gives an interrupt its _PRS lists; a _CRS
- *        that gives no Buffer, or fails, is counted as a failure.
+ * @brief A link routes nothing unless it is present, is a link, and its _CRS gives an interrupt other than 0 its _PRS
+ *        lists; an _STA or a _CRS that fails, a _CRS that gives no Buffer, or a template ACPICA refuses, is counted as
+ * a failure under its status; each entry is still published, without an interrupt.
  */
 KERNEL_TEST(a_link_routes_nothing_unless_its_current_interrupt_is_one_it_may_take)
 {
     if (!routing_test_run(test, routing_unrouted_links_aml, sizeof(routing_unrouted_links_aml), ROUTING_TEST_APIC))
         return;
-    kernel_test_check(test, routing_test_table.entries == 7u && routing_test_table.links == 7u,
-                      "seven entries, each naming a device");
-    kernel_test_check(test, routing_test_table.links_unrouted == 5u,
-                      "an absent link, an IRQ its _PRS lacks, an empty IRQ, no _PRS and no link route nothing");
-    kernel_test_check(test, routing_test_table.links_failed == 2u,
-                      "a _CRS that returns an Integer and one that fails are failures");
+    kernel_test_check(test, routing_test_table.entries == 14u && routing_test_table.links == 14u,
+                      "fourteen entries, each naming a device");
+    kernel_test_check(test, routing_test_table.links_unrouted == 7u,
+                      "an absent link, an IRQ its _PRS lacks, an empty IRQ, no _PRS, no _CRS, IRQ 0 and no link route "
+                      "nothing");
+    kernel_test_check(test, routing_test_table.links_failed == 7u,
+                      "a _CRS that returns an Integer, one that fails, an _STA that fails, and a _CRS whose descriptor "
+                      "runs past its bytes, one without an End Tag, one with an IRQ of one byte and one with an "
+                      "Extended Interrupt that names none are failures");
     kernel_test_check(test,
-                      routing_test_counts.statuses[ROUTING_TEST_STATUS(TYPE_MISMATCH)] >= 1u &&
-                          routing_test_counts.statuses[ROUTING_TEST_STATUS(INDEX_OUT_OF_RANGE)] >= 1u,
-                      "each failure is counted under its status");
-    kernel_test_check(test, routing_test_table.count == 0u, "nothing is published");
+                      routing_test_counts.statuses[ROUTING_TEST_STATUS(TYPE_MISMATCH)] == 5u &&
+                          routing_test_counts.statuses[ROUTING_TEST_STATUS(INDEX_OUT_OF_RANGE)] == 2u,
+                      "each failure is counted once, under its status");
+    kernel_test_check(test, routing_test_table.count == 14u && routing_test_without_interrupt() == 14u,
+                      "every entry is published, without an interrupt");
+    kernel_test_check(
+        test, routing_test_unrouted(10u, 0u) && routing_test_unrouted(13u, 0u) && routing_test_unrouted(14u, 0u),
+        "devices 10, 13 and 14 have no route, though LNKL's _CRS starts with an IRQ 11 its _PRS lists, "
+        "and LNKO's and LNKP's hold one");
+    routing_test_close(test);
+}
+
+/**
+ * @brief The 65th link an entry names comes past the ones a boot resolves: it is counted as dropped, not as a link that
+ *        routes nothing, and its entry is published without an interrupt.
+ */
+KERNEL_TEST(a_link_past_the_ones_a_boot_resolves_is_dropped)
+{
+    if (!routing_test_run(test, routing_many_links_aml, sizeof(routing_many_links_aml), ROUTING_TEST_APIC))
+        return;
+    kernel_test_check(test, routing_test_table.links == 65u && routing_test_table.count == 65u,
+                      "65 entries name a Device, and all are published");
+    kernel_test_check(test, routing_test_table.links_unrouted == 64u, "the 64 Devices that are no link route nothing");
+    kernel_test_check(test,
+                      routing_test_table.links_dropped == 1u && routing_test_table.links_failed == 0u &&
+                          routing_test_unrouted(16u, 0u),
+                      "LNKZ, the 65th, is dropped, and device 16 INTA has no route");
     routing_test_close(test);
 }
 
@@ -230,21 +285,39 @@ KERNEL_TEST(a_malformed_entry_is_left_out_and_counted)
 }
 
 /**
- * @brief Only a root bridge _STA keeps in has its _PRT read, on the segment and bus its _SEG and _BBN give, a _CID
- *        naming it as a String among others; a device below it with a _PRT of its own is not read.
+ * @brief Only a Device whose _HID or _CID names PNP0A03 is a root bridge, as Linux binds its PCI root driver; its _PRT
+ *        is read when _STA, its own and that of each Device above it, says present or functioning, and when its _SEG
+ *        and _BBN, which give the segment and bus, do not fail. Each failure is counted once, under its status.
  */
 KERNEL_TEST(only_the_root_bridges_present_by_their_status_are_read)
 {
     if (!routing_test_run(test, routing_bridges_aml, sizeof(routing_bridges_aml), ROUTING_TEST_APIC))
         return;
-    kernel_test_check(test, routing_test_table.bridges == 3u, "three root bridges, BRG0 none");
-    kernel_test_check(test, routing_test_table.bridges_absent == 1u && routing_test_unrouted(1u, 0u),
-                      "PCI0, absent, is counted and its _PRT not read");
-    kernel_test_check(test, routing_test_table.bridges_unrouted == 1u, "PCI1, without a _PRT, is counted");
+    kernel_test_check(test, routing_test_table.bridges == 9u,
+                      "nine root bridges: not BRG0, not PCI3, a PCI Express root complex alone, not DEV2");
     kernel_test_check(test,
-                      routing_test_table.count == 1u &&
-                          routing_test_routes(1u, 2u, 5u, 0u, 40u, ROUTING_TEST_LEVEL, ROUTING_TEST_LOW, 0u),
-                      "PCI2's one entry routes device 5 INTA on segment 1, bus 2, to GSI 40; BRG0's is not read");
+                      routing_test_table.bridges_absent == 3u && routing_test_unrouted(1u, 0u) &&
+                          routing_test_unrouted(8u, 0u) && routing_test_unrouted(11u, 0u),
+                      "PCI0 absent, PCI4 whose _STA fails and PCI8 below an absent device are counted, their _PRT not "
+                      "read");
+    kernel_test_check(test,
+                      routing_test_table.bridges_failed == 2u && routing_test_unrouted(9u, 0u) &&
+                          routing_test_unrouted(10u, 0u),
+                      "PCI6, whose _BBN fails, and PCI7, whose _SEG fails, are counted, their _PRT not read");
+    kernel_test_check(test, routing_test_table.bridges_unrouted == 1u, "PCI1, without a _PRT, is counted");
+    kernel_test_check(test, routing_test_table.tables_failed == 1u, "PCI9's _PRT, an Integer, is a failed table");
+    kernel_test_check(test, routing_test_routes(1u, 2u, 5u, 0u, 40u, ROUTING_TEST_LEVEL, ROUTING_TEST_LOW, 0u),
+                      "PCI2's one entry routes device 5 INTA on segment 1, bus 2, to GSI 40");
+    kernel_test_check(test, routing_test_routes(0u, 0u, 6u, 0u, 41u, ROUTING_TEST_LEVEL, ROUTING_TEST_LOW, 0u),
+                      "PCI5, functioning but not present, routes device 6 INTA to GSI 41");
+    kernel_test_check(test,
+                      routing_test_table.count == 2u && routing_test_unrouted(7u, 0u) && routing_test_unrouted(12u, 0u),
+                      "nothing else is published: not BRG0's, PCI3's nor DEV2's _PRT");
+    kernel_test_check(test,
+                      routing_test_counts.statuses[ROUTING_TEST_STATUS(INDEX_OUT_OF_RANGE)] == 4u &&
+                          routing_test_counts.statuses[ROUTING_TEST_STATUS(TYPE_MISMATCH)] == 1u,
+                      "PCI4's _STA, PCI6's _BBN, PCI7's _SEG and DEV2's _HID fail once each, PCI9's _PRT has the "
+                      "wrong type");
     routing_test_close(test);
 }
 
@@ -281,7 +354,8 @@ KERNEL_TEST(the_apic_model_tells_pic_one_before_the_routes_are_read)
 }
 
 /**
- * @brief A \_PIC (1) that fails is counted under its status, and nothing says the APIC model was taken.
+ * @brief A \_PIC (1) that fails is counted under its status, nothing says the APIC model was taken, and the routes
+ *        answer for no known model.
  */
 KERNEL_TEST(an_interrupt_model_method_that_fails_is_counted)
 {
@@ -292,6 +366,8 @@ KERNEL_TEST(an_interrupt_model_method_that_fails_is_counted)
                       "the failure is counted, the model not taken");
     kernel_test_check(test, routing_test_counts.statuses[ROUTING_TEST_STATUS(INDEX_OUT_OF_RANGE)] == 1u,
                       "under the status it failed with");
+    kernel_test_check(test, routing_test_table.model == ROUTING_TEST_UNKNOWN,
+                      "the routes answer for an unknown model, firmware having been told none");
     routing_test_close(test);
 }
 
