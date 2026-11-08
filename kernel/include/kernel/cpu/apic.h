@@ -52,9 +52,20 @@
 #define X2APIC_MSR_BASE 0x800u
 
 /**
+ * @brief Whether the local APICs run in x2APIC mode, or will once apic_initialize_on_cpu has run.
+ *
+ * @details apic_initialize_on_cpu turns x2APIC mode on exactly when the processor offers it (CPUID leaf 1, ECX bit
+ *          21), so the answer is known before the bootstrap processor's local APIC is initialised: the boot needs it
+ *          then, to choose the interrupt model it tells firmware (ACPI specification, §3.8 step 5).
+ *
+ * @return true when x2APIC mode is, or will be, the mode.
+ */
+bool apic_runs_x2apic_mode(void);
+
+/**
  * @brief Initialize the Local APIC on the current CPU.
  *
- * Detects x2APIC support and enables the best available mode.
+ * Enables x2APIC mode when apic_runs_x2apic_mode says so, xAPIC mode otherwise.
  *
  * @param mmio_virtual_base Virtual address where xAPIC MMIO is mapped.
  * @return true if enabled successfully, false otherwise.

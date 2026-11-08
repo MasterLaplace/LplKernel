@@ -3,10 +3,9 @@
 # the ring-0 corpus test the_boot_module_machine_loads_on_the_release_path, on a debug server kernel (./build.sh
 # --server). The boot runs the same function on the tables it reads from the machine first, hence skip=1.
 # tools/acpi/corpus.sh module qemu q35 kernel/lpl.kernel writes the module. It measures the gap of the other W2 windows
-# on the release path to a release kernel, on the same tables: this window counts 3,078 instructions (4.20 %) more than
-# the 73,251 a release kernel counts at this commit (tools/instructions.sh --budget tools/budgets/acpi-initialization.budget,
-# whose file records 73,237), as the corpus test tells firmware the APIC model and step 5 calls \_PIC (1), which a release
-# kernel that keeps the PIC model does not. Checked by tools/instructions.sh --budget
+# on the release path to a release kernel, on the same tables: this window counts 26 instructions (0.03 %) more than the
+# 76,303 a release kernel counts at this commit (tools/instructions.sh --budget tools/budgets/acpi-initialization.budget,
+# whose file records them). Checked by tools/instructions.sh --budget
 # tools/budgets/acpi-initialization-q35.release-path.debug.budget kernel/lpl.kernel; a change that moves the count records the
 # new one.
 inside=advanced_configuration_and_power_interface_initialize_namespace

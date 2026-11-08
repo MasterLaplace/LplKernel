@@ -1,7 +1,10 @@
+#include <kernel/acpi/interrupt_routing.h>
 #include <kernel/core/reconciler.h>
 #include <kernel/cpu/cpu_topology.h>
 #include <kernel/cpu/device_interrupt.h>
+#include <kernel/cpu/ioapic.h>
 #include <kernel/cpu/irq.h>
+#include <kernel/cpu/isr.h>
 #include <kernel/cpu/msi.h>
 #include <kernel/cpu/pci.h>
 #include <kernel/cpu/pic.h>
@@ -20,6 +23,13 @@ KERNEL_TEST_SUITE(power_floor, KERNEL_TEST_STAGE_BOOTED);
 /** Frames the satellite node runs for: 320 ms of audio, a sleep to each frame's deadline. */
 #define POWER_FLOOR_AUDIO_CLASS    0x04u /**< A multimedia controller. */
 #define POWER_FLOOR_AUDIO_SUBCLASS 0x03u /**< Its Intel HDA subclass. */
+#define POWER_FLOOR_INTERRUPT_PIN  0x3Du /**< A PCI function's Interrupt Pin register: 1 to 4 for INTA to INTD. */
+#define POWER_FLOOR_ENTRY_VECTOR   0xFFu /**< A redirection entry's vector bits. */
+#define POWER_FLOOR_ENTRY_LOW      13u   /**< Its polarity bit: active-low. */
+#define POWER_FLOOR_ENTRY_LEVEL    15u   /**< Its trigger bit: level-triggered. */
+#define POWER_FLOOR_ENTRY_MASKED   16u   /**< Its mask bit. */
+#define POWER_FLOOR_ENTRY_TARGET   24u   /**< Where its destination starts in its high register. */
+#define POWER_FLOOR_ISA_IRQS       16u   /**< ISA IRQs 0 to 15, the lines of the 8259 pair. */
 
 #define POWER_FLOOR_ITERATIONS 8u
 
@@ -73,6 +83,152 @@ static uint32_t power_floor_wait_for_ticks(uint32_t ticks)
            asmutils_read_timestamp_counter() - first_cycle < POWER_FLOOR_WAIT_CYCLE_BUDGET)
         asmutils_pause();
     return interrupt_request_get_tick_count() - first_tick;
+}
+
+/**
+ * @brief Does nothing: the handler an ISA IRQ is given for as long as a check needs it to look served.
+ */
+static void power_floor_ignore_interrupt(const InterruptFrame_t *frame) { (void) frame; }
+
+/**
+ * @brief Checks that the capture interrupt comes on the controller's 8259 line, as @p claim says.
+ */
+static void power_floor_check_capture_on_the_8259(KernelTest_t *test, const char *claim)
+{
+    kernel_test_check(test,
+                      hardware_abstraction_layer_audio_capture_interrupt_vector() == 0u &&
+                          hardware_abstraction_layer_audio_capture_interrupt_line() != KERNEL_HDA_NO_INTERRUPT_LINE,
+                      claim);
+    kernel_test_measure(test, "line", hardware_abstraction_layer_audio_capture_interrupt_line());
+}
+
+/**
+ * @brief Checks that the capture line is refused, even to the vector that holds it, while an ISA IRQ the MADT maps to
+ *        it has an 8259 handler; noted where no ISA IRQ free of a handler reaches the line.
+ */
+static void power_floor_check_an_isa_handler_takes_the_line(KernelTest_t *test,
+                                                            const PeripheralComponentInterconnectDevice_t *device,
+                                                            uint32_t slot, uint8_t vector, uint32_t line)
+{
+    for (uint8_t isa_irq = 0u; isa_irq < POWER_FLOOR_ISA_IRQS; ++isa_irq)
+    {
+        const uint8_t isa_vector = (uint8_t) (PIC_VECTOR_OFFSET_MASTER + isa_irq);
+        uint32_t global_system_interrupt = 0u;
+        uint16_t flags = 0u;
+        uint32_t refused = 0u;
+
+        if (!advanced_configuration_and_power_interface_madt_resolve_isa_irq(isa_irq, &global_system_interrupt,
+                                                                             &flags) ||
+            global_system_interrupt != line || interrupt_service_routine_get_handler(isa_vector) != NULL)
+            continue;
+        interrupt_service_routine_register_handler(isa_vector, power_floor_ignore_interrupt);
+        const bool taken =
+            input_output_advanced_programmable_interrupt_controller_route_device(device, slot, vector, &refused);
+        interrupt_service_routine_register_handler(isa_vector, NULL);
+        kernel_test_check(test, !taken && refused == INPUT_OUTPUT_ADVANCED_PROGRAMMABLE_INTERRUPT_CONTROLLER_NO_LINE,
+                          "an ISA IRQ the 8259 serves on that line takes it from the controller");
+        kernel_test_measure(test, "isa_irq", isa_irq);
+        return;
+    }
+    kernel_test_note(test, "no ISA IRQ free of a handler reaches the line");
+}
+
+/**
+ * @brief Checks that the vector that holds the capture line takes it again aimed at another core's slot, its entry then
+ *        naming that core, and gives it back to @p slot; noted on a machine of one core.
+ */
+static void power_floor_check_the_line_follows_its_slot(KernelTest_t *test,
+                                                        const PeripheralComponentInterconnectDevice_t *device,
+                                                        uint32_t slot, uint8_t vector, uint32_t line)
+{
+    const uint32_t other = slot == 0u ? 1u : 0u;
+    const uint32_t other_apic_id = cpu_topology_get_apic_id_at_slot(other);
+    uint32_t taken = 0u;
+    uint32_t back = 0u;
+    uint32_t low = 0u;
+    uint32_t high = 0u;
+
+    if (other_apic_id == CPU_TOPOLOGY_NO_PROCESSOR)
+    {
+        kernel_test_note(test, "one core: the line is not aimed elsewhere");
+        return;
+    }
+    kernel_test_check(
+        test,
+        input_output_advanced_programmable_interrupt_controller_route_device(device, other, vector, &taken) &&
+            taken == line &&
+            input_output_advanced_programmable_interrupt_controller_debug_read_line(line, &low, &high) &&
+            (high >> POWER_FLOOR_ENTRY_TARGET) == other_apic_id,
+        "the vector that holds the line takes it again, aimed at the slot it names");
+    kernel_test_check(
+        test,
+        input_output_advanced_programmable_interrupt_controller_route_device(device, slot, vector, &back) &&
+            back == line &&
+            input_output_advanced_programmable_interrupt_controller_debug_read_line(line, &low, &high) &&
+            (high >> POWER_FLOOR_ENTRY_TARGET) == cpu_topology_get_apic_id_at_slot(slot),
+        "and gives it back to the core that took the ring");
+    kernel_test_measure(test, "other_slot", other);
+}
+
+/**
+ * @brief Checks the I/O APIC line of a controller without MSI: the one the boot's published routes give its pin, its
+ *        entry carrying the capture vector with the route's trigger and polarity, unmasked, to the core that took the
+ *        ring, which alone it interrupted, more than once; refused to another vector and while an ISA IRQ the 8259
+ *        serves reaches it; aimed at the slot the vector that holds it names.
+ */
+static void power_floor_check_capture_line(KernelTest_t *test, const PeripheralComponentInterconnectDevice_t *device)
+{
+    const AdvancedConfigurationAndPowerInterfaceInterruptRoutingTable_t *routing =
+        advanced_configuration_and_power_interface_interrupt_routing();
+    const uint8_t pin = peripheral_component_interconnect_config_read_byte(device->bus, device->device,
+                                                                           device->function, POWER_FLOOR_INTERRUPT_PIN);
+    const uint8_t vector = hardware_abstraction_layer_audio_capture_interrupt_vector();
+    const uint32_t slot = hardware_abstraction_layer_audio_capture_interrupt_slot();
+    const uint32_t line = hardware_abstraction_layer_audio_capture_global_system_interrupt();
+    AdvancedConfigurationAndPowerInterfaceInterruptRoute_t route = {0};
+    uint32_t low = 0u;
+    uint32_t high = 0u;
+    uint32_t low_after = 0u;
+    uint32_t high_after = 0u;
+    uint32_t refused = 0u;
+    uint32_t elsewhere = 0u;
+
+    kernel_test_check(test,
+                      pin != 0u && advanced_configuration_and_power_interface_interrupt_routing_find(
+                                       routing, 0u, device->bus, device->device, (uint8_t) (pin - 1u), &route),
+                      "the published routes name the controller's pin");
+    kernel_test_check(test, vector != 0u && line == route.interrupt,
+                      "without MSI, it comes on the I/O APIC line its pin's route gives");
+    kernel_test_check(
+        test,
+        input_output_advanced_programmable_interrupt_controller_debug_read_line(line, &low, &high) &&
+            (low & POWER_FLOOR_ENTRY_VECTOR) == vector && ((low >> POWER_FLOOR_ENTRY_LEVEL) & 1u) == route.level &&
+            ((low >> POWER_FLOOR_ENTRY_LOW) & 1u) == route.active_low &&
+            ((low >> POWER_FLOOR_ENTRY_MASKED) & 1u) == 0u &&
+            (high >> POWER_FLOOR_ENTRY_TARGET) == cpu_topology_get_apic_id_at_slot(slot),
+        "its entry carries the vector, the route's trigger and polarity, unmasked, to the core that took the ring");
+    for (uint32_t other = 0u; other < CPU_TOPOLOGY_MAX_LOGICAL_CPUS_PUBLIC; ++other)
+        elsewhere += other != slot ? device_interrupt_count(vector, other) : 0u;
+    kernel_test_check(test, device_interrupt_count(vector, slot) >= 2u,
+                      "the line interrupted that core more than once: a level-triggered line whose end of interrupt "
+                      "never reached the I/O APIC would have fired once");
+    kernel_test_check(test, elsewhere == 0u, "and no other core");
+    kernel_test_check(
+        test,
+        !input_output_advanced_programmable_interrupt_controller_route_device(device, slot, (uint8_t) (vector + 1u),
+                                                                              &refused) &&
+            refused == INPUT_OUTPUT_ADVANCED_PROGRAMMABLE_INTERRUPT_CONTROLLER_NO_LINE &&
+            input_output_advanced_programmable_interrupt_controller_debug_read_line(line, &low_after, &high_after) &&
+            low_after == low && high_after == high,
+        "another vector is refused the line, its entry left as it was");
+    kernel_test_measure(test, "global_system_interrupt", line);
+    kernel_test_measure(test, "level", route.level);
+    kernel_test_measure(test, "active_low", route.active_low);
+    kernel_test_measure(test, "vector", vector);
+    kernel_test_measure(test, "slot", slot);
+    kernel_test_measure(test, "interrupts", device_interrupt_count(vector, slot));
+    power_floor_check_an_isa_handler_takes_the_line(test, device, slot, vector, line);
+    power_floor_check_the_line_follows_its_slot(test, device, slot, vector, line);
 }
 
 /**
@@ -263,14 +419,16 @@ KERNEL_TEST(the_capture_stream_delivers_buffers)
 }
 
 /**
- * @brief The capture interrupt comes as an MSI message to the core that took the ring, and no other, when the
- *        controller has the MSI capability; on its line otherwise.
+ * @brief The capture interrupt reaches the core that took the ring, and no other: as an MSI message when the controller
+ *        has the MSI capability, on its I/O APIC line otherwise, and on its 8259 line where the boot keeps the PIC
+ *        model.
  *
  * @details QEMU's intel-hda offers MSI unless told `msi=off`: `qemu-system-i386 -machine q35 -smp 2 -audiodev
  *          none,id=lplaudio -device intel-hda -device hda-duplex,audiodev=lplaudio -kernel kernel/lpl.kernel` routes a
- *          message, and `-device intel-hda,msi=off` the line, on a satellite kernel (`./build.sh --satellite`).
+ *          message, `-device intel-hda,msi=off` the I/O APIC line, and `-cpu max,-hypervisor`, an x2APIC mode no
+ *          device interrupt reaches, the 8259 line, on a satellite kernel (`./build.sh --satellite`).
  */
-KERNEL_TEST(the_capture_interrupt_comes_as_a_message_when_the_controller_has_msi)
+KERNEL_TEST(the_capture_interrupt_reaches_the_core_that_took_the_ring)
 {
     const SatelliteReport_t *const report = power_floor_run_once();
     const PeripheralComponentInterconnectDevice_t *const device =
@@ -288,16 +446,32 @@ KERNEL_TEST(the_capture_interrupt_comes_as_a_message_when_the_controller_has_msi
     const bool has_msi =
         peripheral_component_interconnect_find_capability(device->bus, device->device, device->function,
                                                           MESSAGE_SIGNALED_INTERRUPT_CAPABILITY) != 0u;
+    const bool delivers = device_interrupt_platform_delivers();
+    const bool input_output_apic = advanced_configuration_and_power_interface_madt_is_available() &&
+                                   advanced_configuration_and_power_interface_madt_get_io_apic_count() != 0u;
 
     kernel_test_check(test, hardware_abstraction_layer_audio_capture_is_interrupt_driven(),
                       "capture is driven by the controller's interrupt");
+    kernel_test_check(test,
+                      (advanced_configuration_and_power_interface_interrupt_routing()->model ==
+                       ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_INTERRUPT_MODEL_APIC) ==
+                          (input_output_apic && delivers),
+                      "the boot took the APIC model exactly when the MADT declares an I/O APIC and a device interrupt "
+                      "reaches a core");
+    if (!delivers)
+    {
+        power_floor_check_capture_on_the_8259(test,
+                                              "where no device interrupt reaches a core, it comes on the 8259 line");
+        return;
+    }
+    if (!has_msi && !input_output_apic)
+    {
+        power_floor_check_capture_on_the_8259(test, "without MSI nor an I/O APIC, it comes on the 8259 line");
+        return;
+    }
     if (!has_msi)
     {
-        kernel_test_check(test,
-                          vector == 0u &&
-                              hardware_abstraction_layer_audio_capture_interrupt_line() != KERNEL_HDA_NO_INTERRUPT_LINE,
-                          "without MSI, it comes on the controller's line");
-        kernel_test_measure(test, "line", hardware_abstraction_layer_audio_capture_interrupt_line());
+        power_floor_check_capture_line(test, device);
         return;
     }
     for (uint32_t other = 0u; other < CPU_TOPOLOGY_MAX_LOGICAL_CPUS_PUBLIC; ++other)

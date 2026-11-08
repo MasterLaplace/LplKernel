@@ -582,6 +582,11 @@ bool advanced_configuration_and_power_interface_interrupt_routing_find(const Rou
     return false;
 }
 
+bool advanced_configuration_and_power_interface_interrupt_routing_leaves_the_8259(const RoutingTable_t *table)
+{
+    return table->model == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_INTERRUPT_MODEL_PIC;
+}
+
 const char *advanced_configuration_and_power_interface_interrupt_routing_model_name(uint8_t model)
 {
     if (model == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_INTERRUPT_MODEL_PIC)

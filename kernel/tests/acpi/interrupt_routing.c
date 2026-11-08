@@ -333,6 +333,9 @@ KERNEL_TEST(the_apic_model_tells_pic_one_before_the_routes_are_read)
                       routing_test_counts.pic_mode_told == 1u && routing_test_counts.pic_mode_deferred == 0u &&
                           routing_test_integer("\\PICF") == 1u,
                       "the APIC model calls \\_PIC (1), which keeps it");
+    kernel_test_check(
+        test, !advanced_configuration_and_power_interface_interrupt_routing_leaves_the_8259(&routing_test_table),
+        "a PCI function no longer takes its 8259 line");
     kernel_test_check(test,
                       routing_test_table.model == ROUTING_TEST_APIC &&
                           routing_test_routes(0u, 0u, 2u, 0u, 22u, ROUTING_TEST_LEVEL, ROUTING_TEST_LOW, 0u),
@@ -345,6 +348,9 @@ KERNEL_TEST(the_apic_model_tells_pic_one_before_the_routes_are_read)
                       routing_test_counts.pic_mode_told == 0u && routing_test_counts.pic_mode_deferred == 1u &&
                           routing_test_integer("\\PICF") == 0u,
                       "the PIC model leaves \\_PIC uncalled, and counts that");
+    kernel_test_check(test,
+                      advanced_configuration_and_power_interface_interrupt_routing_leaves_the_8259(&routing_test_table),
+                      "a PCI function still takes its 8259 line");
     kernel_test_check(test,
                       routing_test_table.model == ROUTING_TEST_PIC &&
                           routing_test_routes(0u, 0u, 2u, 0u, 10u, ROUTING_TEST_LEVEL, ROUTING_TEST_LOW,
@@ -368,6 +374,9 @@ KERNEL_TEST(an_interrupt_model_method_that_fails_is_counted)
                       "under the status it failed with");
     kernel_test_check(test, routing_test_table.model == ROUTING_TEST_UNKNOWN,
                       "the routes answer for an unknown model, firmware having been told none");
+    kernel_test_check(
+        test, !advanced_configuration_and_power_interface_interrupt_routing_leaves_the_8259(&routing_test_table),
+        "so no PCI function takes its 8259 line");
     routing_test_close(test);
 }
 
