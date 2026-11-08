@@ -5,8 +5,9 @@ decoded here from their _PRS and _CRS, as the `aml route` lines `test-acpi --ini
 Usage: python3 -I tools/acpi/oracles/acpiexec_routing.py <acpica bin directory> <presets> <table>...
        python3 -I tools/acpi/oracles/acpiexec_routing.py --self-test
 
---self-test checks the descriptor decoding and the rule that reads a link on made-up templates, each expected route
-written by hand, and exits 1 when one differs.
+--self-test checks the descriptor decoding and the rule that reads a link on made-up templates, then the lines a swapped
+entry, an entry whose link gives no interrupt and a wired pin print, each expected route written by hand, and exits 1
+when one differs.
 
 The tables are those `test-acpi --loaded` writes, the DSDT first. acpiexec loads them without running them to list the
 namespace (tools/acpi/oracles/acpiexec_namespace.py). Its debugger buffer holds 16 KiB, which a _PRT of 128 entries
@@ -283,8 +284,8 @@ def self_test():
          None, False),
         ("an IRQ of one byte before IRQ 11 in _CRS", bytes([0x21, 0x00]) + irq(1 << 11, 0x18), irq(1 << 11, 0x18),
          None),
-        ("an Extended Interrupt that names none before IRQ 11 in _CRS", bytes([0x89, 0x06, 0x00, 0x09, 0x00, 0, 0, 0, 0]) +
-         irq(1 << 11, 0x18), irq(1 << 11, 0x18), None),
+        ("an Extended Interrupt that names none before IRQ 11 in _CRS",
+         bytes([0x89, 0x06, 0x00, 0x09, 0x00, 0, 0, 0, 0]) + irq(1 << 11, 0x18), irq(1 << 11, 0x18), None),
         ("IRQ 11 in _CRS, IRQ 10 and 11 level low in _PRS", irq(1 << 11, 0x18), irq(0x0C00, 0x18), (11, True, True)),
         ("Extended 17 edge low in _CRS, 16 and 17 level high in _PRS", extended(0x07, 17), extended(0x09, 16, 17),
          (17, True, False)),
@@ -299,12 +300,27 @@ def self_test():
     ]
     failures = 0
     for what, current, possible, expected, *closed in cases:
-        found = {"\\LNKA._HID": ("integer", LINK[0]), "\\LNKA._CRS": ("buffer", current + (end if closed != [False] else b"")),
+        closing = end if closed != [False] else b""
+        found = {"\\LNKA._HID": ("integer", LINK[0]), "\\LNKA._CRS": ("buffer", current + closing),
                  "\\LNKA._PRS": ("buffer", possible + end)}
         got = read_link(found, {"\\LNKA": ("Device", "")}, "\\LNKA")
         if got != expected:
             print("self-test: %s reads %s, expected %s" % (what, got, expected))
             failures += 1
+    first, second = ("reference", "0x1", "Device"), ("reference", "0x2", "Device")
+    entries = {"\\PCI0": [
+        ("package", [("integer", 0x0001FFFF), ("integer", 0), ("integer", 0), first]),
+        ("package", [("integer", 0x0002FFFF), ("integer", 0), second, ("integer", 0)]),
+        ("package", [("integer", 0x0003FFFF), ("integer", 1), ("integer", 0), ("integer", 20)]),
+    ]}
+    links = {"0x1": ("\\LNKA", (11, True, True)), "0x2": ("\\LNKB", None)}
+    expected = ["aml route 0000:00:01.A interrupt=11 level low \\LNKA", "aml route 0000:00:02.A none \\LNKB",
+                "aml route 0000:00:03.B interrupt=20 level low wired"]
+    got = routes([("\\PCI0", 0, 0)], entries, links)
+    if got != expected:
+        print("self-test: a swapped entry, a link that gives none and a wired pin read %s, expected %s"
+              % (got, expected))
+        failures += 1
     print("self-test: pass" if failures == 0 else "self-test: %d failure(s)" % failures)
     return failures
 
