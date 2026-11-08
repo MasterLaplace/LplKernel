@@ -233,6 +233,7 @@ KERNEL_TEST(a_context_finds_its_registers_after_another_ran)
     static ContextProbeState_t held;
     static ContextProbeState_t overwriting;
     static ContextProbeState_t after;
+    static ContextProbeState_t found;
     static CpuContext_t here;
     static CpuContext_t other;
     static ContextSwitchTestRole_t role;
@@ -241,6 +242,7 @@ KERNEL_TEST(a_context_finds_its_registers_after_another_ran)
     uint32_t offered = 0u;
     uint32_t kept = 0u;
 
+    context_probe_read(&found, wide);
     context_switch_test_fill(&held, 0x027Fu, 0x7F80u, 0x10u);
     context_switch_test_fill(&overwriting, 0x007Fu, 0x3F80u, 0x80u);
     for (ExtendedStateSave_t save = EXTENDED_STATE_SAVE_FXSAVE; save <= EXTENDED_STATE_SAVE_XSAVES; ++save)
@@ -263,6 +265,7 @@ KERNEL_TEST(a_context_finds_its_registers_after_another_ran)
         asmutils_restore_flags(flags);
         kept += context_switch_test_same(&held, &after, wide) ? 1u : 0u;
     }
+    context_probe_load(&found, wide);
     kernel_test_check(test, offered >= 1u, "the processor offers a save that fits the test's areas");
     kernel_test_check(test, kept == offered, "the registers come back as they were, with every save offered");
     kernel_test_measure(test, "offered", offered);
@@ -281,6 +284,7 @@ KERNEL_TEST(a_prepared_context_starts_from_the_initial_state_with_its_argument)
     static ContextProbeState_t initial;
     static ContextProbeState_t reported;
     static ContextProbeState_t after;
+    static ContextProbeState_t found;
     static CpuContext_t here;
     static CpuContext_t fresh;
     static ContextSwitchTestRole_t role;
@@ -288,6 +292,7 @@ KERNEL_TEST(a_prepared_context_starts_from_the_initial_state_with_its_argument)
     const uint32_t wide = context_switch_test_wide();
     const ExtendedStateSave_t save = extended_state_preferred_save();
 
+    context_probe_read(&found, wide);
     context_switch_test_fill(&held, 0x027Fu, 0x7F80u, 0x10u);
     memset(&initial, 0, sizeof(initial));
     initial.control_word = CONTEXT_SWITCH_TEST_FCW_INITIAL;
@@ -307,6 +312,7 @@ KERNEL_TEST(a_prepared_context_starts_from_the_initial_state_with_its_argument)
     const uint32_t flags = asmutils_save_flags_and_disable_interrupts();
 
     context_probe_hold_across_switch(&held, &after, &here, &fresh, wide);
+    context_probe_load(&found, wide);
     asmutils_restore_flags(flags);
 
     kernel_test_check(test, role.received == &role, "the entry receives its argument");

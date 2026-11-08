@@ -73,6 +73,14 @@ void context_probe_load_and_switch(const ContextProbeState_t *state, CpuContext_
  */
 void context_probe_read(ContextProbeState_t *state, uint32_t wide);
 
+/**
+ * @brief Loads @p state into the registers.
+ *
+ * @param state What the registers hold after the call.
+ * @param wide  Non-zero to load YMM0-YMM7, which needs AVX; zero for XMM0-XMM7.
+ */
+void context_probe_load(const ContextProbeState_t *state, uint32_t wide);
+
 #ifdef __cplusplus
 }
 #endif

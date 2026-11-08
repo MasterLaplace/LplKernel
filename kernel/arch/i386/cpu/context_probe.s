@@ -137,3 +137,32 @@ context_probe_read:
     movdqu %xmm6, 192+CONTEXT_PROBE_VECTORS(%eax)
     movdqu %xmm7, 224+CONTEXT_PROBE_VECTORS(%eax)
     ret
+
+# void context_probe_load(const ContextProbeState_t *state, uint32_t wide)
+.globl context_probe_load
+.type context_probe_load, @function
+context_probe_load:
+    movl 4(%esp), %eax
+    fldcw CONTEXT_PROBE_CONTROL_WORD(%eax)
+    ldmxcsr CONTEXT_PROBE_SIMD_CONTROL(%eax)
+    cmpl $0, 8(%esp)
+    je 1f
+    vmovdqu 0+CONTEXT_PROBE_VECTORS(%eax), %ymm0
+    vmovdqu 32+CONTEXT_PROBE_VECTORS(%eax), %ymm1
+    vmovdqu 64+CONTEXT_PROBE_VECTORS(%eax), %ymm2
+    vmovdqu 96+CONTEXT_PROBE_VECTORS(%eax), %ymm3
+    vmovdqu 128+CONTEXT_PROBE_VECTORS(%eax), %ymm4
+    vmovdqu 160+CONTEXT_PROBE_VECTORS(%eax), %ymm5
+    vmovdqu 192+CONTEXT_PROBE_VECTORS(%eax), %ymm6
+    vmovdqu 224+CONTEXT_PROBE_VECTORS(%eax), %ymm7
+    ret
+1:
+    movdqu 0+CONTEXT_PROBE_VECTORS(%eax), %xmm0
+    movdqu 32+CONTEXT_PROBE_VECTORS(%eax), %xmm1
+    movdqu 64+CONTEXT_PROBE_VECTORS(%eax), %xmm2
+    movdqu 96+CONTEXT_PROBE_VECTORS(%eax), %xmm3
+    movdqu 128+CONTEXT_PROBE_VECTORS(%eax), %xmm4
+    movdqu 160+CONTEXT_PROBE_VECTORS(%eax), %xmm5
+    movdqu 192+CONTEXT_PROBE_VECTORS(%eax), %xmm6
+    movdqu 224+CONTEXT_PROBE_VECTORS(%eax), %xmm7
+    ret
