@@ -144,6 +144,17 @@ extern uint32_t advanced_configuration_and_power_interface_interrupt_routing_fol
     const AdvancedConfigurationAndPowerInterfaceInterruptRoutingTable_t *table);
 
 /**
+ * @brief Whether a PCI function may take its 8259 line: in the PIC model alone, where firmware routes PCI interrupts
+ *        to the 8259; never in the APIC model, where firmware may have moved them off it (§3.8 step 5), nor in an
+ *        unknown one, after a \_PIC (1) that failed.
+ *
+ * @param table A published table.
+ * @return true in the PIC model.
+ */
+extern bool advanced_configuration_and_power_interface_interrupt_routing_leaves_the_8259(
+    const AdvancedConfigurationAndPowerInterfaceInterruptRoutingTable_t *table);
+
+/**
  * @brief The name of interrupt model @p model as the routing records write it.
  *
  * @param model An ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_INTERRUPT_MODEL_* value.

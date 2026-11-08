@@ -141,16 +141,16 @@ static bool hal_audio_line_is_acknowledgeable(uint8_t line)
 /**
  * @brief Routes the controller's interrupt to the handler, or declines and says so: as a message when the controller
  *        has MSI; otherwise on its I/O APIC line, the one the boot's published routes give its pin; on its 8259 line
- *        only in the PIC model, since in the APIC model firmware may have moved the PCI interrupts off the 8259
- *        (ACPI specification, §3.8 step 5).
+ *        only in the PIC model, since in the APIC model firmware may have moved the PCI interrupts off the 8259, and
+ *        after a \_PIC (1) that failed may have done so or not (ACPI specification, §3.8 step 5).
  * @return true when capture is now interrupt-driven.
  */
 static bool hal_audio_route_capture_interrupt(void)
 {
     if (hal_audio_route_capture_message() || hal_audio_route_capture_through_input_output_apic())
         return intel_high_definition_audio_enable_capture_interrupt();
-    if (advanced_configuration_and_power_interface_interrupt_routing()->model ==
-        ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_INTERRUPT_MODEL_APIC)
+    if (!advanced_configuration_and_power_interface_interrupt_routing_leaves_the_8259(
+            advanced_configuration_and_power_interface_interrupt_routing()))
         return false;
 
     const uint8_t line = intel_high_definition_audio_capture_interrupt_line();
