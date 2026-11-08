@@ -1,8 +1,8 @@
 #include <kernel/cpu/apic.h>
 #include <kernel/cpu/apic_ipi.h>
 #include <kernel/cpu/cpu_topology.h>
+#include <kernel/cpu/device_interrupt.h>
 #include <kernel/cpu/irq.h>
-#include <kernel/cpu/msi.h>
 #include <kernel/lib/asmutils.h>
 #include <kernel/testing/test.h>
 
@@ -148,7 +148,7 @@ KERNEL_TEST(every_processor_runs_the_mode_the_bootstrap_processor_chose)
         kernel_test_skip(test, "the local APIC sends no interprocessor interrupt");
         return;
     }
-    if (!message_signaled_interrupt_allocate(interprocessor_interrupts_test_record_mode, NULL, &vector))
+    if (!device_interrupt_allocate(interprocessor_interrupts_test_record_mode, NULL, &vector))
     {
         kernel_test_check(test, false, "a vector is free");
         return;
@@ -164,7 +164,7 @@ KERNEL_TEST(every_processor_runs_the_mode_the_bootstrap_processor_chose)
         answered += mode != INTERPROCESSOR_INTERRUPTS_TEST_NOT_ANSWERED ? 1u : 0u;
         agreeing += mode == chosen ? 1u : 0u;
     }
-    message_signaled_interrupt_release(vector);
+    device_interrupt_release(vector);
     kernel_test_check(test, interprocessor_interrupts_test_own_mode() == chosen,
                       "the bootstrap processor runs the mode it chose");
     kernel_test_check(test, asked == online - 1u, "every other online processor was asked");
