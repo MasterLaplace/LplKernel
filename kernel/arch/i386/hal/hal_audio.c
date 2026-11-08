@@ -2,9 +2,9 @@
 
 #include <kernel/cpu/apic.h>
 #include <kernel/cpu/cpu_topology.h>
+#include <kernel/cpu/device_interrupt.h>
 #include <kernel/cpu/irq.h>
 #include <kernel/cpu/isr.h>
-#include <kernel/cpu/msi.h>
 #include <kernel/cpu/pic.h>
 #include <kernel/drivers/hda.h>
 #include <kernel/memory/spsc_ring.h>
@@ -77,7 +77,7 @@ static bool hal_audio_route_capture_message(void)
     const uint32_t slot = cpu_topology_get_slot_for_apic_id(apic_get_id());
 
     if (hal_audio_allocated_vector == 0u &&
-        !message_signaled_interrupt_allocate(hal_audio_capture_message_handler, NULL, &hal_audio_allocated_vector))
+        !device_interrupt_allocate(hal_audio_capture_message_handler, NULL, &hal_audio_allocated_vector))
         return false;
     if (!intel_high_definition_audio_aim_capture_message(slot, hal_audio_allocated_vector))
         return false;

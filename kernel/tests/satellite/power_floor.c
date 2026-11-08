@@ -1,5 +1,6 @@
 #include <kernel/core/reconciler.h>
 #include <kernel/cpu/cpu_topology.h>
+#include <kernel/cpu/device_interrupt.h>
 #include <kernel/cpu/irq.h>
 #include <kernel/cpu/msi.h>
 #include <kernel/cpu/pci.h>
@@ -300,12 +301,12 @@ KERNEL_TEST(the_capture_interrupt_comes_as_a_message_when_the_controller_has_msi
         return;
     }
     for (uint32_t other = 0u; other < CPU_TOPOLOGY_MAX_LOGICAL_CPUS_PUBLIC; ++other)
-        elsewhere += other != slot ? message_signaled_interrupt_count(vector, other) : 0u;
+        elsewhere += other != slot ? device_interrupt_count(vector, other) : 0u;
     kernel_test_check(test, vector != 0u, "with MSI, it comes as a message");
-    kernel_test_check(test, message_signaled_interrupt_count(vector, slot) > 0u,
+    kernel_test_check(test, device_interrupt_count(vector, slot) > 0u,
                       "the message interrupted the core that took the ring");
     kernel_test_check(test, elsewhere == 0u, "and no other core");
     kernel_test_measure(test, "vector", vector);
     kernel_test_measure(test, "slot", slot);
-    kernel_test_measure(test, "messages", message_signaled_interrupt_count(vector, slot));
+    kernel_test_measure(test, "messages", device_interrupt_count(vector, slot));
 }

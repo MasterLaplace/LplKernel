@@ -29,22 +29,13 @@
 #include <stdint.h>
 
 /**
- * @name The vectors message-signaled interrupts take
+ * @name The capabilities message-signaled interrupts are programmed through
  * @{
  */
-#define MESSAGE_SIGNALED_INTERRUPT_VECTOR_BASE         0x50u /**< The first vector a device's message may carry. */
-#define MESSAGE_SIGNALED_INTERRUPT_VECTOR_COUNT        32u   /**< Vectors from it: 0x50 to 0x6F. */
 #define MESSAGE_SIGNALED_INTERRUPT_ADDRESS_BASE        0xFEE00000u /**< Messages go here, the destination in bits 19:12. */
 #define MESSAGE_SIGNALED_INTERRUPT_CAPABILITY          0x05u       /**< The MSI capability's identifier. */
 #define MESSAGE_SIGNALED_INTERRUPT_CAPABILITY_EXTENDED 0x11u       /**< The MSI-X capability's identifier. */
 /** @} */
-
-/**
- * @brief What a message-signaled vector runs, on the core the message names, before the kernel ends the interrupt.
- *
- * @param context What the driver gave message_signaled_interrupt_allocate.
- */
-typedef void (*MessageSignaledInterruptHandler_t)(void *context);
 
 /**
  * @brief The MSI-X table of one function, mapped, as message_signaled_interrupt_extended_open leaves it.
@@ -76,38 +67,6 @@ extern bool message_signaled_interrupt_compose(uint32_t apic_id, uint8_t vector,
                                                uint32_t *out_data);
 
 /**
- * @brief Gives a free message-signaled vector to @p handler.
- *
- * @details Called by one processor at a time, before the vector's source is aimed: nothing locks the table.
- *
- * @param handler    What the vector runs; not NULL.
- * @param context    What @p handler receives.
- * @param out_vector Where the vector goes.
- * @return false when every vector is taken or @p handler is NULL.
- */
-extern bool message_signaled_interrupt_allocate(MessageSignaledInterruptHandler_t handler, void *context,
-                                                uint8_t *out_vector);
-
-/**
- * @brief Gives @p vector back, which message_signaled_interrupt_allocate gave; its counts are kept.
- *
- * @details Its source must be masked first: a delivery racing the release on another processor may run the handler
- *          with a context already cleared.
- *
- * @param vector The vector; another is ignored.
- */
-extern void message_signaled_interrupt_release(uint8_t vector);
-
-/**
- * @brief Interrupts @p vector delivered on the processor of logical slot @p slot since boot.
- *
- * @param vector A message-signaled vector.
- * @param slot   A logical CPU slot: the one cpu_topology_get_slot_for_apic_id gives for the processor's APIC ID.
- * @return The count, or 0 for a vector or a slot out of range.
- */
-extern uint32_t message_signaled_interrupt_count(uint8_t vector, uint32_t slot);
-
-/**
  * @brief Finds the MSI-X capability of @p device, maps its table and enables MSI-X with every entry masked.
  *
  * @details The table lies in the memory window its Base Address Register Indicator names, at the offset the
@@ -126,19 +85,16 @@ extern bool message_signaled_interrupt_extended_open(const PeripheralComponentIn
 /**
  * @brief Aims entry @p entry of @p table at the processor of logical slot @p slot with @p vector, and unmasks it.
  *
+ * @details The entry is masked before anything else, and unmasked only once aimed. Only the mask bit of Vector Control
+ *          changes: its reserved bits are kept (PCI Local Bus Specification 3.0, §6.8.2.9).
+ *
  * @param table  A table message_signaled_interrupt_extended_open opened.
  * @param entry  The entry, below the table's count.
  * @param slot   The logical CPU slot whose local APIC the message interrupts.
- * @param vector The vector, from message_signaled_interrupt_allocate.
- * @details The entry is masked before anything else, and unmasked only once aimed. Only the mask bit of Vector Control
- *          changes: its reserved bits are kept (PCI Local Bus Specification 3.0, §6.8.2.9). With the local APIC in
- *          x2APIC mode and no hypervisor reported, nothing is aimed: a device interrupt cannot reach an x2APIC without
- *          interrupt remapping on bare metal, which Linux states too (try_to_enable_x2apic,
- * arch/x86/kernel/apic/apic.c).
- *
+ * @param vector The vector, from device_interrupt_allocate.
  * @return false, the entry masked, when the slot holds no processor, the message cannot name it
- *         (message_signaled_interrupt_compose), or the platform cannot deliver it; false, nothing written, when the
- *         table is not open or the entry is past it.
+ *         (message_signaled_interrupt_compose), or the platform cannot deliver it (device_interrupt_platform_delivers);
+ *         false, nothing written, when the table is not open or the entry is past it.
  */
 extern bool message_signaled_interrupt_extended_aim(const MessageSignaledInterruptExtendedTable_t *table,
                                                     uint16_t entry, uint32_t slot, uint8_t vector);
@@ -154,10 +110,10 @@ extern bool message_signaled_interrupt_extended_aim(const MessageSignaledInterru
  *
  * @param device The function.
  * @param slot   The logical CPU slot whose local APIC the message interrupts.
- * @param vector The vector, from message_signaled_interrupt_allocate.
+ * @param vector The vector, from device_interrupt_allocate.
  * @return false, MSI left as it was, when the function has no MSI capability, the slot holds no processor, the
- *         message cannot name it (message_signaled_interrupt_compose), or the local APIC is in x2APIC mode on bare
- *         metal, where a device interrupt needs interrupt remapping (message_signaled_interrupt_extended_aim).
+ *         message cannot name it (message_signaled_interrupt_compose), or the platform cannot deliver it
+ *         (device_interrupt_platform_delivers).
  */
 extern bool message_signaled_interrupt_enable(const PeripheralComponentInterconnectDevice_t *device, uint32_t slot,
                                               uint8_t vector);

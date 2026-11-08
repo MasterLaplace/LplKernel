@@ -247,7 +247,7 @@ uint8_t intel_high_definition_audio_capture_interrupt_line(void);
  * @brief Aims the controller's MSI at the processor of logical slot @p slot with @p vector, in place of its line.
  *
  * @param slot   The logical CPU slot that takes the capture interrupts.
- * @param vector A vector from message_signaled_interrupt_allocate.
+ * @param vector A vector from device_interrupt_allocate.
  * @return false when no controller is on the bus or it has no MSI capability (message_signaled_interrupt_enable);
  *         its line then stays the route.
  */

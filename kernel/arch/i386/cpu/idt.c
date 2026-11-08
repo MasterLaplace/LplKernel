@@ -1,13 +1,13 @@
+#include <kernel/cpu/device_interrupt.h>
 #include <kernel/cpu/idt.h>
 #include <kernel/cpu/isr.h>
-#include <kernel/cpu/msi.h>
 
 #define IDT_EXCEPTION_VECTOR_COUNT 32u
 #define IDT_IRQ_VECTOR_COUNT       16u
 #define IDT_TOTAL_VECTOR_COUNT     256u
 
-_Static_assert(INTERRUPT_SERVICE_ROUTINE_MESSAGE_SIGNALED_STUBS == MESSAGE_SIGNALED_INTERRUPT_VECTOR_COUNT,
-               "isr_stubs.s lists one stub per message-signaled vector");
+_Static_assert(INTERRUPT_SERVICE_ROUTINE_DEVICE_STUBS == DEVICE_INTERRUPT_VECTOR_COUNT,
+               "isr_stubs.s lists one stub per device vector");
 
 /** The table the bootstrap processor loaded, which every other processor loads too. */
 static InterruptDescriptorTable_t *idt_loaded = NULL;
@@ -91,9 +91,8 @@ void interrupt_descriptor_table_initialize(InterruptDescriptorTable_t *idt)
     interrupt_descriptor_table_clear(idt);
     interrupt_descriptor_table_install_vector_range(idt, 0u, idt_exception_stubs, IDT_EXCEPTION_VECTOR_COUNT);
     interrupt_descriptor_table_install_vector_range(idt, PIC_VECTOR_OFFSET_MASTER, idt_irq_stubs, IDT_IRQ_VECTOR_COUNT);
-    interrupt_descriptor_table_install_vector_range(idt, MESSAGE_SIGNALED_INTERRUPT_VECTOR_BASE,
-                                                    interrupt_service_routine_message_signaled_stubs,
-                                                    MESSAGE_SIGNALED_INTERRUPT_VECTOR_COUNT);
+    interrupt_descriptor_table_install_vector_range(
+        idt, DEVICE_INTERRUPT_VECTOR_BASE, interrupt_service_routine_device_stubs, DEVICE_INTERRUPT_VECTOR_COUNT);
 
     interrupt_descriptor_table_encode_flat_entry(&idt->entries[0x40u], (void *) isr64, GDT_KERNEL_CODE_SELECTOR,
                                                  IDT_KERNEL_INTERRUPT_GATE);
