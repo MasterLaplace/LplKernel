@@ -219,6 +219,9 @@ jobs:
     - name: The rule a real machine's C-states are compared with Linux's cpuidle by
       run: python3 -I -B tools/acpi/oracles/against_linux_cpuidle.py --self-test
 
+    - name: The rule the oracle of _PRT reads an interrupt link by
+      run: python3 -I -B tools/acpi/oracles/acpiexec_routing.py --self-test
+
     - name: The ACPI tests on the host
       run: |
         set -eo pipefail

@@ -44,9 +44,10 @@ links to its page in the PDF.
 | N10 namespace | the DSDT and SSDTs, then `Load` and `LoadTable` at run time | #535 to #539, #546 |
 | N11 firmware handshake | ACPI mode, `\_OSI`, `\_REV`, `_REG`, `_STA` and `_INI`, `\_SB._OSC`, processor `_OSC` or `_PDC` | #540 to #545 |
 | N12 `_CST` for every CPU | entry register, type, latency and power, bound to a CPU slot | #57, #298, #135 |
+| N13 PCI INTx routing | `\_PIC (1)` in the APIC model; where each interrupt pin of a root bus goes, from every root bridge's `_PRT` and the links it names | #59 |
 
 The later needs reuse the same layers, each adding its own entry points to the needs path (§4.1): P-states and
-CPPC (#302), PCI INTx routing (#59), reset and soft-off (#294), events and the embedded controller (#547), battery, AC, thermal and lid (#548), sleep states (#295).
+CPPC (#302), reset and soft-off (#294), events and the embedded controller (#547), battery, AC, thermal and lid (#548), sleep states (#295).
 
 ### 1.3 The needs path
 
@@ -57,6 +58,7 @@ The needs path is the set of evaluations the kernel makes at boot, and every met
 - `\_SB._OSC`, and processor `_OSC` or `_PDC`;
 - `_CST`, and the `_UID` that binds a processor to its CPU (§3.10);
 - `_ADR`, `_SEG`, `_BBN`, `_HID` and `_CID`, which a PCI_Config region evaluates as it attaches (§3.6);
+- `\_PIC`, each root bridge's `_PRT`, and the `_PRS` and `_CRS` of each link it names (§3.11);
 - the tables that `Load` and `LoadTable` bring in.
 
 It decides which opcodes are executed (§4.1). It is computed on every corpus machine twice: as a static closure,
@@ -82,6 +84,10 @@ Each item is left out on purpose. "Brings it back" names what reverses the decis
 | `LoadTable` with a RootPath, ParameterPath or ParameterData, `Load` from a Buffer, either run while a table is declared | every call site on the corpus passes `""`, `""`, `Zero`, and loads from a region or a field, in a method; another form fails with `load_form_unsupported` | a needs-path call site with another form |
 | `_REG` for SystemMemory and SystemIO | ACPI declares both always available, and OSPM runs no `_REG` for them ([§6.5.4]) | a needs-path `_REG` that tests either space |
 | Opcodes outside the needs path | not reached on the path to `_CST` | the needs path of a later need, or a counted `unimplemented_operator` |
+| The `_PRT` of a bridge below a root bridge, and the swizzle of a pin through a bridge | the kernel's one PCI INTx consumer, the audio controller, sits on a root bus | a device behind a bridge that has neither MSI nor MSI-X |
+| Choosing a link's interrupt through `_SRS` and `_DIS` | QEMU's firmware routes its links before the kernel starts; a corpus dump holds no state of the router its links read | a link found unrouted on a target |
+| A `_PRT` Source given as a String | the Source is a NamePath ([§6.2.14]); ACPICA also takes a String | a machine that gives one |
+| A root bridge's bus from the bus range of its `_CRS` | `_BBN` gives it, as for a PCI_Config region (§3.6); Linux reads `_CRS` first | a root bridge whose `_CRS` and `_BBN` disagree |
 | T-states, S1 and S2, `_GTS`, `_BFS`, `_TTS`, hotplug, WMI, video extensions, APEI, active cooling | no need asks for them | the issue that names one |
 | A parse tree, method-body copies, a disassembler or a debugger in ring 0 | execution runs from the bytes (§3.6) | none |
 | Resource conversion into native structures | a zero-copy iterator over the descriptors suffices (§3.10) | none |
@@ -116,7 +122,7 @@ L2 namespace     nodes, hash, resolution, definition-block load (DSDT, SSDTs, Lo
 L3 interpreter   values, objects, frames, control flow, conversions, budgets
 L4 regions       SystemMemory, SystemIO and PCI_Config handlers, fields, mapping cache
 L5 OS services   _OSI, _OS, _REV, Notify queue, Sleep, Stall, Timer, host interface
-L6 consumers     namespace initialisation, _OSC, _CST; later _PIC with _PRT, _PSS and _CPC, _S5
+L6 consumers     namespace initialisation, _OSC, _CST, _PIC with _PRT; later _PSS and _CPC, _S5
 ```
 
 Each layer calls only the ones above it. L6 is ordinary kernel code: it asks the interpreter to evaluate objects
@@ -508,10 +514,10 @@ Run once at boot by the bootstrap processor.
    invalid, bit 0 clear with bit 1 set, or bit 0 set with bit 1 clear and bit 3 set, is walked as any other and
    counted (`status_invalid`); whether to use such a device is its consumer's decision. A pre-pass marks the subtrees
    that hold an `_INI`, so most devices need no `_STA` evaluation.
-5. **`\_PIC` is not called** while the kernel routes PCI INTx through the 8259; `pic_mode_deferred` counts it.
-   Firmware assumes PIC mode until told otherwise ([§5.8.1]), and on AMD clients `\_PIC(1)` can rewrite every PIRQ
-   router, which would silence every PCI device the kernel drives through the 8259. It is called once INTx goes
-   through the I/O APIC (#59).
+5. **`\_PIC (1)` in the APIC model,** where the kernel sends PCI INTx through an I/O APIC; in the PIC model
+   `\_PIC` is not called, and `pic_mode_deferred` counts it. Firmware assumes PIC mode until told otherwise
+   ([§5.8.1]), and on AMD clients `\_PIC(1)` can rewrite every PIRQ router, which would silence a PCI device driven
+   through the 8259: the boot takes the APIC model only once no PCI interrupt goes through the 8259 (#59).
 6. **Platform `\_SB._OSC`** with UUID `0811B06E-4A27-44F9-8D60-3CBBC22E7B48`, query then commit, claiming none of
    the DWORD 2 capabilities ([§6.2.12.1], [§6.2.12.2]), since the kernel exercises none of them at boot. #302 claims
    CPPC (bits 5, 6 and 10) in a second evaluation.
@@ -544,7 +550,7 @@ flowchart TD
   MARK --> INI["step 2: \_INI, then \_SB._INI"]
   INI --> REG["step 3: _REG(PCI_Config, 1) in<br/>each scope that declares such a region"]
   REG --> WALK["step 4: _STA and _INI over the marked<br/>devices, in declaration order"]
-  WALK --> PIC["step 5: \_PIC is not called"]
+  WALK --> PIC["step 5: \_PIC (1) in the APIC model"]
   PIC --> OSC["step 6: \_SB._OSC, query then commit"]
   OSC -->|"Intel's GCAP reads its result"| CAPABILITIES["step 7: each bound processor's<br/>_OSC, or else its _PDC"]
   CAPABILITIES -->|"on Intel clients, its Load brings the _CST"| CST["step 8: CST_CNT to SMI_CMD if step 0<br/>left ACPI mode, then each _CST"]
@@ -564,7 +570,7 @@ flowchart TD
 | 3 a `_REG` | the evaluation's status | the next scope | `region_registration_failed` |
 | 4 a `_STA` | the evaluation's status | no `_INI` for that device; its children are still walked | `status_failed` |
 | 4 an `_INI` | the evaluation's status | continue and descend | `initialization_failed` |
-| 5 `\_PIC` | not called | | `pic_mode_deferred` |
+| 5 `\_PIC (1)` | the evaluation's status | continue; firmware may route as in the PIC model | `pic_mode_failed`; `pic_mode_deferred` in the PIC model |
 | 6 platform `_OSC` | absent, failed, or an error bit in the returned DWORD 1 | continue as if nothing was granted | `platform_capabilities`: `absent`, `failed` or `refused` |
 | 7 processor `_OSC` or `_PDC` | the evaluation's status, or an error bit in `_OSC`'s DWORD 1 | continue; that processor may have no `_CST` | `processor_capabilities_failed`, `processor_capabilities_refused` |
 | 8 a `_STA` | the evaluation's status | the processor is kept out, and so is what lies below a Device or a Processor; a ThermalZone is walked into | `status_failed` |
@@ -717,6 +723,35 @@ Notifies queued since. A table loaded during step 8 or step 9 that gives a proce
 - **The table is published per CPU,** as plain data the idle path reads, with one `[LPLTLM] acpi.cst` line per CPU.
   A Notify 0x81 re-evaluates it (§3.8 step 9).
 
+### 3.11 What `_PRT` publishes
+
+Once the sequence of §3.8 is over, the routes of the PCI interrupt pins of every root bus are published, as Linux v6.17
+reads them when a driver enables a device (`acpi_pci_irq_enable`, `acpi_pci_link_allocate_irq`).
+
+- **Root bridges.** Each Device whose `_HID` or `_CID` names PNP0A03 or PNP0A08, as an EisaId or a String, alone or
+  in a `_CID` Package, in declaration order. Its `_PRT` is read when its own `_STA` says present or functioning, 0x0F
+  without one; one that fails keeps it out, as Linux attaches no device whose `_STA` fails. A bridge kept out
+  (`bridges_absent`) or without a `_PRT` (`bridges_unrouted`) is counted. Its segment is its `_SEG` and its bus its
+  `_BBN`, 0 without one, as a PCI_Config region reads them (§3.6).
+- **Entries** ([§6.2.14]). A Package of four: an Integer Address whose bits 16 to 31 name the device, its function
+  bits ignored as Linux ignores them; an Integer Pin, 0 to 3 for INTA to INTD; a Source; an Integer SourceIndex. An
+  entry of another shape, a device past 31 or a pin past 3, which no lookup would match, is left out and counted
+  (`entries_malformed`); where ACPICA refuses the whole table for an entry of the wrong shape, the others are kept.
+- **A wired pin.** A Source that is an Integer, of any value, as ACPICA reads it, wires the pin to the interrupt its
+  SourceIndex gives, level-triggered and active-low, as PCI interrupts are.
+- **A link.** A Source that names a Device names an interrupt link. Its SourceIndex must be 0, as Linux supports
+  one interrupt per link. The link routes when its `_HID` or `_CID` names PNP0C0F, its `_STA` says present or
+  functioning, and the first IRQ ([§6.4.2.1]) or Extended Interrupt ([§6.4.3.6]) descriptor of its `_CRS` that names
+  an interrupt names one, other than 0, that the first such descriptor of its `_PRS` lists; the route takes that
+  `_PRS` descriptor's trigger and polarity, as Linux does. `_PRS` is evaluated before `_CRS`, as Linux does. Each link
+  is read once, however many entries name it. A link that does not route is counted (`links_unrouted`), and so is
+  one whose `_STA`, `_PRS` or `_CRS` fails or gives no Buffer (`links_failed`, and per status).
+- **The interrupt** is a Global System Interrupt in the APIC model, an ISA IRQ in the PIC model: firmware's `_PRT`
+  answers for the model step 5 told it.
+- **A lookup** takes the first route of a segment, bus, device and pin, as Linux takes the first matching entry.
+- **The table is published once,** as plain data the drivers read, with one `[LPLTLM] acpi.prt` line: the model, the
+  counts and the fold of the routes.
+
 ---
 
 ## 4. The AML subset
@@ -732,7 +767,7 @@ Notifies queued since. A table loaded during step 8 or step 9 that gives a proce
    its own: `Unload`, `Fatal`, `BreakPoint`, `Wait`, `Reset`, `FindSetLeftBit` and `FindSetRightBit`, and in a method
    `Mutex` and `Event`, which declare temporaries (§5.1); every other fails with `unimplemented_operator`, counted,
    until a count asks for it. A later need adds the closure of its own
-   entry points: `_PSS` and `_CPC`, `_PRT`, `_PTS` and `\_S5`. `tools/acpi/corpus.sh closure` compares what the closure
+   entry points: `_PSS` and `_CPC`, `_PTS` and `\_S5`. `tools/acpi/corpus.sh closure` compares what the closure
    reaches with the run list where it reaches it: in a method body, what the interpreter runs; in table-level code,
    that and the declarations the load takes, but `DataTableRegion`, whose statement fails (§4.5). An opcode the run
    list leaves out there fails it.
@@ -1076,6 +1111,8 @@ that reaches it. The corpus runs report the peaks.
 | Held mutexes per evaluation | 32 |
 | Notify ring | 64 entries; an overflow is dropped and counted |
 | States one CPU slot publishes | 7, as Linux, whose table of `ACPI_PROCESSOR_MAX_POWER` (8) keeps its first entry for C0; the states after them are counted, not read |
+| Routes of PCI interrupt pins one boot publishes | 256; the entries after them are counted, not read |
+| Interrupt links one boot reads | 64; an entry that names another is unrouted |
 | Region mapping cache | 64 entries, each the pages one access touched |
 | Pre-decoded records per load | 128 records, 256 operators, 256 constants and 64 names, 4 per record; a cache whose records, operators, constants or names are full is emptied whole, counted, and the loop that filled it builds no more, never a failure |
 
@@ -1388,6 +1425,11 @@ iasl -oa -r 1 test.asl                         # no AML optimisation; revision 1
 iasl -e ssdt*.dat -d dsdt.dat                  # disassemble with external argument counts
 ```
 
+The PCI interrupt routes are compared with `acpiexec` (`tools/acpi/corpus.sh routing`): its debugger buffer of 16 KiB
+cannot print a `_PRT` of 128 entries, so an SSDT compiled by the pinned iasl gives each Device with a `_PRT` a method
+that counts its entries and one that returns an entry by its index; the links those entries name are read in a second
+run, and `tools/acpi/oracles/acpiexec_routing.py` decodes their `_PRS` and `_CRS` apart from the kernel's code (§3.11).
+
 A needs-path result that differs between `acpiexec` and `acpiexec -es` marks a machine that relies on slack
 behaviour, and reopens the implicit-return and uninitialised-operand rules of §5.2. Methods that read `Timer` are
 compared on status only.
@@ -1477,7 +1519,10 @@ its page.
 [§5.8.1]: https://uefi.org/sites/default/files/resources/ACPI_Spec_6.6.pdf#page=430
 [§6.2.12.1]: https://uefi.org/sites/default/files/resources/ACPI_Spec_6.6.pdf#page=473
 [§6.2.12.2]: https://uefi.org/sites/default/files/resources/ACPI_Spec_6.6.pdf#page=474
+[§6.2.14]: https://uefi.org/sites/default/files/resources/ACPI_Spec_6.6.pdf#page=478
 [§6.3.7]: https://uefi.org/sites/default/files/resources/ACPI_Spec_6.6.pdf#page=497
+[§6.4.2.1]: https://uefi.org/sites/default/files/resources/ACPI_Spec_6.6.pdf#page=498
+[§6.4.3.6]: https://uefi.org/sites/default/files/resources/ACPI_Spec_6.6.pdf#page=523
 [§6.4.3.7]: https://uefi.org/sites/default/files/resources/ACPI_Spec_6.6.pdf#page=525
 [§6.5.1]: https://uefi.org/sites/default/files/resources/ACPI_Spec_6.6.pdf#page=547
 [§6.5.4]: https://uefi.org/sites/default/files/resources/ACPI_Spec_6.6.pdf#page=549
