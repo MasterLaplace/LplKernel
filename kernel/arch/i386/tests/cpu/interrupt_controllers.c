@@ -3,6 +3,7 @@
 #include <kernel/cpu/apic.h>
 #include <kernel/cpu/apic_timer.h>
 #include <kernel/cpu/clock.h>
+#include <kernel/cpu/cpu_identity.h>
 #include <kernel/cpu/cpu_topology.h>
 #include <kernel/cpu/ioapic.h>
 #include <kernel/cpu/irq.h>
@@ -22,6 +23,9 @@
 #define INTERRUPT_CONTROLLERS_TEST_YET_ANOTHER_PROCESSOR 0x15u /**< The one taken when a route already names 0x2A. */
 #define INTERRUPT_CONTROLLERS_TEST_UNNAMEABLE_STATE                                                                    \
     "ioapic-init-bootstrap-processor-unnameable" /**< The state when no entry can name the bootstrap processor. */
+#define INTERRUPT_CONTROLLERS_TEST_CPUID_X2APIC       (1u << 21u)   /**< CPUID leaf 1, ECX: x2APIC offered. */
+#define INTERRUPT_CONTROLLERS_TEST_APIC_BASE          0x1Bu         /**< The IA32_APIC_BASE model-specific register. */
+#define INTERRUPT_CONTROLLERS_TEST_APIC_BASE_EXTENDED (1ull << 10u) /**< Its EXTD bit: x2APIC mode. */
 
 KERNEL_TEST_SUITE(interrupt_controllers, KERNEL_TEST_STAGE_INITIALIZATION);
 
@@ -205,6 +209,98 @@ KERNEL_TEST(local_controller_is_ready)
                       "it gives the local controllers' address");
     kernel_test_check(test, advanced_pic_timer_backend_is_local_apic_mmio_mapped(),
                       "the kernel mapped the local controller's registers");
+}
+
+/**
+ * @brief One platform and the mode it must get.
+ */
+typedef struct {
+    ApicPlatform_t platform; /**< What the processor and the firmware report. */
+    ApicMode_t expected;     /**< The mode, as issue #795 decides it. */
+} InterruptControllersModeCase_t;
+
+/**
+ * @brief On bare metal the local APIC stays in xAPIC mode, which device interrupts reach without interrupt remapping,
+ *        unless the firmware handed over x2APIC mode; under a hypervisor it goes to x2APIC mode whenever offered.
+ *
+ * @details The eight platforms three bits make, x2APIC offered, hypervisor reported and x2APIC left on by the firmware,
+ *          each with the mode written here by hand.
+ */
+KERNEL_TEST(bare_metal_keeps_xapic_unless_the_firmware_handed_over_x2apic)
+{
+    static const InterruptControllersModeCase_t cases[] = {
+        {{.x2apic_offered = false, .hypervisor_present = false, .x2apic_from_firmware = false},
+         APIC_MODE_XAPIC_NOT_OFFERED      },
+        {{.x2apic_offered = false, .hypervisor_present = true, .x2apic_from_firmware = false},
+         APIC_MODE_XAPIC_NOT_OFFERED      },
+        {{.x2apic_offered = true, .hypervisor_present = false, .x2apic_from_firmware = false},
+         APIC_MODE_XAPIC_WITHOUT_REMAPPING},
+        {{.x2apic_offered = true, .hypervisor_present = true, .x2apic_from_firmware = false},
+         APIC_MODE_X2APIC_UNDER_HYPERVISOR},
+        {{.x2apic_offered = false, .hypervisor_present = false, .x2apic_from_firmware = true},
+         APIC_MODE_X2APIC_FROM_FIRMWARE   },
+        {{.x2apic_offered = false, .hypervisor_present = true, .x2apic_from_firmware = true},
+         APIC_MODE_X2APIC_FROM_FIRMWARE   },
+        {{.x2apic_offered = true, .hypervisor_present = false, .x2apic_from_firmware = true},
+         APIC_MODE_X2APIC_FROM_FIRMWARE   },
+        {{.x2apic_offered = true, .hypervisor_present = true, .x2apic_from_firmware = true},
+         APIC_MODE_X2APIC_FROM_FIRMWARE   },
+    };
+    const uint32_t case_count = sizeof(cases) / sizeof(cases[0]);
+    uint32_t as_expected = 0u;
+
+    for (uint32_t index = 0u; index < case_count; ++index)
+        as_expected += apic_choose_mode(&cases[index].platform) == cases[index].expected ? 1u : 0u;
+    kernel_test_check(test, apic_choose_mode(&cases[2].platform) == APIC_MODE_XAPIC_WITHOUT_REMAPPING,
+                      "bare metal that offers x2APIC, without it from the firmware, stays in xAPIC mode");
+    kernel_test_check(test, apic_choose_mode(&cases[3].platform) == APIC_MODE_X2APIC_UNDER_HYPERVISOR,
+                      "the same processor under a hypervisor goes to x2APIC mode");
+    kernel_test_check(test, apic_choose_mode(&cases[6].platform) == APIC_MODE_X2APIC_FROM_FIRMWARE,
+                      "bare metal keeps the x2APIC mode its firmware handed over");
+    kernel_test_check(test, as_expected == case_count, "each of the eight platforms gets its mode");
+    kernel_test_measure(test, "platforms", case_count);
+    kernel_test_measure(test, "as_expected", as_expected);
+}
+
+/**
+ * @brief The bootstrap processor runs its local APIC in the mode this machine gets: xAPIC without x2APIC, x2APIC under
+ *        a hypervisor that offers it, and on bare metal xAPIC unless the firmware handed over x2APIC.
+ *
+ * @details `qemu-system-i386 -machine q35 -cpu max,-hypervisor -kernel kernel/lpl.kernel` is the bare-metal bench: TCG
+ *          still offers x2APIC, the hypervisor bit cleared. The firmware's choice is not readable once the kernel has
+ *          applied its own, so a machine that runs x2APIC mode from the firmware is told apart by the mode's reason.
+ */
+KERNEL_TEST(the_bootstrap_processor_runs_the_mode_this_machine_gets)
+{
+    CpuIdentity_t identity;
+    uint32_t eax = 0u;
+    uint32_t ebx = 0u;
+    uint32_t ecx = 0u;
+    uint32_t edx = 0u;
+
+    cpu_identity_read(&identity);
+    asmutils_cpuid(1u, 0u, &eax, &ebx, &ecx, &edx);
+
+    const bool offered = (ecx & INTERRUPT_CONTROLLERS_TEST_CPUID_X2APIC) != 0u;
+    const ApicMode_t mode = apic_get_mode();
+    const bool from_firmware = mode == APIC_MODE_X2APIC_FROM_FIRMWARE;
+    const bool extended = (asmutils_read_model_specific_register(INTERRUPT_CONTROLLERS_TEST_APIC_BASE) &
+                           INTERRUPT_CONTROLLERS_TEST_APIC_BASE_EXTENDED) != 0u;
+
+    kernel_test_check(test, mode != APIC_MODE_NOT_CHOSEN, "the bootstrap processor chose a mode");
+    kernel_test_check(test, extended == apic_is_x2apic_active(),
+                      "its IA32_APIC_BASE holds the mode the kernel addresses it in");
+    if (!offered)
+        kernel_test_check(test, !extended, "a processor without x2APIC runs xAPIC mode");
+    else if (identity.hypervisor)
+        kernel_test_check(test, extended, "under a hypervisor, the x2APIC offered runs");
+    else
+        kernel_test_check(test, extended == from_firmware,
+                          "on bare metal, x2APIC mode runs only when the firmware handed it over");
+    kernel_test_measure(test, "x2apic_offered", offered ? 1u : 0u);
+    kernel_test_measure(test, "hypervisor", identity.hypervisor ? 1u : 0u);
+    kernel_test_measure(test, "x2apic", extended ? 1u : 0u);
+    kernel_test_measure(test, "mode", (uint32_t) mode);
 }
 
 /**

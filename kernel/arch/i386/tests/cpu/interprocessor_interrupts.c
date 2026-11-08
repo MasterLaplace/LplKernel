@@ -1,8 +1,66 @@
 #include <kernel/cpu/apic.h>
 #include <kernel/cpu/apic_ipi.h>
+#include <kernel/cpu/cpu_topology.h>
+#include <kernel/cpu/irq.h>
+#include <kernel/cpu/msi.h>
+#include <kernel/lib/asmutils.h>
 #include <kernel/testing/test.h>
 
+#include <stdint.h>
+
 KERNEL_TEST_SUITE(interprocessor_interrupts, KERNEL_TEST_STAGE_PUBLISHED);
+
+#define INTERPROCESSOR_INTERRUPTS_TEST_WAIT_MICROSECONDS  100000u /**< How long a processor may take to answer. */
+#define INTERPROCESSOR_INTERRUPTS_TEST_APIC_BASE          0x1Bu   /**< The IA32_APIC_BASE model-specific register. */
+#define INTERPROCESSOR_INTERRUPTS_TEST_APIC_BASE_EXTENDED (1ull << 10u) /**< Its EXTD bit: x2APIC mode. */
+#define INTERPROCESSOR_INTERRUPTS_TEST_NOT_ANSWERED       0u            /**< A slot whose processor has not answered. */
+#define INTERPROCESSOR_INTERRUPTS_TEST_XAPIC              1u            /**< It answered from xAPIC mode. */
+#define INTERPROCESSOR_INTERRUPTS_TEST_X2APIC             2u            /**< It answered from x2APIC mode. */
+
+/** The mode each slot's processor read in its own IA32_APIC_BASE, written by that processor alone. */
+static volatile uint32_t interprocessor_interrupts_test_modes[CPU_TOPOLOGY_MAX_LOGICAL_CPUS_PUBLIC] = {0u};
+
+/**
+ * @brief The mode this processor's IA32_APIC_BASE holds.
+ */
+static uint32_t interprocessor_interrupts_test_own_mode(void)
+{
+    return (asmutils_read_model_specific_register(INTERPROCESSOR_INTERRUPTS_TEST_APIC_BASE) &
+            INTERPROCESSOR_INTERRUPTS_TEST_APIC_BASE_EXTENDED) != 0u ?
+               INTERPROCESSOR_INTERRUPTS_TEST_X2APIC :
+               INTERPROCESSOR_INTERRUPTS_TEST_XAPIC;
+}
+
+/**
+ * @brief Run on the processor the vector reached: records its mode in its own slot.
+ */
+static void interprocessor_interrupts_test_record_mode(void *context)
+{
+    const uint32_t slot = cpu_topology_get_slot_for_apic_id(apic_get_id());
+
+    (void) context;
+    if (slot < CPU_TOPOLOGY_MAX_LOGICAL_CPUS_PUBLIC)
+        interprocessor_interrupts_test_modes[slot] = interprocessor_interrupts_test_own_mode();
+}
+
+/**
+ * @brief Sends @p vector to the processor of @p slot and waits, a bounded while, for it to record its mode.
+ *
+ * @return The mode it recorded, or INTERPROCESSOR_INTERRUPTS_TEST_NOT_ANSWERED.
+ */
+static uint32_t interprocessor_interrupts_test_ask_mode(uint32_t slot, uint8_t vector)
+{
+    InterruptRequestDeadline_t deadline;
+
+    interprocessor_interrupts_test_modes[slot] = INTERPROCESSOR_INTERRUPTS_TEST_NOT_ANSWERED;
+    if (advanced_pic_ipi_send_fixed(cpu_topology_get_apic_id_at_slot(slot), vector, ADVANCED_PIC_IPI_SHORT_NONE) == 0u)
+        return INTERPROCESSOR_INTERRUPTS_TEST_NOT_ANSWERED;
+    interrupt_request_deadline_start(&deadline, INTERPROCESSOR_INTERRUPTS_TEST_WAIT_MICROSECONDS);
+    while (interprocessor_interrupts_test_modes[slot] == INTERPROCESSOR_INTERRUPTS_TEST_NOT_ANSWERED &&
+           !interrupt_request_deadline_passed(&deadline))
+        asmutils_pause();
+    return interprocessor_interrupts_test_modes[slot];
+}
 
 /**
  * @brief In xAPIC mode, an identifier the destination field cannot hold alone gets no interrupt:
@@ -60,4 +118,59 @@ KERNEL_TEST(the_x2apic_broadcast_is_not_addressed)
     kernel_test_check(test, advanced_pic_ipi_can_address(0x100u), "0x100 is addressed");
     kernel_test_check(test, advanced_pic_ipi_can_address(0xFFFFFFFEu), "so is 0xFFFFFFFE");
     kernel_test_check(test, !advanced_pic_ipi_can_address(0xFFFFFFFFu), "0xFFFFFFFF, the broadcast, is not");
+}
+
+/**
+ * @brief Every online processor runs its local APIC in the mode the bootstrap processor chose, read by each in its
+ *        own IA32_APIC_BASE: the kernel addresses them all in one mode.
+ *
+ * @details Each application processor is sent a vector whose handler reads its register. One left in another mode
+ *          reads its identifier wrong, or takes no fixed interrupt at all, and answers nothing.
+ */
+KERNEL_TEST(every_processor_runs_the_mode_the_bootstrap_processor_chose)
+{
+    const uint32_t chosen =
+        apic_is_x2apic_active() ? INTERPROCESSOR_INTERRUPTS_TEST_X2APIC : INTERPROCESSOR_INTERRUPTS_TEST_XAPIC;
+    const uint32_t here = cpu_topology_get_slot_for_apic_id(apic_get_id());
+    const uint32_t online = cpu_topology_get_online_cpu_count();
+    uint32_t asked = 0u;
+    uint32_t answered = 0u;
+    uint32_t agreeing = 0u;
+    uint8_t vector = 0u;
+
+    if (online < 2u)
+    {
+        kernel_test_skip(test, "no other processor is online: boot with -smp 2");
+        return;
+    }
+    if (!advanced_pic_ipi_is_ready())
+    {
+        kernel_test_skip(test, "the local APIC sends no interprocessor interrupt");
+        return;
+    }
+    if (!message_signaled_interrupt_allocate(interprocessor_interrupts_test_record_mode, NULL, &vector))
+    {
+        kernel_test_check(test, false, "a vector is free");
+        return;
+    }
+    for (uint32_t slot = 0u; slot < CPU_TOPOLOGY_MAX_LOGICAL_CPUS_PUBLIC; ++slot)
+    {
+        if (slot == here || !cpu_topology_is_logical_slot_online(slot))
+            continue;
+
+        const uint32_t mode = interprocessor_interrupts_test_ask_mode(slot, vector);
+
+        ++asked;
+        answered += mode != INTERPROCESSOR_INTERRUPTS_TEST_NOT_ANSWERED ? 1u : 0u;
+        agreeing += mode == chosen ? 1u : 0u;
+    }
+    message_signaled_interrupt_release(vector);
+    kernel_test_check(test, interprocessor_interrupts_test_own_mode() == chosen,
+                      "the bootstrap processor runs the mode it chose");
+    kernel_test_check(test, asked == online - 1u, "every other online processor was asked");
+    kernel_test_check(test, answered == asked, "each answered");
+    kernel_test_check(test, agreeing == asked, "each runs the bootstrap processor's mode");
+    kernel_test_measure(test, "asked", asked);
+    kernel_test_measure(test, "agreeing", agreeing);
+    kernel_test_measure(test, "x2apic", chosen == INTERPROCESSOR_INTERRUPTS_TEST_X2APIC ? 1u : 0u);
 }
