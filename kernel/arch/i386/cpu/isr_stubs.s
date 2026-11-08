@@ -118,10 +118,12 @@ interrupt_service_routine_device_stubs:
 
 # ---- FPU / SSE state save area ---------------------------------------------
 #
-# CR4.OSFXSR is set in boot.S so FXSAVE/FXRSTOR cover all 512 bytes of FPU+SSE
+# CR4.OSFXSR is set by extended_state.c so FXSAVE/FXRSTOR cover all 512 bytes of FPU+SSE
 # state (x87 + MMX + XMM0-XMM7 + MXCSR). Each interrupt saves it on its own
 # stack, below the frame, aligned to the 16 bytes FXSAVE needs: two CPUs in the
 # stub at once, or a fault taken inside a handler, each restore their own (#560).
+# A handler uses SSE at most: the upper halves of the YMM and ZMM registers,
+# which XCR0 enables, are not saved here.
 
 .set ISR_FPU_SAVE_AREA_SIZE, 512
 

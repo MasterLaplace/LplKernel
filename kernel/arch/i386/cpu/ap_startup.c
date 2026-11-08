@@ -1,5 +1,6 @@
 #include <kernel/cpu/ap_startup.h>
 #include <kernel/cpu/apic_timer.h>
+#include <kernel/cpu/extended_state.h>
 #include <kernel/cpu/idt.h>
 
 /**
@@ -78,6 +79,7 @@ uint8_t application_processor_startup_ensure_low_identity_mapping(void)
 void application_processor_startup_initialize_cpu(uint32_t apic_id, uint32_t logical_slot, void *stack_top)
 {
     ap_startup_record_control_registers(logical_slot);
+    extended_state_initialize_on_this_processor();
 
     ap_local_context.apic_id = apic_id;
     ap_local_context.logical_slot = logical_slot;

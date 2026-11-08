@@ -5,7 +5,7 @@
 #include <kernel/testing/test.h>
 
 #define CONTROL_REGISTERS_TEST_CACHE_DISABLED 0x60000000u /**< CR0.CD and CR0.NW, both clear when caching is on. */
-#define CONTROL_REGISTERS_TEST_SSE_ENABLED    0x00000600u /**< CR4.OSFXSR and CR4.OSXMMEXCPT, set by boot.S. */
+#define CONTROL_REGISTERS_TEST_SSE_ENABLED    0x00000600u /**< CR4.OSFXSR and CR4.OSXMMEXCPT, set by extended_state.c. */
 
 KERNEL_TEST_SUITE(control_registers, KERNEL_TEST_STAGE_PUBLISHED);
 

@@ -181,12 +181,32 @@ extern uint32_t asmutils_read_control_register_0(void);
 /**
  * @brief Read the CR4 control register.
  *
- * boot.S sets OSFXSR and OSXMMEXCPT there on the bootstrap CPU; every other CPU starts with the
- * value the bootstrap CPU hands it.
+ * extended_state_initialize_on_this_processor sets OSFXSR, OSXMMEXCPT and OSXSAVE there on the
+ * bootstrap CPU; every other CPU starts with the value the bootstrap CPU hands it.
  *
  * @return The value of the CR4 register.
  */
 extern uint32_t asmutils_read_control_register_4(void);
+
+/**
+ * @brief Write the CR0 control register.
+ *
+ * @param value The value CR0 takes.
+ */
+extern void asmutils_write_control_register_0(uint32_t value);
+
+/**
+ * @brief Write the CR4 control register.
+ *
+ * @param value The value CR4 takes.
+ */
+extern void asmutils_write_control_register_4(uint32_t value);
+
+/**
+ * @brief Execute FNINIT: the x87 control word becomes 0x037F, the status and tag words empty, without waiting for a
+ *        pending x87 error.
+ */
+extern void asmutils_initialize_floating_point_unit(void);
 
 /**
  * @brief Execute the CPUID instruction.
