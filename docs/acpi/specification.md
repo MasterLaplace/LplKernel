@@ -675,8 +675,14 @@ Notifies queued since. A table loaded during step 8 or step 9 that gives a proce
   source overrides, past which it counts what it drops; an NMI entry whose UID is 0xFF, or 0xFFFFFFFF for an x2APIC
   one, applies to every processor. The boot prints one `[LPLTLM] acpi.madt` line with the slot count and every
   counter.
-- **MCFG** gives the segment groups and their ECAM bases (#58); **HPET** its base address (#60, #298). Each is
-  parsed by its first consumer.
+- **MCFG** (PCI Firmware Specification 3.3, §4.1.2) gives the ECAM windows (#58): one allocation of 16 bytes after
+  its header and 8 reserved bytes, as many as its length holds whole, the bytes past the last whole one counted. An
+  allocation names a segment group, its first and last bus, and the base bus 0 of the group would have, whatever
+  its first bus. One whose base is 0 or whose last bus is below its first is invalid, counted and dropped. The MCFG
+  keeps 16 windows, past which it counts what it drops; the MCFGs of the corpus list one each. A base above 4 GiB is
+  kept whole. The boot prints one `[LPLTLM] acpi.mcfg` line with the counters, then one `[LPLTLM] acpi.mcfg.window`
+  line per window.
+- **HPET** gives its base address (#60, #298), parsed by its first consumer.
 
 ### 3.10 What `_CST` publishes
 

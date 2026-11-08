@@ -385,6 +385,8 @@ __attribute__((constructor)) void kernel_initialize(void)
         write_advanced_configuration_and_power_interface_tables(&com1);
     write_acpi_madt_info(&com1);
     write_acpi_madt_record(&com1);
+    advanced_configuration_and_power_interface_memory_mapped_configuration_initialize();
+    write_advanced_configuration_and_power_interface_memory_mapped_configuration_record(&com1);
     advanced_configuration_and_power_interface_mode_initialize();
     write_acpi_mode_record(&com1);
     advanced_configuration_and_power_interface_power_management_timer_initialize();

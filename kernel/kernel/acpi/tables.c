@@ -8,6 +8,7 @@
 #define ACPI_RSDT_SIGNATURE "RSDT"
 #define ACPI_XSDT_SIGNATURE "XSDT" /**< The root table of 64-bit entries, ACPI 2.0 and later. */
 #define ACPI_FADT_SIGNATURE "FACP" /**< The FADT, which names the DSDT and the FACS. */
+#define ACPI_MCFG_SIGNATURE "MCFG" /**< The table of ECAM windows, which the PCI Firmware Specification defines. */
 
 #define ACPI_TABLE_MAXIMUM_LENGTH 0x01000000u /**< A longer table is taken for a corrupt length. */
 
@@ -201,8 +202,13 @@ _Static_assert(sizeof(AdvancedConfigurationAndPowerInterfaceMadtLocalApicEntry_t
                    sizeof(AdvancedConfigurationAndPowerInterfaceMadtLocalX2ApicEntry_t) == 16u &&
                    sizeof(AdvancedConfigurationAndPowerInterfaceMadtLocalX2ApicNonMaskableInterruptEntry_t) == 12u,
                "each MADT entry is as long as ACPI 6.6 Tables 5.22, 5.24, 5.25, 5.28, 5.29, 5.34 and 5.35 make it");
+_Static_assert(sizeof(AdvancedConfigurationAndPowerInterfaceMemoryMappedConfiguration_t) == 44u &&
+                   sizeof(AdvancedConfigurationAndPowerInterfaceConfigurationSpaceAllocationEntry_t) == 16u,
+               "an MCFG's header and each allocation are as long as the PCI Firmware Specification 3.3 makes them");
 
 static AdvancedConfigurationAndPowerInterfaceMadtState_t acpi_madt = {.state_name = "acpi-not-initialized"};
+static AdvancedConfigurationAndPowerInterfaceMemoryMappedConfigurationState_t acpi_memory_mapped_configuration = {
+    .state_name = "acpi-not-initialized"};
 static AdvancedConfigurationAndPowerInterfaceDirectory_t acpi_directory;
 static bool acpi_directory_read = false;
 static AdvancedConfigurationAndPowerInterfaceModeSwitch_t acpi_mode;
@@ -1404,6 +1410,34 @@ static bool acpi_madt_read_interrupt_entry(AdvancedConfigurationAndPowerInterfac
     return false;
 }
 
+/**
+ * @brief Keeps one MCFG allocation in @p state, counts it invalid when its base is 0 or its end bus is below its start
+ *        bus, or counts it dropped past the capacity.
+ */
+static void acpi_memory_mapped_configuration_add(
+    AdvancedConfigurationAndPowerInterfaceMemoryMappedConfigurationState_t *state,
+    const AdvancedConfigurationAndPowerInterfaceConfigurationSpaceAllocationEntry_t *entry)
+{
+    if (entry->base_address == 0u || entry->end_bus < entry->start_bus)
+    {
+        ++state->invalid_count;
+        return;
+    }
+    if (state->allocation_count == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MAX_CONFIGURATION_SPACE_ALLOCATION_COUNT)
+    {
+        ++state->allocations_dropped;
+        return;
+    }
+
+    AdvancedConfigurationAndPowerInterfaceConfigurationSpaceAllocation_t *window =
+        &state->allocations[state->allocation_count++];
+
+    window->base_address = entry->base_address;
+    window->segment_group = entry->segment_group;
+    window->start_bus = entry->start_bus;
+    window->end_bus = entry->end_bus;
+}
+
 bool advanced_configuration_and_power_interface_port_is_protected(uint16_t port)
 {
     for (uint32_t index = 0u; index < sizeof(acpi_protected_ports) / sizeof(acpi_protected_ports[0]); ++index)
@@ -1953,6 +1987,52 @@ void advanced_configuration_and_power_interface_madt_initialize(void)
 const AdvancedConfigurationAndPowerInterfaceMadtState_t *advanced_configuration_and_power_interface_madt(void)
 {
     return &acpi_madt;
+}
+
+bool advanced_configuration_and_power_interface_read_memory_mapped_configuration(
+    const AdvancedConfigurationAndPowerInterfaceSdtHeader_t *table,
+    AdvancedConfigurationAndPowerInterfaceMemoryMappedConfigurationState_t *out_state)
+{
+    if (out_state == NULL)
+        return false;
+    memset(out_state, 0, sizeof(*out_state));
+    if (table == NULL)
+    {
+        out_state->state_name = "acpi-mcfg-not-found";
+        return false;
+    }
+    if (table->length < sizeof(AdvancedConfigurationAndPowerInterfaceMemoryMappedConfiguration_t))
+    {
+        out_state->state_name = "acpi-mcfg-too-short";
+        return false;
+    }
+
+    const uint32_t header = (uint32_t) sizeof(AdvancedConfigurationAndPowerInterfaceMemoryMappedConfiguration_t);
+    const uint32_t listed = table->length - header;
+    const AdvancedConfigurationAndPowerInterfaceConfigurationSpaceAllocationEntry_t *entries =
+        (const AdvancedConfigurationAndPowerInterfaceConfigurationSpaceAllocationEntry_t *) ((const uint8_t *) table +
+                                                                                             header);
+    const uint32_t count = listed / (uint32_t) sizeof(entries[0]);
+
+    out_state->checksum_valid = advanced_configuration_and_power_interface_checksum_holds(table, table->length);
+    out_state->trailing_bytes = listed % (uint32_t) sizeof(entries[0]);
+    for (uint32_t index = 0u; index < count; ++index)
+        acpi_memory_mapped_configuration_add(out_state, &entries[index]);
+    out_state->available = true;
+    out_state->state_name = "acpi-mcfg-ready";
+    return true;
+}
+
+void advanced_configuration_and_power_interface_memory_mapped_configuration_initialize(void)
+{
+    (void) advanced_configuration_and_power_interface_read_memory_mapped_configuration(
+        advanced_configuration_and_power_interface_find_table(ACPI_MCFG_SIGNATURE), &acpi_memory_mapped_configuration);
+}
+
+const AdvancedConfigurationAndPowerInterfaceMemoryMappedConfigurationState_t *
+advanced_configuration_and_power_interface_memory_mapped_configuration(void)
+{
+    return &acpi_memory_mapped_configuration;
 }
 
 const char *advanced_configuration_and_power_interface_madt_get_state_name(void) { return acpi_madt.state_name; }

@@ -22,7 +22,7 @@
     "                                    kernel booted with lpl.acpi.tables=print, they run on the bytes that\n"       \
     "                                    kernel read, and tools/parity.sh compares the two runs\n"                     \
     "       test-acpi --machine <dump>   walks the tables of an acpidump text file and prints its directory, its\n"    \
-    "                                    MADT, then what loading its definition blocks decoded\n"                      \
+    "                                    MADT, its MCFG, then what loading its definition blocks decoded\n"            \
     "       test-acpi --namespace <dump> loads the definition blocks of an acpidump text file and prints its\n"        \
     "                                    namespace, one node per line, as acpiexec's namespace command does\n"         \
     "       test-acpi --namespace-tables <table>...  the same from raw definition blocks, the DSDT first\n"            \
@@ -307,6 +307,30 @@ static void harness_print_madt(const AdvancedConfigurationAndPowerInterfaceDirec
 }
 
 /**
+ * @brief Prints the MCFG the directory gives as the kernel reads it: its counters, then one line per ECAM window, in
+ *        the table's order.
+ */
+static void
+harness_print_memory_mapped_configuration(const AdvancedConfigurationAndPowerInterfaceDirectory_t *directory)
+{
+    static AdvancedConfigurationAndPowerInterfaceMemoryMappedConfigurationState_t mcfg;
+
+    if (!advanced_configuration_and_power_interface_read_memory_mapped_configuration(
+            advanced_configuration_and_power_interface_find_in_directory(directory, "MCFG"), &mcfg))
+    {
+        printf("mcfg read=0 state=%s\n", mcfg.state_name);
+        return;
+    }
+    printf("mcfg read=1 checksum=%s windows=%u windows_dropped=%u invalid=%u trailing=%u\n",
+           mcfg.checksum_valid ? "ok" : "bad", mcfg.allocation_count, mcfg.allocations_dropped, mcfg.invalid_count,
+           mcfg.trailing_bytes);
+    for (uint32_t index = 0u; index < mcfg.allocation_count; ++index)
+        printf("window segment=%u buses=%u-%u base=0x%016llX\n", mcfg.allocations[index].segment_group,
+               mcfg.allocations[index].start_bus, mcfg.allocations[index].end_bus,
+               (unsigned long long) mcfg.allocations[index].base_address);
+}
+
+/**
  * @brief The name ACPI gives an AccessType, or NULL for a reserved one.
  */
 static const char *harness_access_type_name(uint32_t access)
@@ -562,6 +586,7 @@ static int harness_walk_machine(const char *path)
         harness_print_directory(&directory);
         harness_print_fixed_description(&directory.fixed_description);
         harness_print_madt(&directory);
+        harness_print_memory_mapped_configuration(&directory);
         harness_print_machine_language(&directory, &machine);
         advanced_configuration_and_power_interface_release_directory(&directory);
         status = (machine.simulated.outstanding_maps == 0u && machine.simulated.mismatched_unmaps == 0u) ? 0 : 1;
