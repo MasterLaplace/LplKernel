@@ -572,6 +572,29 @@ KERNEL_TEST(a_redirection_entry_past_what_an_eight_bit_index_reaches_has_no_regi
 }
 
 /**
+ * @brief An I/O APIC that declares more inputs than its register index reaches keeps the first 120, those of entries 0
+ *        to 0x77, and the boot counts the others.
+ *
+ * @details The expected counts follow from the 82093AA datasheet (§3.1.1, §3.2.4): the version register's Maximum
+ *          Redirection Entry field holds 8 bits, up to 256 inputs, and entry 0x77 takes the last register pair an 8-bit
+ *          index reaches. An input past it used to keep its Global System Interrupt, and its route wrote IOAPICID and
+ *          IOAPICVER (#572).
+ */
+KERNEL_TEST(an_io_apic_keeps_the_inputs_its_index_reaches)
+{
+    kernel_test_check(test, input_output_advanced_programmable_interrupt_controller_reachable_inputs(24u) == 24u,
+                      "an I/O APIC of 24 inputs keeps the 24");
+    kernel_test_check(test, input_output_advanced_programmable_interrupt_controller_reachable_inputs(120u) == 120u,
+                      "one of 120 keeps the 120");
+    kernel_test_check(test, input_output_advanced_programmable_interrupt_controller_reachable_inputs(121u) == 120u,
+                      "one of 121 keeps 120");
+    kernel_test_check(test, input_output_advanced_programmable_interrupt_controller_reachable_inputs(256u) == 120u,
+                      "one of 256, the most its version register declares, keeps 120");
+    kernel_test_measure(test, "unreachable_inputs",
+                        input_output_advanced_programmable_interrupt_controller_get_unreachable_inputs());
+}
+
+/**
  * @brief In every profile the local controller's timer owns the tick, in periodic mode, one tick per
  *        period.
  */

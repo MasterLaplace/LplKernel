@@ -614,6 +614,13 @@ bool input_output_advanced_programmable_interrupt_controller_redirection_registe
     return true;
 }
 
+uint32_t input_output_advanced_programmable_interrupt_controller_reachable_inputs(uint32_t declared)
+{
+    return declared;
+}
+
+uint32_t input_output_advanced_programmable_interrupt_controller_get_unreachable_inputs(void) { return 0u; }
+
 bool input_output_advanced_programmable_interrupt_controller_route_device(
     const PeripheralComponentInterconnectDevice_t *device, uint32_t slot, uint8_t vector, uint32_t *out_line)
 {
