@@ -244,6 +244,16 @@ uint32_t intel_high_definition_audio_poll_capture(int16_t *out, uint32_t capacit
 uint8_t intel_high_definition_audio_capture_interrupt_line(void);
 
 /**
+ * @brief Aims the controller's MSI at the processor of logical slot @p slot with @p vector, in place of its line.
+ *
+ * @param slot   The logical CPU slot that takes the capture interrupts.
+ * @param vector A vector from message_signaled_interrupt_allocate.
+ * @return false when no controller is on the bus or it has no MSI capability (message_signaled_interrupt_enable);
+ *         its line then stays the route.
+ */
+bool intel_high_definition_audio_aim_capture_message(uint32_t slot, uint8_t vector);
+
+/**
  * @brief Asks the controller to interrupt each time a capture half completes.
  *
  * @details Sets interrupt-on-completion on the input stream and enables it, with the

@@ -1,5 +1,8 @@
 #include <kernel/core/reconciler.h>
+#include <kernel/cpu/cpu_topology.h>
 #include <kernel/cpu/irq.h>
+#include <kernel/cpu/msi.h>
+#include <kernel/cpu/pci.h>
 #include <kernel/cpu/pic.h>
 #include <kernel/drivers/hda.h>
 #include <kernel/hal/hal_audio.h>
@@ -14,6 +17,9 @@
 KERNEL_TEST_SUITE(power_floor, KERNEL_TEST_STAGE_BOOTED);
 
 /** Frames the satellite node runs for: 320 ms of audio, a sleep to each frame's deadline. */
+#define POWER_FLOOR_AUDIO_CLASS    0x04u /**< A multimedia controller. */
+#define POWER_FLOOR_AUDIO_SUBCLASS 0x03u /**< Its Intel HDA subclass. */
+
 #define POWER_FLOOR_ITERATIONS 8u
 
 /** Ticks waited after the run: 100 ms at 100 Hz, two capture periods and a half. */
@@ -253,4 +259,53 @@ KERNEL_TEST(the_capture_stream_delivers_buffers)
     kernel_test_measure(test, "probe_response_write_pointer", controller->probe_after.response_write_pointer);
     kernel_test_measure_hexadecimal(test, "probe_command_ring_status", controller->probe_after.command_ring_status);
     kernel_test_measure_hexadecimal(test, "probe_response_ring_status", controller->probe_after.response_ring_status);
+}
+
+/**
+ * @brief The capture interrupt comes as an MSI message to the core that took the ring, and no other, when the
+ *        controller has the MSI capability; on its line otherwise.
+ *
+ * @details QEMU's intel-hda offers MSI unless told `msi=off`: `qemu-system-i386 -machine q35 -smp 2 -audiodev
+ *          none,id=lplaudio -device intel-hda -device hda-duplex,audiodev=lplaudio -kernel kernel/lpl.kernel` routes a
+ *          message, and `-device intel-hda,msi=off` the line, on a satellite kernel (`./build.sh --satellite`).
+ */
+KERNEL_TEST(the_capture_interrupt_comes_as_a_message_when_the_controller_has_msi)
+{
+    const SatelliteReport_t *const report = power_floor_run_once();
+    const PeripheralComponentInterconnectDevice_t *const device =
+        peripheral_component_interconnect_find_by_class(POWER_FLOOR_AUDIO_CLASS, POWER_FLOOR_AUDIO_SUBCLASS);
+    const uint8_t vector = hardware_abstraction_layer_audio_capture_interrupt_vector();
+    const uint32_t slot = hardware_abstraction_layer_audio_capture_interrupt_slot();
+    uint32_t elsewhere = 0u;
+
+    if (device == NULL || report == NULL || report->audio_present != 1u)
+    {
+        kernel_test_skip(test, "no Intel HDA capture ran on this machine");
+        return;
+    }
+
+    const bool has_msi =
+        peripheral_component_interconnect_find_capability(device->bus, device->device, device->function,
+                                                          MESSAGE_SIGNALED_INTERRUPT_CAPABILITY) != 0u;
+
+    kernel_test_check(test, hardware_abstraction_layer_audio_capture_is_interrupt_driven(),
+                      "capture is driven by the controller's interrupt");
+    if (!has_msi)
+    {
+        kernel_test_check(test,
+                          vector == 0u &&
+                              hardware_abstraction_layer_audio_capture_interrupt_line() != KERNEL_HDA_NO_INTERRUPT_LINE,
+                          "without MSI, it comes on the controller's line");
+        kernel_test_measure(test, "line", hardware_abstraction_layer_audio_capture_interrupt_line());
+        return;
+    }
+    for (uint32_t other = 0u; other < CPU_TOPOLOGY_MAX_LOGICAL_CPUS_PUBLIC; ++other)
+        elsewhere += other != slot ? message_signaled_interrupt_count(vector, other) : 0u;
+    kernel_test_check(test, vector != 0u, "with MSI, it comes as a message");
+    kernel_test_check(test, message_signaled_interrupt_count(vector, slot) > 0u,
+                      "the message interrupted the core that took the ring");
+    kernel_test_check(test, elsewhere == 0u, "and no other core");
+    kernel_test_measure(test, "vector", vector);
+    kernel_test_measure(test, "slot", slot);
+    kernel_test_measure(test, "messages", message_signaled_interrupt_count(vector, slot));
 }

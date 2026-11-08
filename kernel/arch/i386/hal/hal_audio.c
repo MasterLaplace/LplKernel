@@ -1,7 +1,10 @@
 #include <kernel/hal/hal_audio.h>
 
+#include <kernel/cpu/apic.h>
+#include <kernel/cpu/cpu_topology.h>
 #include <kernel/cpu/irq.h>
 #include <kernel/cpu/isr.h>
+#include <kernel/cpu/msi.h>
 #include <kernel/cpu/pic.h>
 #include <kernel/drivers/hda.h>
 #include <kernel/memory/spsc_ring.h>
@@ -14,6 +17,9 @@ static int16_t hal_audio_frames[KERNEL_HAL_AUDIO_RING_FRAMES][KERNEL_HAL_AUDIO_F
 static int16_t hal_audio_discard[KERNEL_HAL_AUDIO_FRAME_SAMPLES];
 
 static uint8_t hal_audio_interrupt_line = KERNEL_HDA_NO_INTERRUPT_LINE;
+static uint8_t hal_audio_interrupt_vector = 0u; /**< The message-signaled vector capture takes, or 0. */
+static uint32_t hal_audio_interrupt_slot = 0u;  /**< The logical CPU slot that vector interrupts. */
+static uint8_t hal_audio_allocated_vector = 0u; /**< The vector allocated once, kept across sessions. */
 static bool hal_audio_interrupt_driven = false;
 static volatile uint32_t hal_audio_interrupts = 0u;
 
@@ -23,7 +29,19 @@ static uint32_t hal_audio_gain_permille = 1000u;
 static uint32_t hal_audio_clipped = 0u;
 
 /**
- * @brief Moves a completed half into the ring, from interrupt context.
+ * @brief Moves a completed half into the ring, from interrupt context, when the interrupt was the capture stream's.
+ */
+static void hal_audio_take_capture_interrupt(void)
+{
+    if (intel_high_definition_audio_acknowledge_capture_interrupt())
+    {
+        ++hal_audio_interrupts;
+        (void) hardware_abstraction_layer_audio_capture_pump();
+    }
+}
+
+/**
+ * @brief Takes a capture interrupt that came on the controller's line.
  *
  * @note A PCI line is level-triggered and may be shared, so the acknowledge decides
  *       whether this one was ours, and the end-of-interrupt goes out either way.
@@ -33,14 +51,39 @@ static uint32_t hal_audio_clipped = 0u;
 static void hal_audio_capture_interrupt_handler(const InterruptFrame_t *frame)
 {
     (void) frame;
-
-    if (intel_high_definition_audio_acknowledge_capture_interrupt())
-    {
-        ++hal_audio_interrupts;
-        (void) hardware_abstraction_layer_audio_capture_pump();
-    }
-
+    hal_audio_take_capture_interrupt();
     programmable_interrupt_controller_send_end_of_interrupt(hal_audio_interrupt_line);
+}
+
+/**
+ * @brief Takes a capture interrupt that came as a message; the local APIC's end-of-interrupt is the dispatcher's.
+ *
+ * @param context Unused.
+ */
+static void hal_audio_capture_message_handler(void *context)
+{
+    (void) context;
+    hal_audio_take_capture_interrupt();
+}
+
+/**
+ * @brief Routes capture interrupts as MSI messages to the processor that runs the call, the one that takes the ring.
+ *
+ * @return true when the controller's MSI now carries them; false, its line untouched, when it has no MSI capability
+ *         or no vector is free.
+ */
+static bool hal_audio_route_capture_message(void)
+{
+    const uint32_t slot = cpu_topology_get_slot_for_apic_id(apic_get_id());
+
+    if (hal_audio_allocated_vector == 0u &&
+        !message_signaled_interrupt_allocate(hal_audio_capture_message_handler, NULL, &hal_audio_allocated_vector))
+        return false;
+    if (!intel_high_definition_audio_aim_capture_message(slot, hal_audio_allocated_vector))
+        return false;
+    hal_audio_interrupt_vector = hal_audio_allocated_vector;
+    hal_audio_interrupt_slot = slot;
+    return true;
 }
 
 /**
@@ -59,11 +102,15 @@ static bool hal_audio_line_is_acknowledgeable(uint8_t line)
 }
 
 /**
- * @brief Routes the controller's interrupt to the handler, or declines and says so.
+ * @brief Routes the controller's interrupt to the handler, or declines and says so: as a message when the controller
+ *        has MSI, on its line otherwise.
  * @return true when capture is now interrupt-driven.
  */
 static bool hal_audio_route_capture_interrupt(void)
 {
+    if (hal_audio_route_capture_message())
+        return intel_high_definition_audio_enable_capture_interrupt();
+
     const uint8_t line = intel_high_definition_audio_capture_interrupt_line();
     if (!hal_audio_line_is_acknowledgeable(line))
         return false;
@@ -86,6 +133,7 @@ bool hardware_abstraction_layer_audio_initialize(void)
 {
     kernel_spsc_ring_initialize(&hal_audio_ring, KERNEL_HAL_AUDIO_RING_FRAMES);
     hal_audio_interrupt_driven = false;
+    hal_audio_interrupt_vector = 0u;
     hal_audio_interrupts = 0u;
     hal_audio_codec_present = false;
     hal_audio_name = "absent";
@@ -225,3 +273,7 @@ bool hardware_abstraction_layer_audio_capture_is_interrupt_driven(void) { return
 uint32_t hardware_abstraction_layer_audio_capture_interrupt_count(void) { return hal_audio_interrupts; }
 
 uint8_t hardware_abstraction_layer_audio_capture_interrupt_line(void) { return hal_audio_interrupt_line; }
+
+uint8_t hardware_abstraction_layer_audio_capture_interrupt_vector(void) { return hal_audio_interrupt_vector; }
+
+uint32_t hardware_abstraction_layer_audio_capture_interrupt_slot(void) { return hal_audio_interrupt_slot; }

@@ -27,6 +27,18 @@
 static MessageSignaledInterruptHandler_t message_signaled_interrupt_handlers[MESSAGE_SIGNALED_INTERRUPT_VECTOR_COUNT] =
     {NULL}; /**< Each vector's handler. */
 static void *message_signaled_interrupt_contexts[MESSAGE_SIGNALED_INTERRUPT_VECTOR_COUNT] = {NULL}; /**< Theirs. */
+#define MESSAGE_SIGNALED_INTERRUPT_CONTROL         0x02u      /**< Message Control, from the MSI capability. */
+#define MESSAGE_SIGNALED_INTERRUPT_ADDRESS         0x04u      /**< Message Address, from it. */
+#define MESSAGE_SIGNALED_INTERRUPT_UPPER_ADDRESS   0x08u      /**< Message Upper Address, in the 64-bit form. */
+#define MESSAGE_SIGNALED_INTERRUPT_DATA_NARROW     0x08u      /**< Message Data, in the 32-bit form. */
+#define MESSAGE_SIGNALED_INTERRUPT_DATA_WIDE       0x0Cu      /**< Message Data, in the 64-bit form. */
+#define MESSAGE_SIGNALED_INTERRUPT_MASK_NARROW     0x0Cu      /**< Mask Bits, in the 32-bit form. */
+#define MESSAGE_SIGNALED_INTERRUPT_MASK_WIDE       0x10u      /**< Mask Bits, in the 64-bit form. */
+#define MESSAGE_SIGNALED_INTERRUPT_ENABLED         (1u << 0u) /**< Message Control: MSI on. */
+#define MESSAGE_SIGNALED_INTERRUPT_MULTIPLE_ENABLE (7u << 4u) /**< Message Control: Multiple Message Enable. */
+#define MESSAGE_SIGNALED_INTERRUPT_WIDE            (1u << 7u) /**< Message Control: 64-bit address capable. */
+#define MESSAGE_SIGNALED_INTERRUPT_MASKABLE        (1u << 8u) /**< Message Control: per-vector masking capable. */
+
 /** Interrupts per vector and per slot, each cell written by the processor of its slot alone. */
 static volatile uint32_t message_signaled_interrupt_counts[MESSAGE_SIGNALED_INTERRUPT_VECTOR_COUNT]
                                                           [CPU_TOPOLOGY_MAX_LOGICAL_CPUS_PUBLIC] = {{0u}};
@@ -97,6 +109,16 @@ static void message_signaled_interrupt_extended_control(const MessageSignaledInt
     peripheral_component_interconnect_config_write_word(
         table->bus, table->device, table->function,
         (uint8_t) (table->capability + MESSAGE_SIGNALED_INTERRUPT_EXTENDED_CONTROL), control);
+}
+
+/**
+ * @brief Writes the dword at @p offset of the MSI capability at @p capability of @p device.
+ */
+static void message_signaled_interrupt_write(const PeripheralComponentInterconnectDevice_t *device, uint8_t capability,
+                                             uint8_t offset, uint32_t value)
+{
+    peripheral_component_interconnect_config_write_dword(device->bus, device->device, device->function,
+                                                         (uint8_t) (capability + offset), value);
 }
 
 bool message_signaled_interrupt_compose(uint32_t apic_id, uint8_t vector, uint32_t *out_address, uint32_t *out_data)
@@ -209,5 +231,44 @@ bool message_signaled_interrupt_extended_aim(const MessageSignaledInterruptExten
     *message_signaled_interrupt_extended_field(table, entry, MESSAGE_SIGNALED_INTERRUPT_EXTENDED_UPPER_ADDRESS) = 0u;
     *message_signaled_interrupt_extended_field(table, entry, MESSAGE_SIGNALED_INTERRUPT_EXTENDED_DATA) = data;
     message_signaled_interrupt_extended_mask(table, entry, false);
+    return true;
+}
+
+bool message_signaled_interrupt_enable(const PeripheralComponentInterconnectDevice_t *device, uint32_t slot,
+                                       uint8_t vector)
+{
+    const uint8_t capability = peripheral_component_interconnect_find_capability(
+        device->bus, device->device, device->function, MESSAGE_SIGNALED_INTERRUPT_CAPABILITY);
+    uint32_t address = 0u;
+    uint32_t data = 0u;
+
+    if (capability == 0u || !message_signaled_interrupt_platform_delivers() ||
+        !message_signaled_interrupt_compose(cpu_topology_get_apic_id_at_slot(slot), vector, &address, &data))
+        return false;
+
+    const uint16_t control = peripheral_component_interconnect_config_read_word(
+        device->bus, device->device, device->function, (uint8_t) (capability + MESSAGE_SIGNALED_INTERRUPT_CONTROL));
+    const bool wide = (control & MESSAGE_SIGNALED_INTERRUPT_WIDE) != 0u;
+    const uint16_t single = (uint16_t) (control & ~MESSAGE_SIGNALED_INTERRUPT_MULTIPLE_ENABLE);
+
+    peripheral_component_interconnect_config_write_word(device->bus, device->device, device->function,
+                                                        (uint8_t) (capability + MESSAGE_SIGNALED_INTERRUPT_CONTROL),
+                                                        (uint16_t) (single & ~MESSAGE_SIGNALED_INTERRUPT_ENABLED));
+    message_signaled_interrupt_write(device, capability, MESSAGE_SIGNALED_INTERRUPT_ADDRESS, address);
+    if (wide)
+        message_signaled_interrupt_write(device, capability, MESSAGE_SIGNALED_INTERRUPT_UPPER_ADDRESS, 0u);
+    peripheral_component_interconnect_config_write_word(
+        device->bus, device->device, device->function,
+        (uint8_t) (capability + (wide ? MESSAGE_SIGNALED_INTERRUPT_DATA_WIDE : MESSAGE_SIGNALED_INTERRUPT_DATA_NARROW)),
+        (uint16_t) data);
+    if ((control & MESSAGE_SIGNALED_INTERRUPT_MASKABLE) != 0u)
+        message_signaled_interrupt_write(
+            device, capability, wide ? MESSAGE_SIGNALED_INTERRUPT_MASK_WIDE : MESSAGE_SIGNALED_INTERRUPT_MASK_NARROW,
+            0u);
+    peripheral_component_interconnect_enable_memory_and_bus_mastering(device);
+    peripheral_component_interconnect_disable_pin_interrupt(device);
+    peripheral_component_interconnect_config_write_word(device->bus, device->device, device->function,
+                                                        (uint8_t) (capability + MESSAGE_SIGNALED_INTERRUPT_CONTROL),
+                                                        (uint16_t) (single | MESSAGE_SIGNALED_INTERRUPT_ENABLED));
     return true;
 }
