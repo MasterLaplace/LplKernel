@@ -93,7 +93,13 @@ static void apic_enter_xapic_mode(void)
 
 ApicMode_t apic_choose_mode(const ApicPlatform_t *platform)
 {
-    return platform->x2apic_offered ? APIC_MODE_X2APIC_UNDER_HYPERVISOR : APIC_MODE_XAPIC_NOT_OFFERED;
+    if (platform->x2apic_from_firmware)
+        return APIC_MODE_X2APIC_FROM_FIRMWARE;
+    if (!platform->x2apic_offered)
+        return APIC_MODE_XAPIC_NOT_OFFERED;
+    if (platform->hypervisor_present)
+        return APIC_MODE_X2APIC_UNDER_HYPERVISOR;
+    return APIC_MODE_XAPIC_WITHOUT_REMAPPING;
 }
 
 ApicMode_t apic_get_mode(void) { return g_apic_mode; }
