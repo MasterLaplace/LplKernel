@@ -1,0 +1,14 @@
+# The test a_thousand_switches_between_two_integer_contexts of context_switch (#85): a thousand switches between two
+# contexts that run integer code only, with the save QEMU's -cpu max offers first, XSAVEOPT, on a debug server kernel
+# (./build.sh --server), the test alone selected. x2APIC is left out because QEMU 10.2 stops on "Bad icount read" when
+# the kernel runs x2APIC under -icount. Checked by tools/instructions.sh --budget tools/budgets/context-switch.debug.budget
+# kernel/lpl.kernel; a change of cpu_context_switch records the new counts. On QEMU's own processor, which has no XSAVE,
+# the same window takes FXSAVE: tools/instructions.sh --inside <this window's function> --times 1 --append <its line>
+# counts 58,178 instructions and 106,062 accesses there.
+inside=kernel_test_body_a_thousand_switches_between_two_integer_contexts
+times=1
+cpu=max,-x2apic
+append=lpl.test=context_switch.a_thousand_switches_between_two_integer_contexts
+instructions=58817
+accesses=143280
+tolerance=1
