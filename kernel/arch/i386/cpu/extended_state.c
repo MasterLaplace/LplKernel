@@ -22,22 +22,6 @@
 #define EXTENDED_STATE_MXCSR_DEFAULT    0x1F80u     /**< Every SIMD exception masked, round to nearest. */
 
 /**
- * @brief The components XCR0 enables among the @p offered ones: x87, SSE, AVX and the three AVX-512 ones, each only
- *        with those XSETBV requires it with.
- */
-static uint32_t extended_state_components_to_enable(uint32_t offered)
-{
-    uint32_t components =
-        offered & (EXTENDED_STATE_X87 | EXTENDED_STATE_SSE | EXTENDED_STATE_AVX | EXTENDED_STATE_AVX_512);
-
-    if ((components & EXTENDED_STATE_SSE) == 0u)
-        components &= ~(EXTENDED_STATE_AVX | EXTENDED_STATE_AVX_512);
-    if ((components & EXTENDED_STATE_AVX) == 0u || (components & EXTENDED_STATE_AVX_512) != EXTENDED_STATE_AVX_512)
-        components &= ~EXTENDED_STATE_AVX_512;
-    return components | EXTENDED_STATE_X87;
-}
-
-/**
  * @brief Writes XCR0 with the components extended_state_components_to_enable keeps; CR4.OSXSAVE is set.
  */
 __attribute__((target("xsave"))) static void extended_state_enable_components(void)
@@ -54,6 +38,18 @@ __attribute__((target("xsave"))) static void extended_state_enable_components(vo
 __attribute__((target("sse"))) static void extended_state_load_default_simd_control(void)
 {
     __builtin_ia32_ldmxcsr(EXTENDED_STATE_MXCSR_DEFAULT);
+}
+
+uint32_t extended_state_components_to_enable(uint32_t offered)
+{
+    uint32_t components =
+        offered & (EXTENDED_STATE_X87 | EXTENDED_STATE_SSE | EXTENDED_STATE_AVX | EXTENDED_STATE_AVX_512);
+
+    if ((components & EXTENDED_STATE_SSE) == 0u)
+        components &= ~(EXTENDED_STATE_AVX | EXTENDED_STATE_AVX_512);
+    if ((components & EXTENDED_STATE_AVX) == 0u || (components & EXTENDED_STATE_AVX_512) != EXTENDED_STATE_AVX_512)
+        components &= ~EXTENDED_STATE_AVX_512;
+    return components | EXTENDED_STATE_X87;
 }
 
 void extended_state_initialize_on_this_processor(void)

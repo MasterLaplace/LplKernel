@@ -181,8 +181,9 @@ extern uint32_t asmutils_read_control_register_0(void);
 /**
  * @brief Read the CR4 control register.
  *
- * extended_state_initialize_on_this_processor sets OSFXSR, OSXMMEXCPT and OSXSAVE there on the
- * bootstrap CPU; every other CPU starts with the value the bootstrap CPU hands it.
+ * extended_state_initialize_on_this_processor sets OSFXSR and OSXMMEXCPT there, and OSXSAVE when
+ * CPUID offers XSAVE, on every processor; an application processor starts with the value the
+ * bootstrap processor hands it.
  *
  * @return The value of the CR4 register.
  */

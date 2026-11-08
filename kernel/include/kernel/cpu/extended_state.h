@@ -33,12 +33,25 @@ extern "C" {
  * @details It sets CR0.NE and CR0.MP and clears CR0.EM and CR0.TS, so x87 errors raise #MF rather than go through
  *          FERR# (Intel SDM vol. 3, 325384-093US, §2.5). It sets CR4.OSFXSR and CR4.OSXMMEXCPT, and CR4.OSXSAVE when
  *          CPUID.1:ECX.XSAVE says the processor has XSAVE; XCR0 then enables, of the components CPUID leaf 0xD offers,
- *          x87, SSE, AVX and the three AVX-512 ones, each only with those XSETBV requires it with (SDM vol. 1, §13.3).
+ *          x87, SSE, AVX and the three AVX-512 ones, each only with those XSETBV requires it with
+ *          (extended_state_components_to_enable).
  *          FNINIT and LDMXCSR then give the x87 control word 0x037F and the MXCSR 0x1F80. The bootstrap processor
  *          calls it before any constructor, each application processor first thing in its C entry: an INIT leaves the
  *          x87 and SSE state as it was (SDM vol. 3, Table 12-1).
  */
 void extended_state_initialize_on_this_processor(void);
+
+/**
+ * @brief The components XCR0 enables among the @p offered ones that CPUID leaf 0xD reports.
+ *
+ * @details It keeps x87, SSE, AVX and the three AVX-512 components, opmask, ZMM_Hi256 and Hi16_ZMM, each only with the
+ *          ones XSETBV requires it with: bit 0 always, AVX only with SSE, and the AVX-512 three all together, with SSE
+ *          and AVX (Intel SDM vol. 1, 253665-093US, §13.3). MPX, PKRU, AMX and every supervisor component stay off.
+ *
+ * @param offered CPUID.(EAX=0DH,ECX=0):EAX, the components the processor supports.
+ * @return The value XCR0 takes.
+ */
+uint32_t extended_state_components_to_enable(uint32_t offered);
 
 #ifdef __cplusplus
 }
