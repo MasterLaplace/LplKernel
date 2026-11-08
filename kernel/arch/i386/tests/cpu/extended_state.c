@@ -2,6 +2,7 @@
 #include <kernel/cpu/apic_ipi.h>
 #include <kernel/cpu/cpu_topology.h>
 #include <kernel/cpu/device_interrupt.h>
+#include <kernel/cpu/extended_state.h>
 #include <kernel/cpu/irq.h>
 #include <kernel/lib/asmutils.h>
 #include <kernel/testing/test.h>
@@ -27,9 +28,11 @@ KERNEL_TEST_SUITE(extended_state, KERNEL_TEST_STAGE_PUBLISHED);
                  nearest (Intel SDM vol. 1, 253665-087US, Table 8-4). */
 #define EXTENDED_STATE_TEST_MXCSR_DEFAULT                                                                              \
     0x1F80u /**< The MXCSR after a reset: every exception masked, round to nearest (Intel SDM vol. 1, §10.2.3). */
-#define EXTENDED_STATE_TEST_FXSAVE_BYTES 512u /**< The FXSAVE image. */
-#define EXTENDED_STATE_TEST_FXSAVE_FCW   0u   /**< Where the image holds the x87 control word. */
-#define EXTENDED_STATE_TEST_FXSAVE_MXCSR 24u  /**< Where it holds the MXCSR. */
+#define EXTENDED_STATE_TEST_FXSAVE_BYTES 512u    /**< The FXSAVE image. */
+#define EXTENDED_STATE_TEST_FXSAVE_FCW   0u      /**< Where the image holds the x87 control word. */
+#define EXTENDED_STATE_TEST_FXSAVE_MXCSR 24u     /**< Where it holds the MXCSR. */
+#define EXTENDED_STATE_TEST_OTHER_FCW    0x0040u /**< The x87 control word after a power-up (SDM vol. 3, Table 12-1). */
+#define EXTENDED_STATE_TEST_OTHER_MXCSR  0x7F80u /**< An MXCSR that rounds toward zero, every exception masked. */
 
 /**
  * @brief The state a processor read in its own registers.
@@ -74,6 +77,23 @@ __attribute__((target("fxsr"))) static void extended_state_test_read(ExtendedSta
                                    ((uint32_t) image[EXTENDED_STATE_TEST_FXSAVE_MXCSR + 2u] << 16u) |
                                    ((uint32_t) image[EXTENDED_STATE_TEST_FXSAVE_MXCSR + 3u] << 24u);
     reading->answered = 1u;
+}
+
+/**
+ * @brief Loads @p control_word into the x87 control word and @p simd_control_status into the MXCSR, through an FXSAVE
+ *        image of the current state.
+ */
+__attribute__((target("fxsr"))) static void extended_state_test_load_controls(uint32_t control_word,
+                                                                              uint32_t simd_control_status)
+{
+    uint8_t image[EXTENDED_STATE_TEST_FXSAVE_BYTES] __attribute__((aligned(16)));
+
+    __builtin_ia32_fxsave(image);
+    image[EXTENDED_STATE_TEST_FXSAVE_FCW] = (uint8_t) control_word;
+    image[EXTENDED_STATE_TEST_FXSAVE_FCW + 1u] = (uint8_t) (control_word >> 8u);
+    for (uint32_t byte = 0u; byte < 4u; ++byte)
+        image[EXTENDED_STATE_TEST_FXSAVE_MXCSR + byte] = (uint8_t) (simd_control_status >> (8u * byte));
+    __builtin_ia32_fxrstor(image);
 }
 
 /**
@@ -185,6 +205,7 @@ KERNEL_TEST(every_processor_runs_from_the_known_extended_state)
     kernel_test_measure(test, "cr0", extended_state_test_readings[here].control_register_0);
     kernel_test_measure(test, "xcr0", (uint32_t) extended_state_test_readings[here].extended_control_register_0);
     kernel_test_measure(test, "expected_xcr0", (uint32_t) expected_xcr0);
+    kernel_test_measure(test, "xsave", xsave ? 1u : 0u);
     kernel_test_measure(test, "fcw", extended_state_test_readings[here].floating_point_control_word);
     kernel_test_measure(test, "mxcsr", extended_state_test_readings[here].simd_control_status);
     if (online < 2u || !advanced_pic_ipi_is_ready())
@@ -210,4 +231,38 @@ KERNEL_TEST(every_processor_runs_from_the_known_extended_state)
     kernel_test_check(test, known == asked, "each runs from the known state");
     kernel_test_measure(test, "asked", asked);
     kernel_test_measure(test, "known", known);
+}
+
+/**
+ * @brief Initialising a processor that holds another x87 control word and another MXCSR gives it the known ones: an
+ *        application processor keeps across INIT whatever it held, and the firmware's state is not the known one.
+ *
+ * @details The control word of a power-up, 0x0040, unmasks every x87 exception and rounds to single precision. The
+ *          bootstrap processor is initialised once more, then given back the controls it held before.
+ */
+KERNEL_TEST(initialising_a_processor_resets_its_x87_and_simd_controls)
+{
+    ExtendedStateTestReading_t before;
+    ExtendedStateTestReading_t perturbed;
+    ExtendedStateTestReading_t after;
+
+    extended_state_test_read(&before);
+    extended_state_test_load_controls(EXTENDED_STATE_TEST_OTHER_FCW, EXTENDED_STATE_TEST_OTHER_MXCSR);
+    extended_state_test_read(&perturbed);
+    extended_state_initialize_on_this_processor();
+    extended_state_test_read(&after);
+    extended_state_test_load_controls(before.floating_point_control_word, before.simd_control_status);
+
+    kernel_test_check(test,
+                      perturbed.floating_point_control_word == EXTENDED_STATE_TEST_OTHER_FCW &&
+                          perturbed.simd_control_status == EXTENDED_STATE_TEST_OTHER_MXCSR,
+                      "the processor held the other controls");
+    kernel_test_check(test, after.floating_point_control_word == EXTENDED_STATE_TEST_FCW_AFTER_FNINIT,
+                      "it gets the control word FNINIT leaves");
+    kernel_test_check(test, after.simd_control_status == EXTENDED_STATE_TEST_MXCSR_DEFAULT, "and the MXCSR of a reset");
+    kernel_test_check(test,
+                      after.control_register_0 == before.control_register_0 &&
+                          after.control_register_4 == before.control_register_4 &&
+                          after.extended_control_register_0 == before.extended_control_register_0,
+                      "its control registers and XCR0 stay as they were");
 }
