@@ -1,5 +1,8 @@
+#include <kernel/acpi/interrupt_routing.h>
+#include <kernel/acpi/tables.h>
 #include <kernel/cpu/apic.h>
 #include <kernel/cpu/apic_ipi.h>
+#include <kernel/cpu/cpu_identity.h>
 #include <kernel/cpu/cpu_topology.h>
 #include <kernel/cpu/device_interrupt.h>
 #include <kernel/cpu/irq.h>
@@ -164,4 +167,36 @@ KERNEL_TEST(a_vector_sent_to_another_core_is_counted_on_that_core)
     kernel_test_check(test, device_interrupt_count(vector, here) == here_before, "and not on this one's");
     device_interrupt_release(vector);
     kernel_test_measure(test, "other_slot", other);
+}
+
+/**
+ * @brief A device interrupt reaches a core exactly when the local APICs run xAPIC mode, or x2APIC mode under a
+ *        hypervisor, and the boot told firmware the APIC model exactly when the MADT declares an I/O APIC and one does:
+ *        the mode the boot predicted before the local APICs were initialised is the one they run (ACPI specification,
+ *        §3.8 step 5).
+ *
+ * @details `-cpu max,-hypervisor` makes the kernel take the bare-metal path: x2APIC is offered, no hypervisor reports
+ *          itself, and the kernel keeps xAPIC mode, so the APIC model is still told.
+ */
+KERNEL_TEST(the_interrupt_model_follows_the_mode_the_local_apics_run)
+{
+    CpuIdentity_t identity;
+
+    cpu_identity_read(&identity);
+
+    const bool delivered = !apic_is_x2apic_active() || identity.hypervisor;
+    const bool input_output_apic = advanced_configuration_and_power_interface_madt_is_available() &&
+                                   advanced_configuration_and_power_interface_madt_get_io_apic_count() != 0u;
+    const uint8_t model = advanced_configuration_and_power_interface_interrupt_routing()->model;
+
+    kernel_test_check(test, device_interrupt_platform_delivers() == delivered,
+                      "a device interrupt is delivered in xAPIC mode, and in x2APIC mode under a hypervisor alone");
+    kernel_test_check(test,
+                      (model == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_INTERRUPT_MODEL_APIC) ==
+                          (input_output_apic && delivered),
+                      "the boot told firmware the APIC model exactly when the MADT declares an I/O APIC and a device "
+                      "interrupt is delivered in the mode the local APICs run");
+    kernel_test_measure(test, "x2apic", apic_is_x2apic_active() ? 1u : 0u);
+    kernel_test_measure(test, "hypervisor", identity.hypervisor ? 1u : 0u);
+    kernel_test_measure(test, "model", model);
 }
