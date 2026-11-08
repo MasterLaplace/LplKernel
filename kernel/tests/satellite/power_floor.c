@@ -425,8 +425,10 @@ KERNEL_TEST(the_capture_stream_delivers_buffers)
  *
  * @details QEMU's intel-hda offers MSI unless told `msi=off`: `qemu-system-i386 -machine q35 -smp 2 -audiodev
  *          none,id=lplaudio -device intel-hda -device hda-duplex,audiodev=lplaudio -kernel kernel/lpl.kernel` routes a
- *          message, `-device intel-hda,msi=off` the I/O APIC line, and `-cpu max,-hypervisor`, an x2APIC mode no
- *          device interrupt reaches, the 8259 line, on a satellite kernel (`./build.sh --satellite`).
+ *          message and `-device intel-hda,msi=off` the I/O APIC line, on a satellite kernel (`./build.sh
+ *          --satellite`); `-cpu max,-hypervisor` keeps xAPIC mode and changes neither. The 8259 line is left to
+ *          x2APIC mode handed over by firmware on bare metal, which no device interrupt reaches and QEMU's firmware
+ *          never hands over.
  */
 KERNEL_TEST(the_capture_interrupt_reaches_the_core_that_took_the_ring)
 {

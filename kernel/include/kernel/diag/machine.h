@@ -43,6 +43,7 @@ extern "C" {
  *          - `ioapic_lines_refused`: the lines the I/O APIC's routing refused because no redirection
  *            entry can name the bootstrap processor;
  *          - `apic`: `x2apic`, `xapic` or `absent`;
+ *          - `apic_reason`: why the local APIC runs that mode, as apic_mode_reason_name names it;
  *          - `audio_controller`: 1 when the bus holds a high-definition audio controller.
  *          A character other than a letter, a digit, '.', '-' or '_' in a value becomes '-', so
  *          the telemetry module never has to sanitise one.

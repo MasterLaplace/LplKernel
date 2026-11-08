@@ -52,23 +52,85 @@
 #define X2APIC_MSR_BASE 0x800u
 
 /**
+ * @brief The mode the local APICs run in, and why.
+ */
+typedef enum {
+    APIC_MODE_NOT_CHOSEN = 0,          /**< apic_initialize_on_cpu has not run yet. */
+    APIC_MODE_XAPIC_NOT_OFFERED,       /**< xAPIC: the processor offers no x2APIC. */
+    APIC_MODE_XAPIC_WITHOUT_REMAPPING, /**< xAPIC: on bare metal a device interrupt reaches x2APIC mode only through
+                                            interrupt remapping (SDM 325384-093US §13.12.6), which the kernel does not
+                                            turn on. */
+    APIC_MODE_X2APIC_FROM_FIRMWARE,    /**< x2APIC: the firmware handed it over, as it does by default when an APIC
+                                            ID is 255 or more (§13.12.7), and the kernel keeps it. */
+    APIC_MODE_X2APIC_UNDER_HYPERVISOR, /**< x2APIC: a hypervisor reports itself, and the kernel assumes, as
+                                            device_interrupt_platform_delivers does, that it delivers device
+                                            interrupts to x2APIC mode without remapping. Linux v6.17 trusts only a
+                                          hypervisor whose guest support says so (x86_init.hyper.x2apic_available, false
+                                          by default). */
+} ApicMode_t;
+
+/**
+ * @brief What the processor and the firmware report, from which the mode is chosen.
+ */
+typedef struct {
+    bool x2apic_offered;       /**< CPUID leaf 1, ECX bit 21. */
+    bool hypervisor_present;   /**< CPUID leaf 1, ECX bit 31. */
+    bool x2apic_from_firmware; /**< IA32_APIC_BASE bit 10 (EXTD), as the firmware left it. */
+} ApicPlatform_t;
+
+/**
+ * @brief The mode the local APICs must run in on a platform, and why.
+ *
+ * @details The rules, in order: x2APIC mode the firmware handed over is kept; without x2APIC the mode is xAPIC;
+ *          under a hypervisor x2APIC mode is turned on; on bare metal the mode stays xAPIC, since no device
+ *          interrupt could reach x2APIC mode without interrupt remapping, as Linux v6.17 decides in
+ *          try_to_enable_x2apic (arch/x86/kernel/apic/apic.c). Linux, without remapping, also leaves the firmware's
+ *          x2APIC mode unless the bootstrap processor's APIC ID is 255 or more or the firmware locked the mode
+ *          (x2apic_disable); the kernel keeps it, as issue #795 decides.
+ *
+ * @param platform What the processor and the firmware report.
+ * @return The mode, never APIC_MODE_NOT_CHOSEN.
+ */
+ApicMode_t apic_choose_mode(const ApicPlatform_t *platform);
+
+/**
+ * @brief The mode the first call of apic_initialize_on_cpu chose, the one every processor runs in.
+ *
+ * @return The mode, or APIC_MODE_NOT_CHOSEN before that call.
+ */
+ApicMode_t apic_get_mode(void);
+
+/**
+ * @brief The reason of @p mode as the serial line and the machine record write it.
+ *
+ * @param mode A mode.
+ * @return `x2apic-not-offered`, `bare-metal-without-interrupt-remapping`, `handed-over-by-firmware`,
+ *         `under-hypervisor` or `not-chosen`; `unknown` for a value outside the enumeration.
+ */
+const char *apic_mode_reason_name(ApicMode_t mode);
+
+/**
  * @brief Whether the local APICs run in x2APIC mode, or will once apic_initialize_on_cpu has run.
  *
- * @details apic_initialize_on_cpu turns x2APIC mode on exactly when the processor offers it (CPUID leaf 1, ECX bit
- *          21), so the answer is known before the bootstrap processor's local APIC is initialised: the boot needs it
- *          then, to choose the interrupt model it tells firmware (ACPI specification, §3.8 step 5).
+ * @details Before that call the mode is the one apic_choose_mode would choose from what the bootstrap processor reports
+ *          now, the firmware's IA32_APIC_BASE included; after it, the mode that call chose. The boot needs it before
+ *          the bootstrap processor's local APIC is initialised, to choose the interrupt model it tells firmware (ACPI
+ *          specification, §3.8 step 5).
  *
  * @return true when x2APIC mode is, or will be, the mode.
  */
 bool apic_runs_x2apic_mode(void);
 
 /**
- * @brief Initialize the Local APIC on the current CPU.
+ * @brief Puts the current processor's local APIC in the mode every processor shares, and software-enables it.
  *
- * Enables x2APIC mode when apic_runs_x2apic_mode says so, xAPIC mode otherwise.
+ * @details The first call, the bootstrap processor's, chooses the mode with apic_choose_mode from what its CPUID and
+ *          IA32_APIC_BASE report; every later call, an application processor's, applies that mode, leaving x2APIC
+ *          mode through the disabled state when its firmware left it there (SDM 325384-093US §13.12.5.1). Each call
+ *          prints the mode and its reason.
  *
  * @param mmio_virtual_base Virtual address where xAPIC MMIO is mapped.
- * @return true if enabled successfully, false otherwise.
+ * @return true once the local APIC is enabled.
  */
 bool apic_initialize_on_cpu(uint32_t mmio_virtual_base);
 
