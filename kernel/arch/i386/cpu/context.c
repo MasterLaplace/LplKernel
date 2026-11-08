@@ -1,4 +1,6 @@
+#include <kernel/config.h>
 #include <kernel/cpu/context.h>
+#include <kernel/drivers/serial.h>
 
 #include <stddef.h>
 #include <stdint.h>
@@ -18,12 +20,18 @@ _Static_assert(offsetof(CpuContext_t, extended_state) == CPU_CONTEXT_OFFSET_EXTE
                "context_switch.S reads the extended state area there");
 _Static_assert(offsetof(CpuContext_t, save) == CPU_CONTEXT_OFFSET_SAVE, "context_switch.S reads the save there");
 
+void cpu_context_report_returned_entry(void)
+{
+    serial_write_string(&com1, "[" KERNEL_SYSTEM_STRING "]: a context's entry returned, and its processor halts\n");
+}
+
 void cpu_context_adopt(CpuContext_t *context, void *extended_state, ExtendedStateSave_t save)
 {
     context->stack_pointer = 0u;
     context->extended_state = extended_state;
     context->save = save;
     extended_state_prepare_area(extended_state, save);
+    cpu_context_track_every_component_as_modified(context);
 }
 
 void cpu_context_prepare(CpuContext_t *context, void *stack_top, void *extended_state, ExtendedStateSave_t save,

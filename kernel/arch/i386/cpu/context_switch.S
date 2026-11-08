@@ -1,7 +1,10 @@
-/* cpu_context_switch and the first code of a prepared context (context.h). The
-   save of each context picks its instructions, XSAVES first since it is the
-   one a processor offering it runs; EDX:EAX at all ones asks for every
-   component XCR0 enables (Intel SDM vol. 1, §13.6). */
+/* cpu_context_switch, the first code of a prepared context, and the empty
+   restore cpu_context_adopt runs (context.h). The save of each context picks
+   its instructions, XSAVES first since it is the one a processor offering it
+   runs. EDX:EAX at all ones asks for every component: XCR0's for XSAVE and
+   XRSTOR, XCR0 | IA32_XSS for XSAVES and XRSTORS (Intel SDM vol. 1,
+   253665-093US, §13.7 and §13.11). At zero, XRSTOR and XRSTORS load nothing
+   and track every component as modified (§13.8.3). */
 
 #include <kernel/cpu/context.h>
 
@@ -65,7 +68,27 @@ cpu_context_switch:
 cpu_context_start:
     pushl %esi
     call *%ebx
-8:
+    call cpu_context_report_returned_entry
     cli
+8:
     hlt
     jmp 8b
+
+.globl cpu_context_track_every_component_as_modified
+.type cpu_context_track_every_component_as_modified, @function
+cpu_context_track_every_component_as_modified:
+    movl 4(%esp), %ecx
+    movl CPU_CONTEXT_OFFSET_SAVE(%ecx), %eax
+    cmpl $EXTENDED_STATE_SAVE_FXSAVE, %eax
+    je 2f
+    movl CPU_CONTEXT_OFFSET_EXTENDED_STATE(%ecx), %ecx
+    cmpl $EXTENDED_STATE_SAVE_XSAVES, %eax
+    movl $0, %eax
+    movl $0, %edx
+    jne 1f
+    xrstors (%ecx)
+    ret
+1:
+    xrstor (%ecx)
+2:
+    ret

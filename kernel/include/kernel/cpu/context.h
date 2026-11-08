@@ -58,16 +58,32 @@ typedef void (*CpuContextEntry_t)(void *argument);
 
 /**
  * @brief The first code a prepared context runs, from the frame cpu_context_prepare writes: it calls the entry with
- *        its argument, and halts the processor if the entry returns. Never called.
+ *        its argument and, if the entry returns, has cpu_context_report_returned_entry say so and halts the processor
+ *        with interrupts disabled. Never called.
  */
 void cpu_context_start(void);
 
 /**
+ * @brief Writes on COM1 that a context's entry returned, which no entry should: cpu_context_start calls it before it
+ *        halts the processor.
+ */
+void cpu_context_report_returned_entry(void);
+
+/**
+ * @brief Runs XRSTOR, or XRSTORS, with an empty mask from @p context's area: it loads no register, and the processor
+ *        tracks every component as modified, so the next save into any area writes them all (Intel SDM vol. 1,
+ *        253665-093US, §13.8.3). Nothing for an FXSAVE area.
+ *
+ * @param context A context whose area holds a valid header, as extended_state_prepare_area writes it.
+ */
+void cpu_context_track_every_component_as_modified(const CpuContext_t *context);
+
+/**
  * @brief Makes the code that runs the call @p context: its next cpu_context_switch away saves it there.
  *
- * @details @p extended_state must not be the area the processor last restored from: XSAVEOPT and XSAVES skip a
- *          component unmodified since that restore, and would keep the initial state this call writes (Intel SDM
- *          vol. 1, §13.6).
+ * @details The area may be the one the processor last restored from: XSAVEOPT and XSAVES would then skip a component
+ *          unmodified since, and keep the initial state this call writes there (Intel SDM vol. 1, 253665-093US,
+ *          §13.6), so the call ends with cpu_context_track_every_component_as_modified.
  *
  * @param context        The context.
  * @param extended_state An area of extended_state_area_size(@p save) bytes, EXTENDED_STATE_AREA_ALIGNMENT-aligned.
@@ -99,6 +115,12 @@ void cpu_context_prepare(CpuContext_t *context, void *stack_top, void *extended_
  *          keep, then the extended state with @p from's save, and restores @p to's with its own. The flags are not
  *          saved: the caller disables interrupts, and @p to resumes with them disabled. Switching to @p from itself
  *          saves and restores it, which no test on the common path is spent on.
+ *
+ *          The policy for SIMD in ring 0: every switch saves and restores the extended state, eagerly, never on first
+ *          use through CR0.TS and #NM. A lazy switch leaves the previous context's registers in place, which
+ *          speculative execution leaked (LazyFP, CVE-2018-3665), and Linux switches eagerly since. A context that never
+ *          touched its vector registers costs little: XSAVEOPT and XSAVES write nothing for a component in its
+ *          initial state. A handler that interrupts a context runs SSE at most, under the FXSAVE of isr_stubs.s.
  *
  * @param from Where the running code is saved.
  * @param to   What runs next, on the same processor.
