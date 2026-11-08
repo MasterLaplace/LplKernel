@@ -22,8 +22,9 @@ KERNEL_TEST_SUITE(context_switch, KERNEL_TEST_STAGE_PUBLISHED);
 #define CONTEXT_SWITCH_TEST_XSTATE_BV   512u /**< Where an XSAVE area's header holds XSTATE_BV (SDM vol. 1, §13.4.2). */
 #define CONTEXT_SWITCH_TEST_XMM_REGION  160u /**< Where the legacy region holds XMM0 (SDM vol. 1, Table 13-1). */
 #define CONTEXT_SWITCH_TEST_XMM_BYTES   128u /**< XMM0-XMM7. */
-#define CONTEXT_SWITCH_TEST_MARKER      0xA5u /**< What an area's XMM region holds before a switch that must not write it. \
-                                               */
+#define CONTEXT_SWITCH_TEST_MARKER                                                                                     \
+    0xA5u /**< What an area's XMM region holds before a switch that must not write it.                                 \
+           */
 #define CONTEXT_SWITCH_TEST_FCW_INITIAL   0x037Fu /**< The x87 control word after FNINIT (SDM vol. 1, Table 8-4). */
 #define CONTEXT_SWITCH_TEST_MXCSR_INITIAL 0x1F80u /**< The MXCSR after a reset (SDM vol. 1, §10.2.3). */
 #define CONTEXT_SWITCH_TEST_TCG           "TCGTCGTCGTCG" /**< QEMU's TCG, which does not track the components in use. */
@@ -41,6 +42,7 @@ typedef struct {
     uint32_t wide;                    /**< Whether @p state holds YMM0-YMM7 rather than XMM0-XMM7. */
     ContextProbeState_t *report;      /**< Where it stores its registers before its first switch, or NULL. */
     void *volatile received;          /**< The argument its entry received. */
+    volatile uint32_t entry_frame;    /**< Its entry's frame pointer: 8 past a 16-byte boundary when called aligned. */
 } ContextSwitchTestRole_t;
 
 #define CONTEXT_SWITCH_TEST_HOME_AREAS  12u /**< One per cpu_context_adopt the tests make, none taken twice. */
@@ -80,6 +82,7 @@ static void context_switch_test_play(void *argument)
     ContextSwitchTestRole_t *const role = (ContextSwitchTestRole_t *) argument;
 
     role->received = argument;
+    role->entry_frame = (uint32_t) (uintptr_t) __builtin_frame_address(0);
     if (role->report)
         context_probe_read(role->report, role->wide);
     for (;;)
@@ -208,8 +211,8 @@ static void context_switch_test_prepare_pair(ContextSwitchTestRole_t *first, Con
                                              CpuContext_t *home, volatile uint32_t *remaining, ExtendedStateSave_t save,
                                              const ContextProbeState_t *state, uint32_t wide)
 {
-    *first = (ContextSwitchTestRole_t){first_context, second_context, home, remaining, state, wide, NULL, NULL};
-    *second = (ContextSwitchTestRole_t){second_context, first_context, home, remaining, state, wide, NULL, NULL};
+    *first = (ContextSwitchTestRole_t){first_context, second_context, home, remaining, state, wide, NULL, NULL, 0u};
+    *second = (ContextSwitchTestRole_t){second_context, first_context, home, remaining, state, wide, NULL, NULL, 0u};
     cpu_context_prepare(first_context, context_switch_test_stacks[1] + CONTEXT_SWITCH_TEST_STACK_BYTES,
                         context_switch_test_areas[CONTEXT_SWITCH_TEST_AREA_FIRST], save, context_switch_test_play,
                         first);
@@ -247,7 +250,7 @@ KERNEL_TEST(a_context_finds_its_registers_after_another_ran)
         ++offered;
         memset(&after, 0, sizeof(after));
         remaining = 1u;
-        role = (ContextSwitchTestRole_t){&other, &here, &here, &remaining, &overwriting, wide, NULL, NULL};
+        role = (ContextSwitchTestRole_t){&other, &here, &here, &remaining, &overwriting, wide, NULL, NULL, 0u};
         if (!context_switch_test_adopt(&here, save))
             break;
         cpu_context_prepare(&other, context_switch_test_stacks[0] + CONTEXT_SWITCH_TEST_STACK_BYTES,
@@ -291,7 +294,7 @@ KERNEL_TEST(a_prepared_context_starts_from_the_initial_state_with_its_argument)
     initial.simd_control_status = CONTEXT_SWITCH_TEST_MXCSR_INITIAL;
     memset(&reported, 0xFF, sizeof(reported));
     remaining = 0u;
-    role = (ContextSwitchTestRole_t){&fresh, &here, &here, &remaining, NULL, wide, &reported, NULL};
+    role = (ContextSwitchTestRole_t){&fresh, &here, &here, &remaining, NULL, wide, &reported, NULL, 0u};
     if (!context_switch_test_adopt(&here, save))
     {
         kernel_test_check(test, false, "a home area is left");
@@ -307,6 +310,8 @@ KERNEL_TEST(a_prepared_context_starts_from_the_initial_state_with_its_argument)
     asmutils_restore_flags(flags);
 
     kernel_test_check(test, role.received == &role, "the entry receives its argument");
+    kernel_test_check(test, (role.entry_frame & 15u) == 8u,
+                      "on a stack 16-byte aligned at its call: its frame pointer sits 8 bytes past a boundary");
     kernel_test_check(test, context_switch_test_same(&initial, &reported, wide),
                       "it starts with the control words of FNINIT and a reset, and vector registers at zero");
     kernel_test_check(test, context_switch_test_same(&held, &after, wide),
