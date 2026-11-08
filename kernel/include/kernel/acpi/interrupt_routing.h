@@ -96,7 +96,8 @@ typedef struct AdvancedConfigurationAndPowerInterfaceInterruptRoutingTable {
  * @param load           A load whose namespace the initialisation has initialised (§3.8).
  * @param machine        The interrupt model step 5 told firmware.
  * @param initialization The counts the sequence keeps: the _STA evaluations and the failures, per status.
- * @param out_table      Receives the routes and the counts; zeroed first.
+ * @param out_table      Receives the routes and the counts, the counts zeroed first; the routes past its count are
+ *                       left as they were.
  */
 extern void advanced_configuration_and_power_interface_interrupt_routing_publish(
     AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,

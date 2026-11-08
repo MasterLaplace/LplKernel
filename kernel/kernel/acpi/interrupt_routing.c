@@ -1,6 +1,7 @@
 #include <kernel/acpi/interrupt_routing.h>
 #include <kernel/acpi/resources.h>
 
+#include <stddef.h>
 #include <string.h>
 
 #define ROUTING_OK             ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_STATUS_OK
@@ -456,9 +457,10 @@ void advanced_configuration_and_power_interface_interrupt_routing_publish(Routin
                                                                           RoutingCounts_t *initialization,
                                                                           RoutingTable_t *out_table)
 {
-    RoutingLinks_t links = {.count = 0u};
+    RoutingLinks_t links;
 
-    memset(out_table, 0, sizeof(*out_table));
+    links.count = 0u;
+    memset(out_table, 0, offsetof(RoutingTable_t, routes));
     out_table->model = machine->interrupt_model;
     for (uint32_t index = advanced_configuration_and_power_interface_machine_language_namespace_next(
              &load->space, ROUTING_ROOT, true);
