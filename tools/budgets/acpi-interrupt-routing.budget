@@ -6,6 +6,6 @@
 inside=advanced_configuration_and_power_interface_interrupt_routing_publish
 times=1
 machine=q35
-instructions=373080
-accesses=198507
+instructions=354430
+accesses=186677
 tolerance=1
