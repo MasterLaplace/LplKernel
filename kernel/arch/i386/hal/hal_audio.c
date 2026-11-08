@@ -1,8 +1,10 @@
 #include <kernel/hal/hal_audio.h>
 
+#include <kernel/acpi/interrupt_routing.h>
 #include <kernel/cpu/apic.h>
 #include <kernel/cpu/cpu_topology.h>
 #include <kernel/cpu/device_interrupt.h>
+#include <kernel/cpu/ioapic.h>
 #include <kernel/cpu/irq.h>
 #include <kernel/cpu/isr.h>
 #include <kernel/cpu/pic.h>
@@ -17,8 +19,11 @@ static int16_t hal_audio_frames[KERNEL_HAL_AUDIO_RING_FRAMES][KERNEL_HAL_AUDIO_F
 static int16_t hal_audio_discard[KERNEL_HAL_AUDIO_FRAME_SAMPLES];
 
 static uint8_t hal_audio_interrupt_line = KERNEL_HDA_NO_INTERRUPT_LINE;
-static uint8_t hal_audio_interrupt_vector = 0u; /**< The message-signaled vector capture takes, or 0. */
+static uint8_t hal_audio_interrupt_vector = 0u; /**< The device vector capture takes, as a message or on its I/O APIC
+                                                     line, or 0. */
 static uint32_t hal_audio_interrupt_slot = 0u;  /**< The logical CPU slot that vector interrupts. */
+static uint32_t hal_audio_global_system_interrupt =
+    INPUT_OUTPUT_APIC_NO_LINE;                  /**< The I/O APIC line that vector comes on. */
 static uint8_t hal_audio_allocated_vector = 0u; /**< The vector allocated once, kept across sessions. */
 static bool hal_audio_interrupt_driven = false;
 static volatile uint32_t hal_audio_interrupts = 0u;
@@ -56,14 +61,27 @@ static void hal_audio_capture_interrupt_handler(const InterruptFrame_t *frame)
 }
 
 /**
- * @brief Takes a capture interrupt that came as a message; the local APIC's end-of-interrupt is the dispatcher's.
+ * @brief Takes a capture interrupt that came on a device vector, as a message or on an I/O APIC line; the local
+ *        APIC's end-of-interrupt is the dispatcher's, which also ends a level-triggered line's interrupt at its I/O
+ *        APIC, once the acknowledge has lowered the line.
  *
  * @param context Unused.
  */
-static void hal_audio_capture_message_handler(void *context)
+static void hal_audio_capture_device_handler(void *context)
 {
     (void) context;
     hal_audio_take_capture_interrupt();
+}
+
+/**
+ * @brief Gives capture its device vector, allocated once and kept across sessions.
+ *
+ * @return false when no vector is free.
+ */
+static bool hal_audio_capture_vector(void)
+{
+    return hal_audio_allocated_vector != 0u ||
+           device_interrupt_allocate(hal_audio_capture_device_handler, NULL, &hal_audio_allocated_vector);
 }
 
 /**
@@ -76,13 +94,32 @@ static bool hal_audio_route_capture_message(void)
 {
     const uint32_t slot = cpu_topology_get_slot_for_apic_id(apic_get_id());
 
-    if (hal_audio_allocated_vector == 0u &&
-        !device_interrupt_allocate(hal_audio_capture_message_handler, NULL, &hal_audio_allocated_vector))
-        return false;
-    if (!intel_high_definition_audio_aim_capture_message(slot, hal_audio_allocated_vector))
+    if (!hal_audio_capture_vector() ||
+        !intel_high_definition_audio_aim_capture_message(slot, hal_audio_allocated_vector))
         return false;
     hal_audio_interrupt_vector = hal_audio_allocated_vector;
     hal_audio_interrupt_slot = slot;
+    return true;
+}
+
+/**
+ * @brief Routes capture interrupts on the controller's I/O APIC line to the processor that runs the call, the one that
+ *        takes the ring.
+ *
+ * @return true when its line now carries them; false when the pin has no line the kernel may take, or no vector is
+ *         free.
+ */
+static bool hal_audio_route_capture_through_input_output_apic(void)
+{
+    const uint32_t slot = cpu_topology_get_slot_for_apic_id(apic_get_id());
+    uint32_t line = INPUT_OUTPUT_APIC_NO_LINE;
+
+    if (!hal_audio_capture_vector() ||
+        !intel_high_definition_audio_aim_capture_line(slot, hal_audio_allocated_vector, &line))
+        return false;
+    hal_audio_interrupt_vector = hal_audio_allocated_vector;
+    hal_audio_interrupt_slot = slot;
+    hal_audio_global_system_interrupt = line;
     return true;
 }
 
@@ -103,13 +140,18 @@ static bool hal_audio_line_is_acknowledgeable(uint8_t line)
 
 /**
  * @brief Routes the controller's interrupt to the handler, or declines and says so: as a message when the controller
- *        has MSI, on its line otherwise.
+ *        has MSI; otherwise on its I/O APIC line, the one the boot's published routes give its pin; on its 8259 line
+ *        only in the PIC model, since in the APIC model firmware may have moved the PCI interrupts off the 8259
+ *        (ACPI specification, §3.8 step 5).
  * @return true when capture is now interrupt-driven.
  */
 static bool hal_audio_route_capture_interrupt(void)
 {
-    if (hal_audio_route_capture_message())
+    if (hal_audio_route_capture_message() || hal_audio_route_capture_through_input_output_apic())
         return intel_high_definition_audio_enable_capture_interrupt();
+    if (advanced_configuration_and_power_interface_interrupt_routing()->model ==
+        ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_INTERRUPT_MODEL_APIC)
+        return false;
 
     const uint8_t line = intel_high_definition_audio_capture_interrupt_line();
     if (!hal_audio_line_is_acknowledgeable(line))
@@ -134,6 +176,7 @@ bool hardware_abstraction_layer_audio_initialize(void)
     kernel_spsc_ring_initialize(&hal_audio_ring, KERNEL_HAL_AUDIO_RING_FRAMES);
     hal_audio_interrupt_driven = false;
     hal_audio_interrupt_vector = 0u;
+    hal_audio_global_system_interrupt = INPUT_OUTPUT_APIC_NO_LINE;
     hal_audio_interrupts = 0u;
     hal_audio_codec_present = false;
     hal_audio_name = "absent";
@@ -277,3 +320,8 @@ uint8_t hardware_abstraction_layer_audio_capture_interrupt_line(void) { return h
 uint8_t hardware_abstraction_layer_audio_capture_interrupt_vector(void) { return hal_audio_interrupt_vector; }
 
 uint32_t hardware_abstraction_layer_audio_capture_interrupt_slot(void) { return hal_audio_interrupt_slot; }
+
+uint32_t hardware_abstraction_layer_audio_capture_global_system_interrupt(void)
+{
+    return hal_audio_global_system_interrupt;
+}

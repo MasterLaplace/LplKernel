@@ -148,22 +148,29 @@ bool hardware_abstraction_layer_audio_capture_is_interrupt_driven(void);
 uint32_t hardware_abstraction_layer_audio_capture_interrupt_count(void);
 
 /**
- * @brief The legacy line the capture interrupt was routed on.
+ * @brief The 8259 line the capture interrupt was routed on, in the PIC model.
  * @return The line, or KERNEL_HDA_NO_INTERRUPT_LINE when none was.
  */
 uint8_t hardware_abstraction_layer_audio_capture_interrupt_line(void);
 
 /**
- * @brief The message-signaled vector the capture interrupt was routed on.
- * @return The vector, or 0 when it came on the line or was not routed.
+ * @brief The device vector the capture interrupt was routed on, as an MSI message or on an I/O APIC line.
+ * @return The vector, or 0 when it came on an 8259 line or was not routed.
  */
 uint8_t hardware_abstraction_layer_audio_capture_interrupt_vector(void);
 
 /**
- * @brief The logical CPU slot the capture message interrupts.
+ * @brief The logical CPU slot the capture interrupt's device vector interrupts.
  * @return The slot; meaningful when hardware_abstraction_layer_audio_capture_interrupt_vector is not 0.
  */
 uint32_t hardware_abstraction_layer_audio_capture_interrupt_slot(void);
+
+/**
+ * @brief The I/O APIC line the capture interrupt was routed on, for a controller without MSI.
+ * @return Its Global System Interrupt, or INPUT_OUTPUT_APIC_NO_LINE when it came as a message, on an 8259 line, or was
+ *         not routed.
+ */
+uint32_t hardware_abstraction_layer_audio_capture_global_system_interrupt(void);
 
 /**
  * @brief Stops the capture stream, and with it the controller's capture interrupts.

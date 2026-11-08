@@ -1,6 +1,8 @@
+#include <kernel/acpi/interrupt_routing.h>
 #include <kernel/core/reconciler.h>
 #include <kernel/cpu/cpu_topology.h>
 #include <kernel/cpu/device_interrupt.h>
+#include <kernel/cpu/ioapic.h>
 #include <kernel/cpu/irq.h>
 #include <kernel/cpu/msi.h>
 #include <kernel/cpu/pci.h>
@@ -20,6 +22,12 @@ KERNEL_TEST_SUITE(power_floor, KERNEL_TEST_STAGE_BOOTED);
 /** Frames the satellite node runs for: 320 ms of audio, a sleep to each frame's deadline. */
 #define POWER_FLOOR_AUDIO_CLASS    0x04u /**< A multimedia controller. */
 #define POWER_FLOOR_AUDIO_SUBCLASS 0x03u /**< Its Intel HDA subclass. */
+#define POWER_FLOOR_INTERRUPT_PIN  0x3Du /**< A PCI function's Interrupt Pin register: 1 to 4 for INTA to INTD. */
+#define POWER_FLOOR_ENTRY_VECTOR   0xFFu /**< A redirection entry's vector bits. */
+#define POWER_FLOOR_ENTRY_LOW      13u   /**< Its polarity bit: active-low. */
+#define POWER_FLOOR_ENTRY_LEVEL    15u   /**< Its trigger bit: level-triggered. */
+#define POWER_FLOOR_ENTRY_MASKED   16u   /**< Its mask bit. */
+#define POWER_FLOOR_ENTRY_TARGET   24u   /**< Where its destination starts in its high register. */
 
 #define POWER_FLOOR_ITERATIONS 8u
 
@@ -263,12 +271,73 @@ KERNEL_TEST(the_capture_stream_delivers_buffers)
 }
 
 /**
+ * @brief Checks the route of a controller without MSI: where the MADT declares an I/O APIC, the APIC model told
+ *        firmware and its I/O APIC line, the one the boot's
+ *        published routes give its pin, its entry carrying the capture vector with the route's trigger and polarity,
+ *        unmasked, to the core that took the ring, which alone it interrupted; elsewhere, its 8259 line.
+ */
+static void power_floor_check_capture_line(KernelTest_t *test, const PeripheralComponentInterconnectDevice_t *device)
+{
+    const AdvancedConfigurationAndPowerInterfaceInterruptRoutingTable_t *routing =
+        advanced_configuration_and_power_interface_interrupt_routing();
+    const uint8_t pin = peripheral_component_interconnect_config_read_byte(device->bus, device->device,
+                                                                           device->function, POWER_FLOOR_INTERRUPT_PIN);
+    const uint8_t vector = hardware_abstraction_layer_audio_capture_interrupt_vector();
+    const uint32_t slot = hardware_abstraction_layer_audio_capture_interrupt_slot();
+    const uint32_t line = hardware_abstraction_layer_audio_capture_global_system_interrupt();
+    AdvancedConfigurationAndPowerInterfaceInterruptRoute_t route = {0};
+    uint32_t low = 0u;
+    uint32_t high = 0u;
+    uint32_t elsewhere = 0u;
+
+    const bool input_output_apic = advanced_configuration_and_power_interface_madt_is_available() &&
+                                   advanced_configuration_and_power_interface_madt_get_io_apic_count() != 0u;
+
+    kernel_test_check(
+        test, (routing->model == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_INTERRUPT_MODEL_APIC) == input_output_apic,
+        "the boot told firmware the APIC model exactly when the MADT declares an I/O APIC");
+    if (!input_output_apic)
+    {
+        kernel_test_check(test,
+                          vector == 0u &&
+                              hardware_abstraction_layer_audio_capture_interrupt_line() != KERNEL_HDA_NO_INTERRUPT_LINE,
+                          "without MSI nor an I/O APIC, it comes on the controller's 8259 line");
+        kernel_test_measure(test, "line", hardware_abstraction_layer_audio_capture_interrupt_line());
+        return;
+    }
+    kernel_test_check(test,
+                      pin != 0u && advanced_configuration_and_power_interface_interrupt_routing_find(
+                                       routing, 0u, device->bus, device->device, (uint8_t) (pin - 1u), &route),
+                      "the published routes name the controller's pin");
+    kernel_test_check(test, vector != 0u && line == route.interrupt,
+                      "without MSI, it comes on the I/O APIC line its pin's route gives");
+    kernel_test_check(
+        test,
+        input_output_advanced_programmable_interrupt_controller_debug_read_line(line, &low, &high) &&
+            (low & POWER_FLOOR_ENTRY_VECTOR) == vector && ((low >> POWER_FLOOR_ENTRY_LEVEL) & 1u) == route.level &&
+            ((low >> POWER_FLOOR_ENTRY_LOW) & 1u) == route.active_low &&
+            ((low >> POWER_FLOOR_ENTRY_MASKED) & 1u) == 0u &&
+            (high >> POWER_FLOOR_ENTRY_TARGET) == cpu_topology_get_apic_id_at_slot(slot),
+        "its entry carries the vector, the route's trigger and polarity, unmasked, to the core that took the ring");
+    for (uint32_t other = 0u; other < CPU_TOPOLOGY_MAX_LOGICAL_CPUS_PUBLIC; ++other)
+        elsewhere += other != slot ? device_interrupt_count(vector, other) : 0u;
+    kernel_test_check(test, device_interrupt_count(vector, slot) > 0u, "the line interrupted that core");
+    kernel_test_check(test, elsewhere == 0u, "and no other core");
+    kernel_test_measure(test, "global_system_interrupt", line);
+    kernel_test_measure(test, "level", route.level);
+    kernel_test_measure(test, "active_low", route.active_low);
+    kernel_test_measure(test, "vector", vector);
+    kernel_test_measure(test, "interrupts", device_interrupt_count(vector, slot));
+}
+
+/**
  * @brief The capture interrupt comes as an MSI message to the core that took the ring, and no other, when the
- *        controller has the MSI capability; on its line otherwise.
+ *        controller has the MSI capability; on its I/O APIC line otherwise.
  *
  * @details QEMU's intel-hda offers MSI unless told `msi=off`: `qemu-system-i386 -machine q35 -smp 2 -audiodev
  *          none,id=lplaudio -device intel-hda -device hda-duplex,audiodev=lplaudio -kernel kernel/lpl.kernel` routes a
- *          message, and `-device intel-hda,msi=off` the line, on a satellite kernel (`./build.sh --satellite`).
+ *          message, and `-device intel-hda,msi=off` the I/O APIC line, on a satellite kernel (`./build.sh
+ * --satellite`).
  */
 KERNEL_TEST(the_capture_interrupt_comes_as_a_message_when_the_controller_has_msi)
 {
@@ -293,11 +362,7 @@ KERNEL_TEST(the_capture_interrupt_comes_as_a_message_when_the_controller_has_msi
                       "capture is driven by the controller's interrupt");
     if (!has_msi)
     {
-        kernel_test_check(test,
-                          vector == 0u &&
-                              hardware_abstraction_layer_audio_capture_interrupt_line() != KERNEL_HDA_NO_INTERRUPT_LINE,
-                          "without MSI, it comes on the controller's line");
-        kernel_test_measure(test, "line", hardware_abstraction_layer_audio_capture_interrupt_line());
+        power_floor_check_capture_line(test, device);
         return;
     }
     for (uint32_t other = 0u; other < CPU_TOPOLOGY_MAX_LOGICAL_CPUS_PUBLIC; ++other)

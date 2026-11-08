@@ -1,4 +1,6 @@
+#include <kernel/acpi/interrupt_routing.h>
 #include <kernel/cpu/cpu_topology.h>
+#include <kernel/cpu/device_interrupt.h>
 #include <kernel/cpu/ioapic.h>
 
 #define IOAPIC_MMIO_BASE_VIRT 0xFFB10000u
@@ -29,12 +31,27 @@
 #define ACPI_ISO_TRIGGER_EDGE         0x0004u
 #define ACPI_ISO_TRIGGER_LEVEL        0x000Cu
 
+#define IOAPIC_PCI_INTERRUPT_PIN  0x3Du /**< A PCI function's Interrupt Pin register: 0 none, 1 to 4 INTA to INTD. */
+#define IOAPIC_PCI_PINS           4u    /**< INTA to INTD. */
+#define IOAPIC_MAX_RELATIVE_ENTRY 0x7Fu /**< The last entry an I/O APIC's 8-bit register index reaches. */
+
 static const char *io_apic_state_name = "ioapic-not-initialized";
 static uint8_t io_apic_mapped_count = 0u;
 static uint8_t io_apic_route_count = 0u;
 static uint32_t io_apic_lines_refused = 0u;
 static InputOutputApicUnit_t io_apic_units[INPUT_OUTPUT_APIC_MAX_COUNT] = {0};
 static InputOutputApicRouteInfo_t io_apic_routes[INPUT_OUTPUT_APIC_MAX_ROUTES] = {0};
+
+/**
+ * @brief A line a PCI function's pin holds: its Global System Interrupt and the vector it carries.
+ */
+typedef struct {
+    uint32_t line;  /**< The Global System Interrupt. */
+    uint8_t vector; /**< The vector it carries. */
+} InputOutputApicDeviceLine_t;
+
+static InputOutputApicDeviceLine_t io_apic_device_lines[INPUT_OUTPUT_APIC_MAX_DEVICE_LINES]; /**< Lines routed. */
+static uint32_t io_apic_device_line_count = 0u; /**< How many io_apic_device_lines holds. */
 
 static inline volatile uint32_t *io_apic_register_pointer(uint32_t io_apic_virtual_base, uint32_t offset)
 {
@@ -231,6 +248,71 @@ static uint8_t io_apic_read_route_destination(const InputOutputApicRouteInfo_t *
     return (uint8_t) ((redir_high & IOAPIC_REDIR_HIGH_DESTINATION_MASK) >> IOAPIC_REDIR_HIGH_DESTINATION_SHIFT);
 }
 
+/**
+ * @brief The register index of the low half of the redirection entry of @p line, and its unit, when a mapped I/O APIC
+ *        holds it.
+ */
+static bool io_apic_entry_of_line(uint32_t line, InputOutputApicUnit_t **out_unit, uint8_t *out_register)
+{
+    uint8_t unit_index = 0u;
+    uint32_t relative = 0u;
+
+    if (!io_apic_find_unit_for_gsi(line, &unit_index, &relative) || relative > IOAPIC_MAX_RELATIVE_ENTRY)
+        return false;
+    *out_unit = &io_apic_units[unit_index];
+    *out_register = (uint8_t) (IOAPIC_REGISTER_REDIRECT + (uint8_t) (relative * 2u));
+    return true;
+}
+
+/**
+ * @brief Whether an ISA route holds @p line, or another function's line carries another vector on it; a line the same
+ *        vector holds is taken again.
+ */
+static bool io_apic_line_is_taken(uint32_t line, uint8_t vector)
+{
+    for (uint8_t route = 0u; route < io_apic_route_count; ++route)
+        if (io_apic_routes[route].global_system_interrupt == line)
+            return true;
+    for (uint32_t index = 0u; index < io_apic_device_line_count; ++index)
+        if (io_apic_device_lines[index].line == line)
+            return io_apic_device_lines[index].vector != vector;
+    return false;
+}
+
+/**
+ * @brief Records that @p line carries @p vector; false when the lines are all taken.
+ */
+static bool io_apic_record_device_line(uint32_t line, uint8_t vector)
+{
+    for (uint32_t index = 0u; index < io_apic_device_line_count; ++index)
+        if (io_apic_device_lines[index].line == line)
+            return true;
+    if (io_apic_device_line_count == INPUT_OUTPUT_APIC_MAX_DEVICE_LINES)
+        return false;
+    io_apic_device_lines[io_apic_device_line_count].line = line;
+    io_apic_device_lines[io_apic_device_line_count].vector = vector;
+    ++io_apic_device_line_count;
+    return true;
+}
+
+/**
+ * @brief The route the boot published for the interrupt pin of @p device, when the APIC model was told and the
+ *        function has a pin.
+ */
+static bool io_apic_device_route(const PeripheralComponentInterconnectDevice_t *device,
+                                 AdvancedConfigurationAndPowerInterfaceInterruptRoute_t *out_route)
+{
+    const AdvancedConfigurationAndPowerInterfaceInterruptRoutingTable_t *routing =
+        advanced_configuration_and_power_interface_interrupt_routing();
+    const uint8_t pin = peripheral_component_interconnect_config_read_byte(device->bus, device->device,
+                                                                           device->function, IOAPIC_PCI_INTERRUPT_PIN);
+
+    return routing->model == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_INTERRUPT_MODEL_APIC && pin != 0u &&
+           pin <= IOAPIC_PCI_PINS &&
+           advanced_configuration_and_power_interface_interrupt_routing_find(routing, 0u, device->bus, device->device,
+                                                                             (uint8_t) (pin - 1u), out_route);
+}
+
 void input_output_advanced_programmable_interrupt_controller_initialize_routing_scaffold(void)
 {
     const uint32_t bootstrap_processor_apic_id = cpu_topology_get_local_apic_id();
@@ -240,6 +322,7 @@ void input_output_advanced_programmable_interrupt_controller_initialize_routing_
     io_apic_mapped_count = 0u;
     io_apic_route_count = 0u;
     io_apic_lines_refused = 0u;
+    io_apic_device_line_count = 0u;
 
     for (uint8_t index = 0u; index < INPUT_OUTPUT_APIC_MAX_COUNT; ++index)
     {
@@ -496,4 +579,42 @@ uint8_t input_output_advanced_programmable_interrupt_controller_set_isa_route_de
     io_apic_register_write(unit->virtual_base, redir_reg_index + 1u, redir_high);
 
     return 1u;
+}
+
+bool input_output_advanced_programmable_interrupt_controller_route_device(
+    const PeripheralComponentInterconnectDevice_t *device, uint32_t slot, uint8_t vector, uint32_t *out_line)
+{
+    AdvancedConfigurationAndPowerInterfaceInterruptRoute_t route;
+    InputOutputApicUnit_t *unit = NULL;
+    uint8_t entry = 0u;
+    const uint32_t apic_id = cpu_topology_get_apic_id_at_slot(slot);
+
+    *out_line = INPUT_OUTPUT_APIC_NO_LINE;
+    if (!io_apic_device_route(device, &route) || !io_apic_entry_of_line(route.interrupt, &unit, &entry) ||
+        io_apic_line_is_taken(route.interrupt, vector) || apic_id == CPU_TOPOLOGY_NO_PROCESSOR ||
+        !io_apic_can_name_destination(apic_id) || !device_interrupt_platform_delivers() ||
+        !io_apic_record_device_line(route.interrupt, vector))
+        return false;
+
+    const uint32_t low = (uint32_t) vector | (route.level ? IOAPIC_REDIR_LOW_TRIGGER_LEVEL : 0u) |
+                         (route.active_low ? IOAPIC_REDIR_LOW_POLARITY_ACTIVE_LOW : 0u);
+
+    io_apic_register_write(unit->virtual_base, entry, low | IOAPIC_REDIR_LOW_MASKED);
+    io_apic_register_write(unit->virtual_base, entry + 1u, apic_id << IOAPIC_REDIR_HIGH_DESTINATION_SHIFT);
+    io_apic_register_write(unit->virtual_base, entry, low);
+    *out_line = route.interrupt;
+    return true;
+}
+
+bool input_output_advanced_programmable_interrupt_controller_debug_read_line(uint32_t line, uint32_t *out_low,
+                                                                             uint32_t *out_high)
+{
+    InputOutputApicUnit_t *unit = NULL;
+    uint8_t entry = 0u;
+
+    if (!io_apic_entry_of_line(line, &unit, &entry))
+        return false;
+    *out_low = io_apic_register_read(unit->virtual_base, entry);
+    *out_high = io_apic_register_read(unit->virtual_base, entry + 1u);
+    return true;
 }
