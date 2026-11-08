@@ -8,6 +8,7 @@
 #include <kernel/testing/test.h>
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 KERNEL_TEST_SUITE(extended_state, KERNEL_TEST_STAGE_PUBLISHED);

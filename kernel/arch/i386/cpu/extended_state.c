@@ -2,6 +2,7 @@
 #include <kernel/lib/asmutils.h>
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #define EXTENDED_STATE_CR0_MP           (1u << 1u)  /**< CR0.MP: WAIT and FWAIT honour TS. */
