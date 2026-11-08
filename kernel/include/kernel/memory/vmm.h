@@ -126,9 +126,9 @@ void kernel_vmm_free_pages(void *ptr, uint32_t page_count);
  *          otherwise. A device's registers usually lie where no entry reaches, or in reserved memory
  *          the registers leave uncached, so they are cache-disabled and write-through: a cached read
  *          would return whatever the line held when it was filled, which for a status register is the
- *          answer to a question nobody asked. Where the firmware leaves reserved registers write-back,
- *          as SeaBIOS leaves q35's PCI Express configuration space at 0xB0000000, the window is
- *          write-back too (#58). A window that reaches usable
+ *          answer to a question nobody asked. A frame inside a range kernel_vmm_declare_uncached_range
+ *          declared is uncached whatever the registers say over it, as the PCI Express configuration
+ *          space is, which SeaBIOS leaves write-back on q35 at 0xB0000000 (#58). A window that reaches usable
  *          RAM past the first MiB is refused and counted, as Linux refuses ioremap on System RAM: those
  *          frames belong to the physical memory manager. Registers the map calls ACPI reclaimable or
  *          NVS memory are mapped, write-back. A window that cannot be mapped whole is given back
@@ -140,6 +140,23 @@ void kernel_vmm_free_pages(void *ptr, uint32_t page_count);
  *         window's last byte would lie past 4 GiB or the window reaches usable RAM past the first MiB.
  */
 uint32_t kernel_vmm_map_device_window(uint32_t physical_base, uint32_t size);
+
+#define KERNEL_VMM_MAX_UNCACHED_RANGES                                                                                 \
+    16u /**< Ranges kernel_vmm_declare_uncached_range keeps: one per ECAM window an MCFG reading keeps. */
+
+/**
+ * @brief Declares a range of physical memory that every window maps uncached, whatever the memory type range
+ *        registers say over it, such as the PCI Express configuration space.
+ *
+ * @details Declared before anything maps the range, so that no page of it has two memory types; a frame the
+ *          kernel's map of physical memory holds keeps that map's type.
+ *
+ * @param physical_base Physical address of the range's first byte.
+ * @param size          Range length in bytes.
+ * @return false when @p size is 0, the range ends past 4 GiB, or KERNEL_VMM_MAX_UNCACHED_RANGES are declared
+ *         already.
+ */
+bool kernel_vmm_declare_uncached_range(uint64_t physical_base, uint64_t size);
 
 /**
  * @brief Unmaps a window kernel_vmm_map_device_window gave, and frees none of its frames.

@@ -32,4 +32,12 @@
  */
 extern void write_peripheral_component_interconnect_info(Serial_t *serial);
 
+/**
+ * @brief Writes the `[LPLTLM] pci.express` record: the ECAM windows declared uncached at boot, and those refused by
+ *        reason.
+ *
+ * @param serial The port the record is written to.
+ */
+extern void write_peripheral_component_interconnect_express_record(Serial_t *serial);
+
 #endif /* KERNEL_CPU_PERIPHERAL_COMPONENT_INTERCONNECT_HELPER_H */

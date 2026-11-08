@@ -398,7 +398,7 @@ initialize_check() {
             continue
         fi
         modes+="$(grep '^aml mode ' "$output")"$'\n'
-        counts+="$(grep -E '^aml (init|idle|load) |^aml run (tables|limits) ' "$output")"$'\n'
+        counts+="$(grep -E '^aml (init|idle|load) |^aml run (tables|limits|pci) ' "$output")"$'\n'
         echo "ok $number $subject: $(grep '^aml init initializations=' "$output" | cut -d' ' -f3-)"
     done < <(if [[ "$1" == qemu ]]; then qemu_configurations; else reports "$1"; fi)
     rm -f "$output"
@@ -437,6 +437,8 @@ initialize_check() {
         $(grep -o '^aml mode outcome=[a-z-]*' <<<"$modes" | cut -d= -f2 | sort | uniq -c | awk '{ printf " %s=%s", $2, $1 }')
     echo "# CST_CNT, machines per outcome:" \
         $(grep -o '^aml idle control=[a-z]*' <<<"$counts" | cut -d= -f2 | sort | uniq -c | awk '{ printf " %s=%s", $2, $1 }')
+    echo "# PCI_Config accesses the needs path makes past what mechanism #1 reaches: $(pci_total ecam_accesses "$counts")," \
+        "on $(grep -c '^aml run pci .* ecam_accesses=[1-9]' <<<"$counts") machines"
     limits_summary "$counts"
     echo "# machines with a failure: $(grep -c '^aml init first_failure ' <<<"$counts")"
     grep '^aml init failed ' <<<"$counts" | awk '{ split($4, pair, "="); total[pair[1]] += pair[2] }

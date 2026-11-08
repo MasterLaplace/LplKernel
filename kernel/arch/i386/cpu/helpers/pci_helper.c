@@ -1,6 +1,7 @@
 #include <kernel/config.h>
 #include <kernel/cpu/helpers/pci_helper.h>
 #include <kernel/cpu/pci.h>
+#include <kernel/diag/telemetry.h>
 
 static const char *peripheral_component_interconnect_class_name(uint8_t class_code)
 {
@@ -90,4 +91,17 @@ void write_peripheral_component_interconnect_info(Serial_t *serial)
 
         peripheral_component_interconnect_write_base_address_registers(serial, device);
     }
+}
+
+void write_peripheral_component_interconnect_express_record(Serial_t *serial)
+{
+    const PeripheralComponentInterconnectExpressWindowCounts_t *counts =
+        peripheral_component_interconnect_express_window_counts();
+
+    kernel_telemetry_begin_record(serial, "pci.express");
+    kernel_telemetry_write_unsigned("windows_declared", counts->declared);
+    kernel_telemetry_write_unsigned("windows_past_reach", counts->past_reach);
+    kernel_telemetry_write_unsigned("windows_over_ram", counts->over_ram);
+    kernel_telemetry_write_unsigned("windows_no_room", counts->no_room);
+    kernel_telemetry_end_record();
 }
