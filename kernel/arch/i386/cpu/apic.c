@@ -46,23 +46,16 @@ static bool apic_mode_is_x2apic(ApicMode_t mode)
 }
 
 /**
- * @brief The serial line that names @p mode and its reason.
+ * @brief Writes the mode this processor now runs, its reason and the processor's APIC ID.
  */
-static const char *apic_mode_line(ApicMode_t mode)
+static void apic_write_mode_line(void)
 {
-    switch (mode)
-    {
-    case APIC_MODE_NOT_CHOSEN: break;
-    case APIC_MODE_XAPIC_NOT_OFFERED:
-        return "[Laplace Kernel]: CPU APIC mode=xapic-active, reason=x2apic-not-offered\n";
-    case APIC_MODE_XAPIC_WITHOUT_REMAPPING:
-        return "[Laplace Kernel]: CPU APIC mode=xapic-active, reason=bare-metal-without-interrupt-remapping\n";
-    case APIC_MODE_X2APIC_FROM_FIRMWARE:
-        return "[Laplace Kernel]: CPU APIC mode=x2apic-active, reason=handed-over-by-firmware\n";
-    case APIC_MODE_X2APIC_UNDER_HYPERVISOR:
-        return "[Laplace Kernel]: CPU APIC mode=x2apic-active, reason=under-hypervisor\n";
-    }
-    return "[Laplace Kernel]: CPU APIC mode=not-chosen\n";
+    serial_write_string(&com1, g_x2apic_active ? "[Laplace Kernel]: CPU APIC mode=x2apic-active, reason=" :
+                                                 "[Laplace Kernel]: CPU APIC mode=xapic-active, reason=");
+    serial_write_string(&com1, apic_mode_reason_name(g_apic_mode));
+    serial_write_string(&com1, ", apic_id=");
+    serial_write_unsigned(&com1, apic_get_id());
+    serial_write_string(&com1, "\n");
 }
 
 /**
@@ -104,6 +97,19 @@ ApicMode_t apic_choose_mode(const ApicPlatform_t *platform)
 
 ApicMode_t apic_get_mode(void) { return g_apic_mode; }
 
+const char *apic_mode_reason_name(ApicMode_t mode)
+{
+    switch (mode)
+    {
+    case APIC_MODE_NOT_CHOSEN: return "not-chosen";
+    case APIC_MODE_XAPIC_NOT_OFFERED: return "x2apic-not-offered";
+    case APIC_MODE_XAPIC_WITHOUT_REMAPPING: return "bare-metal-without-interrupt-remapping";
+    case APIC_MODE_X2APIC_FROM_FIRMWARE: return "handed-over-by-firmware";
+    case APIC_MODE_X2APIC_UNDER_HYPERVISOR: return "under-hypervisor";
+    }
+    return "unknown";
+}
+
 bool apic_initialize_on_cpu(uint32_t mmio_virtual_base)
 {
     g_apic_mmio_base = mmio_virtual_base;
@@ -118,7 +124,7 @@ bool apic_initialize_on_cpu(uint32_t mmio_virtual_base)
         apic_enter_x2apic_mode();
     else
         apic_enter_xapic_mode();
-    serial_write_string(&com1, apic_mode_line(g_apic_mode));
+    apic_write_mode_line();
 
     apic_write(LAPIC_REG_SPURIOUS, apic_read(LAPIC_REG_SPURIOUS) | APIC_SPURIOUS_SOFTWARE_ENABLE_BIT);
     return true;

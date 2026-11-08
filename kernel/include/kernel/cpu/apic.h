@@ -62,8 +62,10 @@ typedef enum {
                                             turn on. */
     APIC_MODE_X2APIC_FROM_FIRMWARE,    /**< x2APIC: the firmware handed it over, as it does by default when an APIC
                                             ID is 255 or more (§13.12.7), and the kernel keeps it. */
-    APIC_MODE_X2APIC_UNDER_HYPERVISOR, /**< x2APIC: a hypervisor reports itself, and delivers device interrupts to
-                                            x2APIC mode without remapping. */
+    APIC_MODE_X2APIC_UNDER_HYPERVISOR, /**< x2APIC: a hypervisor reports itself, and the kernel assumes, as the MSI
+                                            code does, that it delivers device interrupts to x2APIC mode without
+                                            remapping. Linux v6.17 trusts only a hypervisor whose guest support says
+                                            so (x86_init.hyper.x2apic_available, false by default). */
 } ApicMode_t;
 
 /**
@@ -82,7 +84,8 @@ typedef struct {
  *          under a hypervisor x2APIC mode is turned on; on bare metal the mode stays xAPIC, since no device
  *          interrupt could reach x2APIC mode without interrupt remapping, as Linux v6.17 decides in
  *          try_to_enable_x2apic (arch/x86/kernel/apic/apic.c). Linux, without remapping, also leaves the firmware's
- *          x2APIC mode when every APIC ID is below 255; the kernel keeps it, as issue #795 decides.
+ *          x2APIC mode unless the bootstrap processor's APIC ID is 255 or more or the firmware locked the mode
+ *          (x2apic_disable); the kernel keeps it, as issue #795 decides.
  *
  * @param platform What the processor and the firmware report.
  * @return The mode, never APIC_MODE_NOT_CHOSEN.
@@ -95,6 +98,15 @@ ApicMode_t apic_choose_mode(const ApicPlatform_t *platform);
  * @return The mode, or APIC_MODE_NOT_CHOSEN before that call.
  */
 ApicMode_t apic_get_mode(void);
+
+/**
+ * @brief The reason of @p mode as the serial line and the machine record write it.
+ *
+ * @param mode A mode.
+ * @return `x2apic-not-offered`, `bare-metal-without-interrupt-remapping`, `handed-over-by-firmware`,
+ *         `under-hypervisor` or `not-chosen`; `unknown` for a value outside the enumeration.
+ */
+const char *apic_mode_reason_name(ApicMode_t mode);
 
 /**
  * @brief Puts the current processor's local APIC in the mode every processor shares, and software-enables it.

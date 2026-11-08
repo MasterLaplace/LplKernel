@@ -63,6 +63,7 @@ void kernel_machine_report(Serial_t *serial)
     kernel_telemetry_write_unsigned("cpus", cpu_topology_get_online_cpu_count());
     machine_write_value("acpi", advanced_configuration_and_power_interface_madt_get_state_name());
     machine_write_value("apic", machine_local_apic_mode());
+    machine_write_value("apic_reason", apic_mode_reason_name(apic_get_mode()));
     machine_write_value("ioapic", input_output_advanced_programmable_interrupt_controller_get_state_name());
     kernel_telemetry_write_unsigned("ioapic_lines_refused",
                                     input_output_advanced_programmable_interrupt_controller_get_lines_refused());
