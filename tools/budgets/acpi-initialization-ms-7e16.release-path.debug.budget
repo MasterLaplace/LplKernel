@@ -3,7 +3,9 @@
 # inside the ring-0 corpus test the_boot_module_machine_loads_on_the_release_path, on a debug server kernel (./build.sh
 # --server). The boot runs the same function on q35's own tables first, hence skip=1. tools/acpi/corpus.sh module
 # 'Desktop/MSI/MS-7/MS-7E16/B75C85853132' writes the module. The gap to a release kernel is measured on q35's tables
-# only (tools/budgets/acpi-initialization-q35.release-path.debug.budget): 19 instructions (0.03 %) more. Checked by
+# only (tools/budgets/acpi-initialization-q35.release-path.debug.budget). The corpus test tells firmware the APIC model,
+# the MADT declaring an I/O APIC: step 5 calls its \_PIC (1), which rewrites the PIRQ routers, 106,548 instructions of
+# these. Checked by
 # tools/instructions.sh --budget tools/budgets/acpi-initialization-ms-7e16.release-path.debug.budget kernel/lpl.kernel; a change
 # that moves the count records the new one.
 inside=advanced_configuration_and_power_interface_initialize_namespace
@@ -12,6 +14,6 @@ times=1
 machine=q35
 append=lpl.test=advanced_configuration_and_power_interface_corpus.the_boot_module_machine_loads_on_the_release_path
 module=build/acpi-corpus/modules/Desktop_MSI_MS-7_MS-7E16_B75C85853132.acpi
-instructions=2349299
-accesses=1140833
+instructions=2455847
+accesses=1192022
 tolerance=1

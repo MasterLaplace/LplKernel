@@ -101,6 +101,14 @@ extern void write_acpi_machine_language_record(Serial_t *serial);
 extern void write_advanced_configuration_and_power_interface_processor_idle_record(Serial_t *serial);
 
 /**
+ * @brief Writes one acpi.prt record: the interrupt model step 5 told firmware, what reading the root bridges' _PRT
+ *        counted, the routes the boot published and their fold (§3.11).
+ *
+ * @param serial The port the record goes to.
+ */
+extern void write_advanced_configuration_and_power_interface_interrupt_routing_record(Serial_t *serial);
+
+/**
  * @brief Writes every table the boot's directory holds, its bytes as acpidump prints them, so that
  *        the host harness loads the bytes this boot read (`test-acpi --firmware-log`).
  *

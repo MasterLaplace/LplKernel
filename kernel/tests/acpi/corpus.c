@@ -1,6 +1,7 @@
 #include "simulated_host.h"
 
 #include <kernel/acpi/initialization.h>
+#include <kernel/acpi/interrupt_routing.h>
 #include <kernel/acpi/processor_idle.h>
 #include <kernel/acpi/tables.h>
 #include <kernel/boot/boot_module.h>
@@ -288,18 +289,23 @@ static void corpus_initialize(KernelTest_t *test)
 {
     static AdvancedConfigurationAndPowerInterfaceInitialization_t initialization;
     static AdvancedConfigurationAndPowerInterfaceProcessorIdleTable_t idle;
+    static AdvancedConfigurationAndPowerInterfaceInterruptRoutingTable_t routing;
     static AdvancedConfigurationAndPowerInterfaceMadtState_t madt;
+    const bool described = advanced_configuration_and_power_interface_read_madt(
+        advanced_configuration_and_power_interface_find_in_directory(&corpus_directory, "APIC"), &madt);
     const AdvancedConfigurationAndPowerInterfaceInitializationMachine_t machine = {
-        .madt = advanced_configuration_and_power_interface_read_madt(
-                    advanced_configuration_and_power_interface_find_in_directory(&corpus_directory, "APIC"), &madt) ?
-                    &madt :
-                    NULL,
+        .madt = described ? &madt : NULL,
         .monitor_wait = true,
         .fadt = &corpus_directory.fixed_description,
         .mode = corpus_mode.outcome,
+        .interrupt_model = (described && madt.io_apic_count != 0u) ?
+                               ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_INTERRUPT_MODEL_APIC :
+                               ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_INTERRUPT_MODEL_PIC,
     };
 
     advanced_configuration_and_power_interface_initialize_namespace(&corpus_load, &machine, &initialization, &idle);
+    advanced_configuration_and_power_interface_interrupt_routing_publish(&corpus_load, &machine, &initialization,
+                                                                         &routing);
     kernel_test_check(test,
                       corpus_mode.outcome != ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MODE_SWITCHED ||
                           corpus_directory.fixed_description.idle_state_command == 0u ||
@@ -315,6 +321,8 @@ static void corpus_initialize(KernelTest_t *test)
     kernel_test_measure(test, "status_failed", initialization.status_failed);
     kernel_test_measure(test, "status_invalid", initialization.status_invalid);
     kernel_test_measure(test, "pic_mode_deferred", initialization.pic_mode_deferred);
+    kernel_test_measure(test, "pic_mode_told", initialization.pic_mode_told);
+    kernel_test_measure(test, "pic_mode_failed", initialization.pic_mode_failed);
     kernel_test_measure(test, "platform_capabilities", initialization.platform_capabilities);
     kernel_test_measure(test, "processor_capabilities", initialization.processor_capabilities);
     kernel_test_measure(test, "processor_capabilities_legacy", initialization.processor_capabilities_legacy);
@@ -337,6 +345,22 @@ static void corpus_initialize(KernelTest_t *test)
     kernel_test_measure(test, "processor_idle_changes", initialization.processor_idle_changes);
     kernel_test_measure_hexadecimal(test, "idle_fold",
                                     advanced_configuration_and_power_interface_processor_idle_fold(&idle));
+    kernel_test_measure(test, "prt_bridges", routing.bridges);
+    kernel_test_measure(test, "prt_bridges_absent", routing.bridges_absent);
+    kernel_test_measure(test, "prt_bridges_failed", routing.bridges_failed);
+    kernel_test_measure(test, "prt_bridges_unrouted", routing.bridges_unrouted);
+    kernel_test_measure(test, "prt_tables_failed", routing.tables_failed);
+    kernel_test_measure(test, "prt_entries", routing.entries);
+    kernel_test_measure(test, "prt_entries_malformed", routing.entries_malformed);
+    kernel_test_measure(test, "prt_entries_repaired", routing.entries_repaired);
+    kernel_test_measure(test, "prt_entries_dropped", routing.entries_dropped);
+    kernel_test_measure(test, "prt_links", routing.links);
+    kernel_test_measure(test, "prt_links_unrouted", routing.links_unrouted);
+    kernel_test_measure(test, "prt_links_failed", routing.links_failed);
+    kernel_test_measure(test, "prt_links_dropped", routing.links_dropped);
+    kernel_test_measure(test, "prt_routes", routing.count);
+    kernel_test_measure_hexadecimal(test, "prt_fold",
+                                    advanced_configuration_and_power_interface_interrupt_routing_fold(&routing));
     kernel_test_measure(test, "first_failure", initialization.first_failure);
     corpus_measure_limits(test);
     kernel_test_measure(test, "flushes", corpus_load.predecoding.flushes);

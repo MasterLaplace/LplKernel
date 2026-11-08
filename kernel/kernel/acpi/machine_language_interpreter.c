@@ -5893,6 +5893,25 @@ MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_langu
     return advanced_configuration_and_power_interface_machine_language_evaluate_node(load, node, NULL, 0u, out_value);
 }
 
+MachineLanguageStatus_t advanced_configuration_and_power_interface_machine_language_package_element_node(
+    MachineLanguageLoad_t *load, const MachineLanguageValue_t *package, uint32_t element, uint32_t *out_node)
+{
+    *out_node = 0u;
+    if (package->kind != MACHINE_LANGUAGE_VALUE(PACKAGE))
+        return MACHINE_LANGUAGE_STATUS(TYPE_MISMATCH);
+    if (element >= machine_language_object(load, package)->length)
+        return MACHINE_LANGUAGE_STATUS(INDEX_OUT_OF_RANGE);
+
+    const MachineLanguageValue_t *slot =
+        (const MachineLanguageValue_t *) advanced_configuration_and_power_interface_machine_language_object_payload(
+            &load->heap, package->handle) +
+        element;
+
+    if (slot->kind != MACHINE_LANGUAGE_VALUE(NAME_REFERENCE))
+        return MACHINE_LANGUAGE_STATUS(TYPE_MISMATCH);
+    return machine_language_resolve_element_name(load, slot, out_node);
+}
+
 bool advanced_configuration_and_power_interface_machine_language_executes(uint32_t opcode, bool table_level)
 {
     if (opcode >= ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_OPCODE_COUNT)

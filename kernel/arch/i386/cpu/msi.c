@@ -1,11 +1,7 @@
-#include <kernel/cpu/apic.h>
-#include <kernel/cpu/cpu_identity.h>
 #include <kernel/cpu/cpu_topology.h>
-#include <kernel/cpu/isr.h>
+#include <kernel/cpu/device_interrupt.h>
 #include <kernel/cpu/msi.h>
 #include <kernel/memory/vmm.h>
-
-#include <stddef.h>
 
 #define MESSAGE_SIGNALED_INTERRUPT_FIRST_VECTOR            0x10u   /**< Vectors 0 to 15 are reserved for messages. */
 #define MESSAGE_SIGNALED_INTERRUPT_LAST_VECTOR             0xFEu   /**< The last vector a message may carry. */
@@ -24,9 +20,6 @@
 #define MESSAGE_SIGNALED_INTERRUPT_EXTENDED_VECTOR_CONTROL 12u         /**< Entry: Vector Control, bit 0 the mask. */
 #define MESSAGE_SIGNALED_INTERRUPT_EXTENDED_MASKED         1u          /**< Vector Control: the entry is masked. */
 
-static MessageSignaledInterruptHandler_t message_signaled_interrupt_handlers[MESSAGE_SIGNALED_INTERRUPT_VECTOR_COUNT] =
-    {NULL}; /**< Each vector's handler. */
-static void *message_signaled_interrupt_contexts[MESSAGE_SIGNALED_INTERRUPT_VECTOR_COUNT] = {NULL}; /**< Theirs. */
 #define MESSAGE_SIGNALED_INTERRUPT_CONTROL         0x02u      /**< Message Control, from the MSI capability. */
 #define MESSAGE_SIGNALED_INTERRUPT_ADDRESS         0x04u      /**< Message Address, from it. */
 #define MESSAGE_SIGNALED_INTERRUPT_UPPER_ADDRESS   0x08u      /**< Message Upper Address, in the 64-bit form. */
@@ -38,28 +31,6 @@ static void *message_signaled_interrupt_contexts[MESSAGE_SIGNALED_INTERRUPT_VECT
 #define MESSAGE_SIGNALED_INTERRUPT_MULTIPLE_ENABLE (7u << 4u) /**< Message Control: Multiple Message Enable. */
 #define MESSAGE_SIGNALED_INTERRUPT_WIDE            (1u << 7u) /**< Message Control: 64-bit address capable. */
 #define MESSAGE_SIGNALED_INTERRUPT_MASKABLE        (1u << 8u) /**< Message Control: per-vector masking capable. */
-
-/** Interrupts per vector and per slot, each cell written by the processor of its slot alone. */
-static volatile uint32_t message_signaled_interrupt_counts[MESSAGE_SIGNALED_INTERRUPT_VECTOR_COUNT]
-                                                          [CPU_TOPOLOGY_MAX_LOGICAL_CPUS_PUBLIC] = {{0u}};
-
-/**
- * @brief Counts the interrupt on this processor, runs the vector's handler, then ends the interrupt.
- */
-static void message_signaled_interrupt_dispatch(const InterruptFrame_t *frame)
-{
-    const uint32_t index = frame->int_no - MESSAGE_SIGNALED_INTERRUPT_VECTOR_BASE;
-    const uint32_t slot = cpu_topology_get_slot_for_apic_id(apic_get_id());
-
-    if (index < MESSAGE_SIGNALED_INTERRUPT_VECTOR_COUNT)
-    {
-        if (slot < CPU_TOPOLOGY_MAX_LOGICAL_CPUS_PUBLIC)
-            ++message_signaled_interrupt_counts[index][slot];
-        if (message_signaled_interrupt_handlers[index] != NULL)
-            message_signaled_interrupt_handlers[index](message_signaled_interrupt_contexts[index]);
-    }
-    apic_send_eoi();
-}
 
 /**
  * @brief The address of byte @p field of entry @p entry of an open table.
@@ -84,20 +55,6 @@ static void message_signaled_interrupt_extended_mask(const MessageSignaledInterr
 
     *control = (*control & ~MESSAGE_SIGNALED_INTERRUPT_EXTENDED_MASKED) |
                (masked ? MESSAGE_SIGNALED_INTERRUPT_EXTENDED_MASKED : 0u);
-}
-
-/**
- * @brief Whether a device's message can reach a local APIC: in xAPIC mode always, in x2APIC mode only under a
- *        hypervisor, since bare metal needs interrupt remapping there.
- */
-static bool message_signaled_interrupt_platform_delivers(void)
-{
-    CpuIdentity_t identity;
-
-    if (!apic_is_x2apic_active())
-        return true;
-    cpu_identity_read(&identity);
-    return identity.hypervisor;
 }
 
 /**
@@ -129,42 +86,6 @@ bool message_signaled_interrupt_compose(uint32_t apic_id, uint8_t vector, uint32
     *out_address = MESSAGE_SIGNALED_INTERRUPT_ADDRESS_BASE | apic_id << MESSAGE_SIGNALED_INTERRUPT_DESTINATION_SHIFT;
     *out_data = vector;
     return true;
-}
-
-bool message_signaled_interrupt_allocate(MessageSignaledInterruptHandler_t handler, void *context, uint8_t *out_vector)
-{
-    if (handler == NULL)
-        return false;
-    for (uint32_t index = 0u; index < MESSAGE_SIGNALED_INTERRUPT_VECTOR_COUNT; ++index)
-    {
-        if (message_signaled_interrupt_handlers[index] != NULL)
-            continue;
-        message_signaled_interrupt_contexts[index] = context;
-        message_signaled_interrupt_handlers[index] = handler;
-        *out_vector = (uint8_t) (MESSAGE_SIGNALED_INTERRUPT_VECTOR_BASE + index);
-        interrupt_service_routine_register_handler(*out_vector, message_signaled_interrupt_dispatch);
-        return true;
-    }
-    return false;
-}
-
-void message_signaled_interrupt_release(uint8_t vector)
-{
-    const uint32_t index = (uint32_t) vector - MESSAGE_SIGNALED_INTERRUPT_VECTOR_BASE;
-
-    if (index >= MESSAGE_SIGNALED_INTERRUPT_VECTOR_COUNT)
-        return;
-    message_signaled_interrupt_handlers[index] = NULL;
-    message_signaled_interrupt_contexts[index] = NULL;
-}
-
-uint32_t message_signaled_interrupt_count(uint8_t vector, uint32_t slot)
-{
-    const uint32_t index = (uint32_t) vector - MESSAGE_SIGNALED_INTERRUPT_VECTOR_BASE;
-
-    if (index >= MESSAGE_SIGNALED_INTERRUPT_VECTOR_COUNT || slot >= CPU_TOPOLOGY_MAX_LOGICAL_CPUS_PUBLIC)
-        return 0u;
-    return message_signaled_interrupt_counts[index][slot];
 }
 
 bool message_signaled_interrupt_extended_open(const PeripheralComponentInterconnectDevice_t *device,
@@ -224,7 +145,7 @@ bool message_signaled_interrupt_extended_aim(const MessageSignaledInterruptExten
     if (table->table == 0u || entry >= table->entries)
         return false;
     message_signaled_interrupt_extended_mask(table, entry, true);
-    if (!message_signaled_interrupt_platform_delivers() ||
+    if (!device_interrupt_platform_delivers() ||
         !message_signaled_interrupt_compose(cpu_topology_get_apic_id_at_slot(slot), vector, &address, &data))
         return false;
     *message_signaled_interrupt_extended_field(table, entry, MESSAGE_SIGNALED_INTERRUPT_EXTENDED_ADDRESS) = address;
@@ -242,7 +163,7 @@ bool message_signaled_interrupt_enable(const PeripheralComponentInterconnectDevi
     uint32_t address = 0u;
     uint32_t data = 0u;
 
-    if (capability == 0u || !message_signaled_interrupt_platform_delivers() ||
+    if (capability == 0u || !device_interrupt_platform_delivers() ||
         !message_signaled_interrupt_compose(cpu_topology_get_apic_id_at_slot(slot), vector, &address, &data))
         return false;
 

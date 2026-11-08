@@ -1,4 +1,5 @@
 #include <kernel/acpi/initialization.h>
+#include <kernel/acpi/interrupt_routing.h>
 #include <kernel/acpi/processor_idle.h>
 
 #include <string.h>
@@ -18,6 +19,7 @@
 
 #define INITIALIZATION_VALUE(kind)      ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_VALUE_##kind
 #define INITIALIZATION_PLATFORM(answer) ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_PLATFORM_CAPABILITIES_##answer
+#define INITIALIZATION_MODEL(model)     ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_INTERRUPT_MODEL_##model
 
 #define INITIALIZATION_REVISION        1u     /**< The revision of every capabilities buffer the sequence passes. */
 #define INITIALIZATION_QUERY           0x01u  /**< _OSC DWORD 1 bit 0: the call only asks what is granted. */
@@ -39,10 +41,12 @@ typedef AdvancedConfigurationAndPowerInterfaceMachineLanguageValue_t Initializat
 typedef AdvancedConfigurationAndPowerInterfaceInitialization_t Initialization_t;
 typedef AdvancedConfigurationAndPowerInterfaceInitializationMachine_t InitializationMachine_t;
 typedef AdvancedConfigurationAndPowerInterfaceProcessorIdleTable_t InitializationIdle_t;
+typedef AdvancedConfigurationAndPowerInterfaceInterruptRoutingTable_t InitializationRouting_t;
 
 static InitializationLoad_t initialization_boot_load;
 static Initialization_t initialization_boot;
 static InitializationIdle_t initialization_boot_idle;
+static InitializationRouting_t initialization_boot_routing;
 
 /**
  * @brief The platform-wide _OSC's UUID, 0811B06E-4A27-44F9-8D60-3CBBC22E7B48, as ToUUID lays it out.
@@ -636,6 +640,35 @@ static void initialization_walk(InitializationLoad_t *load, Initialization_t *in
 }
 
 /**
+ * @brief Step 5 of §3.8: calls \_PIC (1) when PCI interrupts go through an I/O APIC, its failure counted under its
+ *        status; leaves it uncalled in the PIC model, and counts that.
+ */
+static void initialization_tell_interrupt_model(InitializationLoad_t *load, Initialization_t *initialization,
+                                                const InitializationMachine_t *machine)
+{
+    const uint32_t method = initialization_object(load, INITIALIZATION_ROOT, "_PIC");
+    const InitializationValue_t model = {.kind = INITIALIZATION_VALUE(INTEGER), .payload = INITIALIZATION_MODEL(APIC)};
+
+    if (method == 0u)
+        return;
+    if (machine->interrupt_model != INITIALIZATION_MODEL(APIC))
+    {
+        initialization->pic_mode_deferred = 1u;
+        return;
+    }
+
+    const InitializationStatus_t status = initialization_evaluate(load, method, &model, 1u);
+
+    if (status == INITIALIZATION_OK)
+    {
+        initialization->pic_mode_told = 1u;
+        return;
+    }
+    initialization->pic_mode_failed = 1u;
+    initialization_count_failure(initialization, method, status);
+}
+
+/**
  * @brief Writes @p value at @p bytes, little-endian.
  */
 static void initialization_put_double_word(uint8_t *bytes, uint32_t value)
@@ -954,7 +987,7 @@ void advanced_configuration_and_power_interface_initialize_namespace(Initializat
     initialization_register(load, out_initialization, covered);
     initialization_settle(load, out_initialization, INITIALIZATION_ROOT);
     initialization_walk(load, out_initialization);
-    out_initialization->pic_mode_deferred = (initialization_object(load, INITIALIZATION_ROOT, "_PIC") != 0u) ? 1u : 0u;
+    initialization_tell_interrupt_model(load, out_initialization, machine);
     initialization_negotiate_platform(load, out_initialization);
     initialization_settle(load, out_initialization, 0u);
     initialization_negotiate_processors(load, out_initialization, machine);
@@ -966,6 +999,26 @@ bool advanced_configuration_and_power_interface_initialization_read_status(Initi
                                                                            uint32_t device, uint64_t *out_status)
 {
     return initialization_read_status(load, initialization, device, out_status);
+}
+
+bool advanced_configuration_and_power_interface_initialization_read_integer(InitializationLoad_t *load,
+                                                                            Initialization_t *initialization,
+                                                                            uint32_t object, uint64_t *out_value)
+{
+    InitializationValue_t result;
+    bool forbidden = false;
+    InitializationStatus_t status =
+        advanced_configuration_and_power_interface_machine_language_evaluate_node(load, object, NULL, 0u, &result);
+
+    if (status == INITIALIZATION_OK)
+        status = advanced_configuration_and_power_interface_machine_language_value_to_integer(
+            &load->heap, &result, (load->integer_bits == 32u) ? 32u : 64u, out_value, &forbidden);
+    load->evaluation.forbidden_conversions += forbidden ? 1u : 0u;
+    advanced_configuration_and_power_interface_machine_language_value_release(&load->heap, &load->space, &result);
+    if (status == INITIALIZATION_OK)
+        return true;
+    initialization_count_failure(initialization, object, status);
+    return false;
 }
 
 void advanced_configuration_and_power_interface_initialization_negotiate(InitializationLoad_t *load,
@@ -997,7 +1050,7 @@ const char *advanced_configuration_and_power_interface_platform_capabilities_nam
     return (capabilities < sizeof(names) / sizeof(names[0])) ? names[capabilities] : "unknown";
 }
 
-void advanced_configuration_and_power_interface_machine_language_initialize(bool monitor_wait)
+void advanced_configuration_and_power_interface_machine_language_initialize(bool monitor_wait, uint8_t interrupt_model)
 {
     const InitializationMachine_t machine = {
         .madt = advanced_configuration_and_power_interface_madt_is_available() ?
@@ -1006,6 +1059,7 @@ void advanced_configuration_and_power_interface_machine_language_initialize(bool
         .monitor_wait = monitor_wait,
         .fadt = &advanced_configuration_and_power_interface_directory()->fixed_description,
         .mode = advanced_configuration_and_power_interface_mode()->outcome,
+        .interrupt_model = interrupt_model,
     };
 
     const AdvancedConfigurationAndPowerInterfaceHost_t *host = &advanced_configuration_and_power_interface_machine_host;
@@ -1020,6 +1074,8 @@ void advanced_configuration_and_power_interface_machine_language_initialize(bool
             &initialization_boot_load, advanced_configuration_and_power_interface_directory());
         advanced_configuration_and_power_interface_initialize_namespace(
             &initialization_boot_load, &machine, &initialization_boot, &initialization_boot_idle);
+        advanced_configuration_and_power_interface_interrupt_routing_publish(
+            &initialization_boot_load, &machine, &initialization_boot, &initialization_boot_routing);
     }
 }
 
@@ -1033,4 +1089,9 @@ const Initialization_t *advanced_configuration_and_power_interface_initializatio
 const InitializationIdle_t *advanced_configuration_and_power_interface_processor_idle(void)
 {
     return &initialization_boot_idle;
+}
+
+const InitializationRouting_t *advanced_configuration_and_power_interface_interrupt_routing(void)
+{
+    return &initialization_boot_routing;
 }

@@ -15,6 +15,7 @@
 #include <kernel/cpu/apic_timer.h>
 #include <kernel/cpu/clock.h>
 #include <kernel/cpu/cpu_topology.h>
+#include <kernel/cpu/device_interrupt.h>
 #include <kernel/cpu/helpers/acpi_helper.h>
 #include <kernel/cpu/helpers/ap_startup_helper.h>
 #include <kernel/cpu/helpers/apic_timer_helper.h>
@@ -99,6 +100,21 @@ GlobalDescriptorTable_t global_descriptor_table = {0};
 InterruptDescriptorTable_t interrupt_descriptor_table = {0};
 static TaskStateSegment_t task_state_segment = {0};
 Serial_t com1;
+
+/**
+ * @brief The interrupt model the boot tells firmware (ACPI specification, §3.8 step 5): the APIC model when the MADT
+ *        declares an I/O APIC and a device interrupt reaches a core in the mode the local APICs will run
+ *        (device_interrupt_platform_delivers), the I/O APIC then taking the PCI interrupts a device without MSI
+ *        raises; the PIC model otherwise, which keeps them on the 8259.
+ */
+static uint8_t kernel_interrupt_model(void)
+{
+    return (advanced_configuration_and_power_interface_madt_is_available() &&
+            advanced_configuration_and_power_interface_madt_get_io_apic_count() != 0u &&
+            device_interrupt_platform_delivers()) ?
+               ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_INTERRUPT_MODEL_APIC :
+               ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_INTERRUPT_MODEL_PIC;
+}
 
 /**
  * @brief Whether the local timer is calibrated, so that it can take the tick from the PIT.
@@ -392,11 +408,12 @@ __attribute__((constructor)) void kernel_initialize(void)
     advanced_configuration_and_power_interface_mode_initialize();
     write_acpi_mode_record(&com1);
     advanced_configuration_and_power_interface_power_management_timer_initialize();
-    advanced_configuration_and_power_interface_machine_language_initialize(
-        kernel_processor_sleep_monitor_implemented());
+    advanced_configuration_and_power_interface_machine_language_initialize(kernel_processor_sleep_monitor_implemented(),
+                                                                           kernel_interrupt_model());
     write_acpi_machine_language_record(&com1);
     write_advanced_configuration_and_power_interface_power_management_timer_record(&com1);
     write_advanced_configuration_and_power_interface_processor_idle_record(&com1);
+    write_advanced_configuration_and_power_interface_interrupt_routing_record(&com1);
 
     if (advanced_configuration_and_power_interface_madt_is_available())
     {

@@ -21,6 +21,8 @@
 #define INTERRUPT_CONTROLLERS_TEST_PAST_EIGHT_BITS       0x100u /**< The first APIC ID past a destination's 8 bits. */
 #define INTERRUPT_CONTROLLERS_TEST_ANOTHER_PROCESSOR     0x2Au /**< An identifier QEMU never gives its first processor. */
 #define INTERRUPT_CONTROLLERS_TEST_YET_ANOTHER_PROCESSOR 0x15u /**< The one taken when a route already names 0x2A. */
+#define INTERRUPT_CONTROLLERS_TEST_UNTOUCHED_REGISTER                                                                  \
+    0xA5u /**< What a register index holds until something writes it: no redirection register is A5h. */
 #define INTERRUPT_CONTROLLERS_TEST_UNNAMEABLE_STATE                                                                    \
     "ioapic-init-bootstrap-processor-unnameable" /**< The state when no entry can name the bootstrap processor. */
 #define INTERRUPT_CONTROLLERS_TEST_CPUID_X2APIC       (1u << 21u)   /**< CPUID leaf 1, ECX: x2APIC offered. */
@@ -532,6 +534,41 @@ KERNEL_TEST(moving_a_route_refuses_an_identifier_its_entry_cannot_name)
                       input_output_advanced_programmable_interrupt_controller_get_programmed_route_destination_apic_id(
                           route_index) == found,
                       "the route is put back where it was found");
+}
+
+/**
+ * @brief A redirection entry takes the register pair its index gives, up to the last one an 8-bit register index
+ *        reaches; the entries past it have none, rather than a register that wraps onto the controller's identifier.
+ *
+ * @details The expected registers are those of the Intel 82093AA datasheet (§3.1.1, §3.2.4): IOREGSEL holds an 8-bit
+ *          index, and IOREDTBL0 and IOREDTBL23 sit at 10h and 3Eh; entry 0x77 then takes FEh and FFh, and entry 0x78
+ *          would take 100h, which the index reads as 00h, IOAPICID.
+ */
+KERNEL_TEST(a_redirection_entry_past_what_an_eight_bit_index_reaches_has_no_register)
+{
+    uint8_t first = 0u;
+    uint8_t twenty_fourth = 0u;
+    uint8_t last = 0u;
+    uint8_t past = INTERRUPT_CONTROLLERS_TEST_UNTOUCHED_REGISTER;
+
+    kernel_test_check(test,
+                      input_output_advanced_programmable_interrupt_controller_redirection_register(0u, &first) &&
+                          first == 0x10u,
+                      "entry 0 takes register 10h");
+    kernel_test_check(
+        test,
+        input_output_advanced_programmable_interrupt_controller_redirection_register(23u, &twenty_fourth) &&
+            twenty_fourth == 0x3Eu,
+        "entry 23 takes register 3Eh");
+    kernel_test_check(test,
+                      input_output_advanced_programmable_interrupt_controller_redirection_register(0x77u, &last) &&
+                          last == 0xFEu,
+                      "entry 0x77 takes register FEh, the last pair an 8-bit index reaches");
+    kernel_test_check(test,
+                      !input_output_advanced_programmable_interrupt_controller_redirection_register(0x78u, &past) &&
+                          !input_output_advanced_programmable_interrupt_controller_redirection_register(0x7Fu, &past) &&
+                          past == INTERRUPT_CONTROLLERS_TEST_UNTOUCHED_REGISTER,
+                      "entries 0x78 to 0x7F have no register, and none is written");
 }
 
 /**

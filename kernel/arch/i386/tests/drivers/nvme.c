@@ -1,4 +1,5 @@
 #include <kernel/cpu/cpu_topology.h>
+#include <kernel/cpu/device_interrupt.h>
 #include <kernel/cpu/msi.h>
 #include <kernel/cpu/pci.h>
 #include <kernel/drivers/nvme.h>
@@ -477,7 +478,7 @@ KERNEL_TEST(each_queue_interrupts_the_core_its_entry_names)
     }
     for (uint32_t pair = 0u; pair < NON_VOLATILE_MEMORY_EXPRESS_INPUT_OUTPUT_PAIRS; ++pair)
         for (uint32_t slot = 0u; slot < CPU_TOPOLOGY_MAX_LOGICAL_CPUS_PUBLIC; ++slot)
-            before[pair][slot] = message_signaled_interrupt_count(state->interrupt_vectors[pair], slot);
+            before[pair][slot] = device_interrupt_count(state->interrupt_vectors[pair], slot);
     for (uint32_t i = 0u; i < reads; ++i)
     {
         non_volatile_memory_express_test_batch[i].first_block = 1u + i;
@@ -500,8 +501,7 @@ KERNEL_TEST(each_queue_interrupts_the_core_its_entry_names)
             continue;
         for (uint32_t slot = 0u; slot < CPU_TOPOLOGY_MAX_LOGICAL_CPUS_PUBLIC; ++slot)
         {
-            const uint32_t taken =
-                message_signaled_interrupt_count(state->interrupt_vectors[pair], slot) - before[pair][slot];
+            const uint32_t taken = device_interrupt_count(state->interrupt_vectors[pair], slot) - before[pair][slot];
 
             if (slot == expected)
                 delivered += taken != 0u ? 1u : 0u;

@@ -110,6 +110,16 @@ const char *apic_mode_reason_name(ApicMode_t mode)
     return "unknown";
 }
 
+bool apic_runs_x2apic_mode(void)
+{
+    if (g_apic_mode != APIC_MODE_NOT_CHOSEN)
+        return apic_mode_is_x2apic(g_apic_mode);
+
+    const ApicPlatform_t platform = apic_read_platform();
+
+    return apic_mode_is_x2apic(apic_choose_mode(&platform));
+}
+
 bool apic_initialize_on_cpu(uint32_t mmio_virtual_base)
 {
     g_apic_mmio_base = mmio_virtual_base;

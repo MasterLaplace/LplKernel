@@ -1,6 +1,7 @@
 #include <kernel/drivers/nvme.h>
 
 #include <kernel/cpu/cpu_topology.h>
+#include <kernel/cpu/device_interrupt.h>
 #include <kernel/cpu/irq.h>
 #include <kernel/cpu/msi.h>
 #include <kernel/cpu/paging.h>
@@ -482,8 +483,8 @@ static void non_volatile_memory_express_aim_interrupts(void)
         const uint32_t slot = non_volatile_memory_express_queue_slot(pair);
 
         if (non_volatile_memory_express_vectors[pair] == 0u &&
-            !message_signaled_interrupt_allocate(non_volatile_memory_express_completion_interrupt, NULL,
-                                                 &non_volatile_memory_express_vectors[pair]))
+            !device_interrupt_allocate(non_volatile_memory_express_completion_interrupt, NULL,
+                                       &non_volatile_memory_express_vectors[pair]))
             continue;
         if (!message_signaled_interrupt_extended_aim(&non_volatile_memory_express_interrupts,
                                                      (uint16_t) (NON_VOLATILE_MEMORY_EXPRESS_INPUT_OUTPUT_QUEUE + pair),
