@@ -71,12 +71,13 @@ static bool needs_path_closure_is_processor(AdvancedConfigurationAndPowerInterfa
 }
 
 /**
- * @brief Whether object @p name of Device @p index may name a PCI interrupt link, PNP0C0F: data that names it, as an
- *        EISA identifier, a string or an element of a _CID package, as the routing reads it (§3.11); or a method,
- *        which only running it would tell.
+ * @brief Whether object @p name of Device @p index is data that names a PCI interrupt link, PNP0C0F, as an EISA
+ *        identifier, a string or an element of a _CID package, as the routing reads it (§3.11). A method is left to
+ *        the run, which counts what it executes (§4.1 rule 4): taking every Device whose _HID is one would bring in
+ *        the _CRS of controllers no _PRT names.
  */
-static bool needs_path_closure_may_name_link(AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
-                                             uint32_t index, const char *name)
+static bool needs_path_closure_names_link(AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
+                                          uint32_t index, const char *name)
 {
     const AdvancedConfigurationAndPowerInterfaceMachineLanguageNode_t *object =
         advanced_configuration_and_power_interface_machine_language_namespace_node(
@@ -85,16 +86,13 @@ static bool needs_path_closure_may_name_link(AdvancedConfigurationAndPowerInterf
                 &load->space, index,
                 advanced_configuration_and_power_interface_machine_language_name_segment((const uint8_t *) name, 0u)));
 
-    if (object == NULL)
-        return false;
-    if (object->type == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_METHOD)
-        return true;
-    return advanced_configuration_and_power_interface_machine_language_identifies(load, &object->value, 0x0F0CD041u,
+    return object != NULL && object->type != ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_METHOD &&
+           advanced_configuration_and_power_interface_machine_language_identifies(load, &object->value, 0x0F0CD041u,
                                                                                   "PNP0C0F");
 }
 
 /**
- * @brief Whether node @p index may be a PCI interrupt link: a Device whose _HID or _CID may name PNP0C0F.
+ * @brief Whether node @p index is a PCI interrupt link: a Device whose _HID or _CID names PNP0C0F as data.
  */
 static bool needs_path_closure_is_interrupt_link(AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
                                                  uint32_t index)
@@ -103,8 +101,7 @@ static bool needs_path_closure_is_interrupt_link(AdvancedConfigurationAndPowerIn
         advanced_configuration_and_power_interface_machine_language_namespace_node(&load->space, index);
 
     return node != NULL && node->type == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_DEVICE &&
-           (needs_path_closure_may_name_link(load, index, "_HID") ||
-            needs_path_closure_may_name_link(load, index, "_CID"));
+           (needs_path_closure_names_link(load, index, "_HID") || needs_path_closure_names_link(load, index, "_CID"));
 }
 
 /**
