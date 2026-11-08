@@ -56,6 +56,91 @@ peripheral_component_interconnect_write_base_address_registers(Serial_t *serial,
     }
 }
 
+#define PERIPHERAL_COMPONENT_INTERCONNECT_HELPER_LISTED_CAPABILITIES                                                   \
+    16u /**< Extended capabilities a function's record names; its count says how many there are. */
+#define PERIPHERAL_COMPONENT_INTERCONNECT_HELPER_CAPABILITY_TEXT                                                       \
+    11u /**< Characters of one capability in a record, as `0001v2@100,`. */
+
+static PeripheralComponentInterconnectExpressExtendedCapability_t
+    peripheral_component_interconnect_helper_capabilities[PERIPHERAL_COMPONENT_INTERCONNECT_HELPER_LISTED_CAPABILITIES];
+
+/**
+ * @brief Writes the low @p digits hexadecimal digits of @p value at @p text, the most significant first.
+ *
+ * @return Past the last digit written.
+ */
+static char *peripheral_component_interconnect_helper_put_hexadecimal(char *text, uint32_t value, uint32_t digits)
+{
+    static const char hexadecimal[] = "0123456789ABCDEF";
+
+    for (uint32_t index = 0u; index < digits; ++index)
+        text[index] = hexadecimal[(value >> (4u * (digits - 1u - index))) & 0xFu];
+    return text + digits;
+}
+
+/**
+ * @brief Writes @p count capabilities as one record value, `<identifier>v<version>@<offset>` apiece, comma-separated.
+ */
+static void peripheral_component_interconnect_helper_put_capabilities(
+    char *text, const PeripheralComponentInterconnectExpressExtendedCapability_t *capabilities, uint32_t count)
+{
+    for (uint32_t index = 0u; index < count; ++index)
+    {
+        text = peripheral_component_interconnect_helper_put_hexadecimal(text, capabilities[index].identifier, 4u);
+        *text++ = 'v';
+        text = peripheral_component_interconnect_helper_put_hexadecimal(text, capabilities[index].version, 1u);
+        *text++ = '@';
+        text = peripheral_component_interconnect_helper_put_hexadecimal(text, capabilities[index].offset, 3u);
+        if (index + 1u < count)
+            *text++ = ',';
+    }
+    *text = '\0';
+}
+
+/**
+ * @brief Writes the `[LPLTLM] pci.function` record of one function: whether it is a PCI Express function and, for one,
+ *        how the walk of its extended capability list through ECAM ended and what it listed.
+ */
+static void
+peripheral_component_interconnect_helper_write_function_record(Serial_t *serial,
+                                                               const PeripheralComponentInterconnectDevice_t *device)
+{
+    char text[PERIPHERAL_COMPONENT_INTERCONNECT_HELPER_LISTED_CAPABILITIES *
+                  PERIPHERAL_COMPONENT_INTERCONNECT_HELPER_CAPABILITY_TEXT +
+              1u];
+    uint32_t count = 0u;
+    const bool express =
+        peripheral_component_interconnect_find_capability(device->bus, device->device, device->function,
+                                                          PERIPHERAL_COMPONENT_INTERCONNECT_CAPABILITY_EXPRESS) != 0u;
+
+    kernel_telemetry_begin_record(serial, "pci.function");
+    kernel_telemetry_write_unsigned("bus", device->bus);
+    kernel_telemetry_write_unsigned("device", device->device);
+    kernel_telemetry_write_unsigned("function", device->function);
+    kernel_telemetry_write_hexadecimal("vendor", device->vendor_id);
+    kernel_telemetry_write_hexadecimal("device_id", device->device_id);
+    kernel_telemetry_write_boolean("express", express);
+    if (express)
+    {
+        const PeripheralComponentInterconnectExpressWalk_t walk =
+            peripheral_component_interconnect_express_list_extended_capabilities(
+                0u, device->bus, device->device, device->function,
+                peripheral_component_interconnect_helper_capabilities,
+                PERIPHERAL_COMPONENT_INTERCONNECT_HELPER_LISTED_CAPABILITIES, &count);
+        const uint32_t listed = (count < PERIPHERAL_COMPONENT_INTERCONNECT_HELPER_LISTED_CAPABILITIES) ?
+                                    count :
+                                    PERIPHERAL_COMPONENT_INTERCONNECT_HELPER_LISTED_CAPABILITIES;
+
+        peripheral_component_interconnect_helper_put_capabilities(
+            text, peripheral_component_interconnect_helper_capabilities, listed);
+        kernel_telemetry_write_text("walk", peripheral_component_interconnect_express_walk_name(walk));
+        kernel_telemetry_write_unsigned("extended", count);
+        if (listed != 0u)
+            kernel_telemetry_write_text("capabilities", text);
+    }
+    kernel_telemetry_end_record();
+}
+
 void write_peripheral_component_interconnect_info(Serial_t *serial)
 {
     uint32_t count = peripheral_component_interconnect_get_device_count();
@@ -91,6 +176,13 @@ void write_peripheral_component_interconnect_info(Serial_t *serial)
 
         peripheral_component_interconnect_write_base_address_registers(serial, device);
     }
+}
+
+void write_peripheral_component_interconnect_function_records(Serial_t *serial)
+{
+    for (uint32_t index = 0u; index < peripheral_component_interconnect_get_device_count(); ++index)
+        peripheral_component_interconnect_helper_write_function_record(
+            serial, peripheral_component_interconnect_get_device(index));
 }
 
 void write_peripheral_component_interconnect_express_record(Serial_t *serial)

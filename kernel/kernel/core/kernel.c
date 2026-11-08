@@ -474,6 +474,7 @@ __attribute__((constructor)) void kernel_initialize(void)
 
     peripheral_component_interconnect_scan();
     write_peripheral_component_interconnect_info(&com1);
+    write_peripheral_component_interconnect_function_records(&com1);
     kernel_machine_report(&com1);
     kernel_splash_update("PCI Bus Enumeration");
 

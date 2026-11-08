@@ -265,6 +265,34 @@ extern uint8_t peripheral_component_interconnect_read_base_address_register(
 extern bool peripheral_component_interconnect_memory_window_is_reachable(
     const PeripheralComponentInterconnectBaseAddressRegister_t *bar);
 
+#define PERIPHERAL_COMPONENT_INTERCONNECT_REGISTER_CAPABILITIES_POINTER                                                \
+    0x34u /**< The offset of the first capability, in a function whose header is of type 0 or 1. */
+#define PERIPHERAL_COMPONENT_INTERCONNECT_REGISTER_CARDBUS_CAPABILITIES_POINTER                                        \
+    0x14u /**< The offset of the first capability, in a CardBus bridge, whose header is of type 2. */
+#define PERIPHERAL_COMPONENT_INTERCONNECT_STATUS_CAPABILITIES_LIST                                                     \
+    (1u << 4) /**< Status bit: the function has a capability list. */
+#define PERIPHERAL_COMPONENT_INTERCONNECT_MAX_CAPABILITIES                                                             \
+    48u /**< Capabilities a walk of the first 256 bytes reads at most, as Linux bounds it. */
+#define PERIPHERAL_COMPONENT_INTERCONNECT_CAPABILITY_EXPRESS 0x10u /**< The PCI Express capability's identifier. */
+
+/**
+ * @brief Finds a capability in a function's list, in its first 256 bytes, through configuration mechanism #1.
+ *
+ * @details The walk starts at the capabilities pointer of the function's header type, 0x34 or a CardBus bridge's 0x14,
+ *          when the status register says the list exists, masks each
+ *          offset to a dword, as Linux's __pci_find_next_cap_ttl does, and ends at an offset below 0x40, an
+ *          identifier of 0xFF, which an absent register reads, or after
+ *          PERIPHERAL_COMPONENT_INTERCONNECT_MAX_CAPABILITIES of them.
+ *
+ * @param bus        The bus.
+ * @param device     The device.
+ * @param function   The function.
+ * @param identifier The capability ID, such as PERIPHERAL_COMPONENT_INTERCONNECT_CAPABILITY_EXPRESS.
+ * @return The capability's offset, or 0 when the list holds none.
+ */
+extern uint8_t peripheral_component_interconnect_find_capability(uint8_t bus, uint8_t device, uint8_t function,
+                                                                 uint8_t identifier);
+
 /**
  * @name The configuration space through ECAM, the memory-mapped windows the MCFG gives
  * @{
@@ -397,6 +425,90 @@ extern uint32_t peripheral_component_interconnect_express_window_moves(void);
  */
 extern const PeripheralComponentInterconnectExpressWindowCounts_t *
 peripheral_component_interconnect_express_window_counts(void);
+/** @} */
+
+/**
+ * @name The extended capability list, from offset 0x100 of a PCI Express function (PCI Express Base 6.0, §7.6)
+ * @{
+ */
+#define PERIPHERAL_COMPONENT_INTERCONNECT_EXPRESS_MAX_EXTENDED_CAPABILITIES                                            \
+    480u /**< Headers one walk reads at most, 8 bytes apiece past the first 256, as Linux bounds it. */
+
+/**
+ * @brief How a walk of the extended capability list ended.
+ */
+typedef enum PeripheralComponentInterconnectExpressWalk {
+    PERIPHERAL_COMPONENT_INTERCONNECT_EXPRESS_WALK_LISTED = 0,    /**< A next offset of 0 ended the list. */
+    PERIPHERAL_COMPONENT_INTERCONNECT_EXPRESS_WALK_NONE = 1,      /**< The header at 0x100 is 0: no capability. */
+    PERIPHERAL_COMPONENT_INTERCONNECT_EXPRESS_WALK_NO_SPACE = 2,  /**< 0x100 reads all ones or is refused: no
+                                                                       extended space, as a conventional function. */
+    PERIPHERAL_COMPONENT_INTERCONNECT_EXPRESS_WALK_MALFORMED = 3, /**< A next offset below 0x100 but 0, or a header
+                                                                       that reads all ones past the first. */
+    PERIPHERAL_COMPONENT_INTERCONNECT_EXPRESS_WALK_LOOPED = 4,    /**< The bound of headers passed without an end. */
+    PERIPHERAL_COMPONENT_INTERCONNECT_EXPRESS_WALK_TRUNCATED = 5, /**< More capabilities than the caller kept room
+                                                                       for: the walk went on and counted them. */
+} PeripheralComponentInterconnectExpressWalk_t;
+
+/**
+ * @brief One extended capability: its header's fields and where it lies.
+ */
+typedef struct PeripheralComponentInterconnectExpressExtendedCapability {
+    uint16_t offset;     /**< Where its header lies, from 0x100. */
+    uint16_t identifier; /**< Its capability ID, such as 0x0001 for Advanced Error Reporting. */
+    uint8_t version;     /**< Its capability version. */
+} PeripheralComponentInterconnectExpressExtendedCapability_t;
+
+/**
+ * @brief Reads the dword at @p offset of a function's configuration space into @p out_value.
+ *
+ * @return false when the read is refused.
+ */
+typedef bool (*PeripheralComponentInterconnectExpressDwordReader_t)(void *context, uint16_t offset,
+                                                                    uint32_t *out_value);
+
+/**
+ * @brief Walks an extended capability list through @p read, as Linux's pci_find_next_ext_capability does: from 0x100,
+ *        each header's next offset masked to a dword, until it falls below 0x100.
+ *
+ * @param read           Reads one dword of the function's configuration space.
+ * @param context        Handed to @p read.
+ * @param out_capabilities Filled in list order, up to @p capacity.
+ * @param capacity       Room in @p out_capabilities.
+ * @param out_count      Capabilities the walk passed, those past @p capacity included.
+ * @return How the walk ended.
+ */
+extern PeripheralComponentInterconnectExpressWalk_t
+peripheral_component_interconnect_express_walk_extended_capabilities(
+    PeripheralComponentInterconnectExpressDwordReader_t read, void *context,
+    PeripheralComponentInterconnectExpressExtendedCapability_t *out_capabilities, uint32_t capacity,
+    uint32_t *out_count);
+
+/**
+ * @brief Walks the extended capability list of a function through peripheral_component_interconnect_express_read.
+ *
+ * @param segment_group    The PCI segment group.
+ * @param bus              The bus.
+ * @param device           The device, below 32.
+ * @param function         The function, below 8.
+ * @param out_capabilities Filled in list order, up to @p capacity.
+ * @param capacity         Room in @p out_capabilities.
+ * @param out_count        Capabilities the walk passed, those past @p capacity included.
+ * @return How the walk ended; PERIPHERAL_COMPONENT_INTERCONNECT_EXPRESS_WALK_NO_SPACE without an ECAM window.
+ */
+extern PeripheralComponentInterconnectExpressWalk_t
+peripheral_component_interconnect_express_list_extended_capabilities(
+    uint16_t segment_group, uint8_t bus, uint8_t device, uint8_t function,
+    PeripheralComponentInterconnectExpressExtendedCapability_t *out_capabilities, uint32_t capacity,
+    uint32_t *out_count);
+
+/**
+ * @brief The name a walk's end is printed as.
+ *
+ * @param walk How a walk ended.
+ * @return Its name, never NULL.
+ */
+extern const char *
+peripheral_component_interconnect_express_walk_name(PeripheralComponentInterconnectExpressWalk_t walk);
 /** @} */
 
 #endif /* KERNEL_CPU_PERIPHERAL_COMPONENT_INTERCONNECT_H */

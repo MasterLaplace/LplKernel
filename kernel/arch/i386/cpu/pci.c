@@ -226,6 +226,37 @@ static bool peripheral_component_interconnect_express_ports_reach(uint16_t segme
     return segment_group == 0u && offset + width <= PERIPHERAL_COMPONENT_INTERCONNECT_LEGACY_CONFIGURATION_SIZE;
 }
 
+/**
+ * @brief A function the walk of its extended capabilities reads through ECAM.
+ */
+typedef struct PeripheralComponentInterconnectExpressFunction {
+    uint16_t segment_group; /**< Its segment group. */
+    uint8_t bus;            /**< Its bus. */
+    uint8_t device;         /**< Its device. */
+    uint8_t function;       /**< Its function. */
+} PeripheralComponentInterconnectExpressFunction_t;
+
+/**
+ * @brief Reads one dword of the function @p context names through peripheral_component_interconnect_express_read.
+ */
+static bool peripheral_component_interconnect_express_read_function(void *context, uint16_t offset, uint32_t *out_value)
+{
+    const PeripheralComponentInterconnectExpressFunction_t *function = context;
+
+    return peripheral_component_interconnect_express_read(function->segment_group, function->bus, function->device,
+                                                          function->function, offset, 4u, out_value);
+}
+
+/**
+ * @brief How a walk of @p count capabilities that reached a next offset of 0 ended, with room for @p capacity.
+ */
+static PeripheralComponentInterconnectExpressWalk_t
+peripheral_component_interconnect_express_walk_end(uint32_t count, uint32_t capacity)
+{
+    return (count > capacity) ? PERIPHERAL_COMPONENT_INTERCONNECT_EXPRESS_WALK_TRUNCATED :
+                                PERIPHERAL_COMPONENT_INTERCONNECT_EXPRESS_WALK_LISTED;
+}
+
 uint32_t peripheral_component_interconnect_config_read_dword(uint8_t bus, uint8_t device, uint8_t function,
                                                              uint8_t offset)
 {
@@ -553,4 +584,92 @@ const PeripheralComponentInterconnectExpressWindowCounts_t *
 peripheral_component_interconnect_express_window_counts(void)
 {
     return &peripheral_component_interconnect_express_counts;
+}
+
+uint8_t peripheral_component_interconnect_find_capability(uint8_t bus, uint8_t device, uint8_t function,
+                                                          uint8_t identifier)
+{
+    const uint16_t status = peripheral_component_interconnect_config_read_word(
+        bus, device, function, PERIPHERAL_COMPONENT_INTERCONNECT_REGISTER_STATUS);
+    const uint8_t layout = peripheral_component_interconnect_config_read_byte(
+                               bus, device, function, PERIPHERAL_COMPONENT_INTERCONNECT_REGISTER_HEADER_TYPE) &
+                           PERIPHERAL_COMPONENT_INTERCONNECT_HEADER_TYPE_LAYOUT_MASK;
+    uint8_t offset = 0u;
+
+    if ((status & PERIPHERAL_COMPONENT_INTERCONNECT_STATUS_CAPABILITIES_LIST) == 0u || layout > 2u)
+        return 0u;
+    offset = (uint8_t) (peripheral_component_interconnect_config_read_byte(
+                            bus, device, function,
+                            (layout == 2u) ? PERIPHERAL_COMPONENT_INTERCONNECT_REGISTER_CARDBUS_CAPABILITIES_POINTER :
+                                             PERIPHERAL_COMPONENT_INTERCONNECT_REGISTER_CAPABILITIES_POINTER) &
+                        0xFCu);
+    for (uint32_t step = 0u; offset >= 0x40u && step < PERIPHERAL_COMPONENT_INTERCONNECT_MAX_CAPABILITIES; ++step)
+    {
+        const uint16_t header = peripheral_component_interconnect_config_read_word(bus, device, function, offset);
+
+        if ((header & 0xFFu) == 0xFFu)
+            return 0u;
+        if ((header & 0xFFu) == identifier)
+            return offset;
+        offset = (uint8_t) ((header >> 8u) & 0xFCu);
+    }
+    return 0u;
+}
+
+PeripheralComponentInterconnectExpressWalk_t peripheral_component_interconnect_express_walk_extended_capabilities(
+    PeripheralComponentInterconnectExpressDwordReader_t read, void *context,
+    PeripheralComponentInterconnectExpressExtendedCapability_t *out_capabilities, uint32_t capacity,
+    uint32_t *out_count)
+{
+    uint16_t offset = PERIPHERAL_COMPONENT_INTERCONNECT_LEGACY_CONFIGURATION_SIZE;
+    uint32_t header = 0u;
+
+    *out_count = 0u;
+    if (!read(context, offset, &header) || header == PERIPHERAL_COMPONENT_INTERCONNECT_EXPRESS_ALL_ONES)
+        return PERIPHERAL_COMPONENT_INTERCONNECT_EXPRESS_WALK_NO_SPACE;
+    if (header == 0u)
+        return PERIPHERAL_COMPONENT_INTERCONNECT_EXPRESS_WALK_NONE;
+    for (;;)
+    {
+        const uint16_t next = (uint16_t) ((header >> 20u) & 0xFFCu);
+
+        if (*out_count < capacity)
+            out_capabilities[*out_count] = (PeripheralComponentInterconnectExpressExtendedCapability_t){
+                .offset = offset,
+                .identifier = (uint16_t) (header & 0xFFFFu),
+                .version = (uint8_t) ((header >> 16u) & 0xFu)};
+        ++*out_count;
+        if (next == 0u)
+            return peripheral_component_interconnect_express_walk_end(*out_count, capacity);
+        if (next < PERIPHERAL_COMPONENT_INTERCONNECT_LEGACY_CONFIGURATION_SIZE)
+            return PERIPHERAL_COMPONENT_INTERCONNECT_EXPRESS_WALK_MALFORMED;
+        if (*out_count == PERIPHERAL_COMPONENT_INTERCONNECT_EXPRESS_MAX_EXTENDED_CAPABILITIES)
+            return PERIPHERAL_COMPONENT_INTERCONNECT_EXPRESS_WALK_LOOPED;
+        offset = next;
+        if (!read(context, offset, &header) || header == PERIPHERAL_COMPONENT_INTERCONNECT_EXPRESS_ALL_ONES)
+            return PERIPHERAL_COMPONENT_INTERCONNECT_EXPRESS_WALK_MALFORMED;
+    }
+}
+
+PeripheralComponentInterconnectExpressWalk_t peripheral_component_interconnect_express_list_extended_capabilities(
+    uint16_t segment_group, uint8_t bus, uint8_t device, uint8_t function,
+    PeripheralComponentInterconnectExpressExtendedCapability_t *out_capabilities, uint32_t capacity,
+    uint32_t *out_count)
+{
+    PeripheralComponentInterconnectExpressFunction_t named = {segment_group, bus, device, function};
+
+    if (!peripheral_component_interconnect_express_reaches(segment_group, bus))
+    {
+        *out_count = 0u;
+        return PERIPHERAL_COMPONENT_INTERCONNECT_EXPRESS_WALK_NO_SPACE;
+    }
+    return peripheral_component_interconnect_express_walk_extended_capabilities(
+        peripheral_component_interconnect_express_read_function, &named, out_capabilities, capacity, out_count);
+}
+
+const char *peripheral_component_interconnect_express_walk_name(PeripheralComponentInterconnectExpressWalk_t walk)
+{
+    static const char *const names[] = {"listed", "none", "no-space", "malformed", "looped", "truncated"};
+
+    return ((uint32_t) walk < sizeof(names) / sizeof(names[0])) ? names[walk] : "unknown";
 }
