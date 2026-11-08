@@ -23,7 +23,7 @@ static uint8_t hal_audio_interrupt_vector = 0u; /**< The device vector capture t
                                                      line, or 0. */
 static uint32_t hal_audio_interrupt_slot = 0u;  /**< The logical CPU slot that vector interrupts. */
 static uint32_t hal_audio_global_system_interrupt =
-    INPUT_OUTPUT_APIC_NO_LINE;                  /**< The I/O APIC line that vector comes on. */
+    INPUT_OUTPUT_ADVANCED_PROGRAMMABLE_INTERRUPT_CONTROLLER_NO_LINE; /**< The I/O APIC line that vector comes on. */
 static uint8_t hal_audio_allocated_vector = 0u; /**< The vector allocated once, kept across sessions. */
 static bool hal_audio_interrupt_driven = false;
 static volatile uint32_t hal_audio_interrupts = 0u;
@@ -112,7 +112,7 @@ static bool hal_audio_route_capture_message(void)
 static bool hal_audio_route_capture_through_input_output_apic(void)
 {
     const uint32_t slot = cpu_topology_get_slot_for_apic_id(apic_get_id());
-    uint32_t line = INPUT_OUTPUT_APIC_NO_LINE;
+    uint32_t line = INPUT_OUTPUT_ADVANCED_PROGRAMMABLE_INTERRUPT_CONTROLLER_NO_LINE;
 
     if (!hal_audio_capture_vector() ||
         !intel_high_definition_audio_aim_capture_line(slot, hal_audio_allocated_vector, &line))
@@ -176,7 +176,7 @@ bool hardware_abstraction_layer_audio_initialize(void)
     kernel_spsc_ring_initialize(&hal_audio_ring, KERNEL_HAL_AUDIO_RING_FRAMES);
     hal_audio_interrupt_driven = false;
     hal_audio_interrupt_vector = 0u;
-    hal_audio_global_system_interrupt = INPUT_OUTPUT_APIC_NO_LINE;
+    hal_audio_global_system_interrupt = INPUT_OUTPUT_ADVANCED_PROGRAMMABLE_INTERRUPT_CONTROLLER_NO_LINE;
     hal_audio_interrupts = 0u;
     hal_audio_codec_present = false;
     hal_audio_name = "absent";

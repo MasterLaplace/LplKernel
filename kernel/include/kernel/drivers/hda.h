@@ -259,7 +259,8 @@ bool intel_high_definition_audio_aim_capture_message(uint32_t slot, uint8_t vect
  *
  * @param slot     The logical CPU slot that takes the capture interrupts.
  * @param vector   A vector from device_interrupt_allocate.
- * @param out_line Receives the Global System Interrupt, or INPUT_OUTPUT_APIC_NO_LINE.
+ * @param out_line Receives the Global System Interrupt, or
+ * INPUT_OUTPUT_ADVANCED_PROGRAMMABLE_INTERRUPT_CONTROLLER_NO_LINE.
  * @return false when no controller is on the bus, or its pin has no line the kernel may take
  *         (input_output_advanced_programmable_interrupt_controller_route_device).
  */

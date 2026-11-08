@@ -1078,7 +1078,7 @@ bool intel_high_definition_audio_aim_capture_line(uint32_t slot, uint8_t vector,
     const PeripheralComponentInterconnectDevice_t *const device =
         peripheral_component_interconnect_find_by_class(HDA_PCI_CLASS, HDA_PCI_SUBCLASS);
 
-    *out_line = INPUT_OUTPUT_APIC_NO_LINE;
+    *out_line = INPUT_OUTPUT_ADVANCED_PROGRAMMABLE_INTERRUPT_CONTROLLER_NO_LINE;
     return device != NULL &&
            input_output_advanced_programmable_interrupt_controller_route_device(device, slot, vector, out_line);
 }

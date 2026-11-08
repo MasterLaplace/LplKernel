@@ -167,8 +167,8 @@ uint32_t hardware_abstraction_layer_audio_capture_interrupt_slot(void);
 
 /**
  * @brief The I/O APIC line the capture interrupt was routed on, for a controller without MSI.
- * @return Its Global System Interrupt, or INPUT_OUTPUT_APIC_NO_LINE when it came as a message, on an 8259 line, or was
- *         not routed.
+ * @return Its Global System Interrupt, or INPUT_OUTPUT_ADVANCED_PROGRAMMABLE_INTERRUPT_CONTROLLER_NO_LINE when it came
+ * as a message, on an 8259 line, or was not routed.
  */
 uint32_t hardware_abstraction_layer_audio_capture_global_system_interrupt(void);
 
