@@ -7,7 +7,55 @@ KERNEL_TEST_SUITE(heap, KERNEL_TEST_STAGE_INITIALIZATION);
 /** Number of size classes the server heap keeps a free count for. */
 #define HEAP_TEST_SIZE_CLASS_COUNT 7u
 
+#define HEAP_TEST_MOST_HELD 64u /**< The most blocks a test takes to empty one size class of a domain. */
+#define HEAP_TEST_NEIGHBOUR 1u  /**< The slot of the second heap domain, which an application processor fills. */
+
 #if !defined(LPL_KERNEL_REAL_TIME_MODE)
+/**
+ * @brief Takes every free block of size class @p size_class from the domain of @p slot, by allocating @p size bytes
+ *        from that slot until the class holds none, and keeps them in @p held.
+ *
+ * @details Once the application processors run, the second domain holds the blocks each one cached at its start; a
+ *          test that needs that domain empty takes them first, and gives them back with heap_test_give_back. The
+ *          running processor's slot is forced to @p slot meanwhile, then released.
+ *
+ * @param slot       The slot whose domain is emptied.
+ * @param size       Bytes asked for each time.
+ * @param size_class Index of the size class that serves @p size.
+ * @param held       Receives the blocks taken, HEAP_TEST_MOST_HELD at most.
+ * @param held_count Receives how many it holds.
+ * @return Whether the class holds no free block once they are taken.
+ */
+static bool heap_test_empty_size_class(uint32_t slot, uint32_t size, uint32_t size_class, void **held,
+                                       uint32_t *held_count)
+{
+    uint32_t count = 0u;
+
+    (void) cpu_topology_debug_force_logical_slot(slot);
+    while (kernel_heap_get_size_class_free_count(size_class) > 0u && count < HEAP_TEST_MOST_HELD)
+    {
+        held[count] = kmalloc(size);
+        if (!held[count])
+            break;
+        ++count;
+    }
+
+    const bool emptied = kernel_heap_get_size_class_free_count(size_class) == 0u;
+
+    cpu_topology_debug_clear_forced_logical_slot();
+    *held_count = count;
+    return emptied;
+}
+
+/**
+ * @brief Frees the @p held_count blocks of @p held, which go back to the domain they came from.
+ */
+static void heap_test_give_back(void **held, uint32_t held_count)
+{
+    for (uint32_t index = 0u; index < held_count; ++index)
+        kfree(held[index]);
+}
+
 /**
  * @brief Allocates two blocks of @p size, frees them, allocates two again, and reports whether every
  *        step was served and went through the size-class and per-processor fast paths.
@@ -143,12 +191,29 @@ KERNEL_TEST(poison_and_canary)
 /**
  * @brief Blocks of 8, 64 and 256 bytes come from their size class and the processor's cache, and
  *        serving them never takes from another domain.
+ *
+ * @details A domain with no block of a class takes one from a neighbour that has some, and gives it back there: the
+ *          neighbour's classes are emptied first, so the running processor's domain refills with blocks of its own.
  */
 KERNEL_TEST(size_classes_serve_from_the_fast_path)
 {
 #if defined(LPL_KERNEL_REAL_TIME_MODE)
     kernel_test_skip(test, "the client profile serves small blocks from its slab caches");
 #else
+    static const uint32_t sizes[] = {8u, 64u, 256u};
+    static const uint32_t size_classes[] = {0u, 3u, 5u};
+    static void *held[sizeof(sizes) / sizeof(sizes[0])][HEAP_TEST_MOST_HELD];
+    uint32_t held_counts[sizeof(sizes) / sizeof(sizes[0])] = {0u};
+    bool neighbour_emptied = true;
+
+    if (kernel_heap_get_server_domain_count() >= 2u)
+    {
+        for (uint32_t index = 0u; index < sizeof(sizes) / sizeof(sizes[0]); ++index)
+            neighbour_emptied = heap_test_empty_size_class(HEAP_TEST_NEIGHBOUR, sizes[index], size_classes[index],
+                                                           held[index], &held_counts[index]) &&
+                                neighbour_emptied;
+    }
+
     const uint32_t domain = kernel_heap_get_server_active_domain();
     const uint32_t remote_probes_before = kernel_heap_get_server_domain_remote_probe_count(domain);
     const uint32_t remote_hits_before = kernel_heap_get_server_domain_remote_hit_count(domain);
@@ -165,11 +230,17 @@ KERNEL_TEST(size_classes_serve_from_the_fast_path)
                       kernel_heap_get_server_domain_remote_probe_count(domain) >= remote_probes_before &&
                           kernel_heap_get_server_domain_remote_hit_count(domain) == remote_hits_before,
                       "a domain with blocks of its own takes none from another");
+    for (uint32_t index = 0u; index < sizeof(sizes) / sizeof(sizes[0]); ++index)
+        heap_test_give_back(held[index], held_counts[index]);
+    kernel_test_check(test, neighbour_emptied, "the neighbour's classes were emptied first");
 #endif
 }
 
 /**
  * @brief A domain with nothing cached takes the block a neighbour freed.
+ *
+ * @details The second domain's 64-byte blocks, which an application processor cached at its start, are taken first,
+ *          so that domain has nothing cached.
  */
 KERNEL_TEST(empty_domain_takes_from_its_neighbour)
 {
@@ -182,6 +253,9 @@ KERNEL_TEST(empty_domain_takes_from_its_neighbour)
         return;
     }
 
+    static void *held[HEAP_TEST_MOST_HELD];
+    uint32_t held_count = 0u;
+    const bool second_emptied = heap_test_empty_size_class(HEAP_TEST_NEIGHBOUR, 64u, 3u, held, &held_count);
     const uint32_t first_domain_remote_hits_before = kernel_heap_get_server_domain_remote_hit_count(0u);
     const bool forced_to_first = cpu_topology_debug_force_logical_slot(0u);
     void *const seed = kmalloc(64u);
@@ -198,6 +272,7 @@ KERNEL_TEST(empty_domain_takes_from_its_neighbour)
 
     if (borrowed)
         kfree(borrowed);
+    heap_test_give_back(held, held_count);
     cpu_topology_debug_clear_forced_logical_slot();
 
     void *const settle = kmalloc(8u);
@@ -205,6 +280,7 @@ KERNEL_TEST(empty_domain_takes_from_its_neighbour)
     if (settle)
         kfree(settle);
 
+    kernel_test_check(test, second_emptied, "the second domain's 64-byte blocks were taken first");
     kernel_test_check(test, forced_to_first && forced_to_second, "the running processor can be moved between slots");
     kernel_test_check(test, borrowed != NULL, "the second domain is served");
     kernel_test_check(test, remote_probes_after > remote_probes_before && remote_hits_after > remote_hits_before,
