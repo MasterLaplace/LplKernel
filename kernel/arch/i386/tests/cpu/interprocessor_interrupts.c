@@ -4,6 +4,7 @@
 #include <kernel/cpu/device_interrupt.h>
 #include <kernel/cpu/irq.h>
 #include <kernel/lib/asmutils.h>
+#include <kernel/memory/heap.h>
 #include <kernel/testing/test.h>
 
 #include <stdint.h>
@@ -19,6 +20,18 @@ KERNEL_TEST_SUITE(interprocessor_interrupts, KERNEL_TEST_STAGE_PUBLISHED);
 
 /** The mode each slot's processor read in its own IA32_APIC_BASE, written by that processor alone. */
 static volatile uint32_t interprocessor_interrupts_test_modes[CPU_TOPOLOGY_MAX_LOGICAL_CPUS_PUBLIC] = {0u};
+
+/**
+ * @brief Where a processor found it runs, written by that processor alone when asked.
+ */
+typedef struct {
+    volatile uint32_t logical_slot; /**< What cpu_topology_get_logical_slot gave it. */
+    volatile uint32_t heap_domain;  /**< The heap's local domain it got. */
+    volatile uint32_t answered;     /**< Non-zero once the fields above are written. */
+} InterprocessorInterruptsTestPlace_t;
+
+/** What each slot's processor found, indexed by the slot its own APIC ID register names. */
+static InterprocessorInterruptsTestPlace_t interprocessor_interrupts_test_places[CPU_TOPOLOGY_MAX_LOGICAL_CPUS_PUBLIC];
 
 /**
  * @brief The mode this processor's IA32_APIC_BASE holds.
@@ -44,21 +57,47 @@ static void interprocessor_interrupts_test_record_mode(void *context)
 }
 
 /**
+ * @brief Run on the processor the vector reached: records where it found it runs, in the slot its own register names.
+ */
+static void interprocessor_interrupts_test_record_place(void *context)
+{
+    const uint32_t slot = cpu_topology_get_slot_for_apic_id(apic_get_id());
+
+    (void) context;
+    if (slot >= CPU_TOPOLOGY_MAX_LOGICAL_CPUS_PUBLIC)
+        return;
+    interprocessor_interrupts_test_places[slot].logical_slot = cpu_topology_get_logical_slot();
+    interprocessor_interrupts_test_places[slot].heap_domain = kernel_heap_get_server_active_domain();
+    interprocessor_interrupts_test_places[slot].answered = 1u;
+}
+
+/**
+ * @brief Sends @p vector to the processor of @p slot and waits, a bounded while, for @p answer to leave
+ *        INTERPROCESSOR_INTERRUPTS_TEST_NOT_ANSWERED.
+ *
+ * @return Whether it did.
+ */
+static bool interprocessor_interrupts_test_ask(uint32_t slot, uint8_t vector, const volatile uint32_t *answer)
+{
+    InterruptRequestDeadline_t deadline;
+
+    if (advanced_pic_ipi_send_fixed(cpu_topology_get_apic_id_at_slot(slot), vector, ADVANCED_PIC_IPI_SHORT_NONE) == 0u)
+        return false;
+    interrupt_request_deadline_start(&deadline, INTERPROCESSOR_INTERRUPTS_TEST_WAIT_MICROSECONDS);
+    while (*answer == INTERPROCESSOR_INTERRUPTS_TEST_NOT_ANSWERED && !interrupt_request_deadline_passed(&deadline))
+        asmutils_pause();
+    return *answer != INTERPROCESSOR_INTERRUPTS_TEST_NOT_ANSWERED;
+}
+
+/**
  * @brief Sends @p vector to the processor of @p slot and waits, a bounded while, for it to record its mode.
  *
  * @return The mode it recorded, or INTERPROCESSOR_INTERRUPTS_TEST_NOT_ANSWERED.
  */
 static uint32_t interprocessor_interrupts_test_ask_mode(uint32_t slot, uint8_t vector)
 {
-    InterruptRequestDeadline_t deadline;
-
     interprocessor_interrupts_test_modes[slot] = INTERPROCESSOR_INTERRUPTS_TEST_NOT_ANSWERED;
-    if (advanced_pic_ipi_send_fixed(cpu_topology_get_apic_id_at_slot(slot), vector, ADVANCED_PIC_IPI_SHORT_NONE) == 0u)
-        return INTERPROCESSOR_INTERRUPTS_TEST_NOT_ANSWERED;
-    interrupt_request_deadline_start(&deadline, INTERPROCESSOR_INTERRUPTS_TEST_WAIT_MICROSECONDS);
-    while (interprocessor_interrupts_test_modes[slot] == INTERPROCESSOR_INTERRUPTS_TEST_NOT_ANSWERED &&
-           !interrupt_request_deadline_passed(&deadline))
-        asmutils_pause();
+    (void) interprocessor_interrupts_test_ask(slot, vector, &interprocessor_interrupts_test_modes[slot]);
     return interprocessor_interrupts_test_modes[slot];
 }
 
@@ -173,4 +212,64 @@ KERNEL_TEST(every_processor_runs_the_mode_the_bootstrap_processor_chose)
     kernel_test_measure(test, "asked", asked);
     kernel_test_measure(test, "agreeing", agreeing);
     kernel_test_measure(test, "x2apic", chosen == INTERPROCESSOR_INTERRUPTS_TEST_X2APIC ? 1u : 0u);
+}
+
+/**
+ * @brief Every online processor finds the slot its own APIC ID register names, and the heap's local domain follows it.
+ *
+ * @details Each application processor is sent a vector whose handler asks the topology and the heap where it runs.
+ *          The slot used to come from one identifier recorded on the bootstrap processor, so every processor got the
+ *          bootstrap processor's slot, and the heap's first domain (#792). The heap gives a slot past its domains the
+ *          first one.
+ */
+KERNEL_TEST(every_processor_finds_its_own_slot)
+{
+    const uint32_t here = cpu_topology_get_slot_for_apic_id(apic_get_id());
+    const uint32_t online = cpu_topology_get_online_cpu_count();
+    const uint32_t domains = kernel_heap_get_server_domain_count();
+    uint32_t asked = 0u;
+    uint32_t answered = 0u;
+    uint32_t in_their_slot = 0u;
+    uint32_t in_their_domain = 0u;
+    uint8_t vector = 0u;
+
+    if (online < 2u)
+    {
+        kernel_test_skip(test, "no other processor is online: boot with -smp 2");
+        return;
+    }
+    if (!advanced_pic_ipi_is_ready())
+    {
+        kernel_test_skip(test, "the local APIC sends no interprocessor interrupt");
+        return;
+    }
+    if (!device_interrupt_allocate(interprocessor_interrupts_test_record_place, NULL, &vector))
+    {
+        kernel_test_check(test, false, "a vector is free");
+        return;
+    }
+    for (uint32_t slot = 0u; slot < CPU_TOPOLOGY_MAX_LOGICAL_CPUS_PUBLIC; ++slot)
+    {
+        if (slot == here || !cpu_topology_is_logical_slot_online(slot))
+            continue;
+
+        const InterprocessorInterruptsTestPlace_t *place = &interprocessor_interrupts_test_places[slot];
+
+        interprocessor_interrupts_test_places[slot].answered = INTERPROCESSOR_INTERRUPTS_TEST_NOT_ANSWERED;
+        ++asked;
+        if (!interprocessor_interrupts_test_ask(slot, vector, &place->answered))
+            continue;
+        ++answered;
+        in_their_slot += place->logical_slot == slot ? 1u : 0u;
+        in_their_domain += place->heap_domain == (slot < domains ? slot : 0u) ? 1u : 0u;
+    }
+    device_interrupt_release(vector);
+    kernel_test_check(test, cpu_topology_get_logical_slot() == here, "the bootstrap processor finds its own slot");
+    kernel_test_check(test, asked == online - 1u, "every other online processor was asked");
+    kernel_test_check(test, answered == asked, "each answered");
+    kernel_test_check(test, in_their_slot == asked, "each found the slot its own register names");
+    kernel_test_check(test, in_their_domain == asked, "and the heap's local domain of that slot");
+    kernel_test_measure(test, "asked", asked);
+    kernel_test_measure(test, "in_their_slot", in_their_slot);
+    kernel_test_measure(test, "in_their_domain", in_their_domain);
 }

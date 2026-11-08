@@ -44,7 +44,7 @@ typedef struct {
     uint8_t forced_slot_enabled;                                    /**< Whether a slot is forced. */
     uint32_t forced_slot;                                           /**< The forced slot. */
     uint8_t apic_id_valid;                                          /**< Whether CPUID gave an APIC ID. */
-    uint32_t local_apic_id;                                         /**< The running CPU's APIC ID. */
+    uint32_t local_apic_id;                                         /**< The identifier recorded at boot. */
     uint32_t apic_id_to_slot[CPU_TOPOLOGY_MAX_LOGICAL_CPUS_PUBLIC]; /**< APIC ID held by each slot. */
     uint32_t discovered_cpu_count;                                  /**< Slots in use. */
     uint8_t online_by_slot[CPU_TOPOLOGY_MAX_LOGICAL_CPUS_PUBLIC];   /**< Online mark of each slot. */
@@ -60,13 +60,14 @@ typedef struct {
 extern void cpu_topology_initialize(void);
 
 /**
- * @brief Get logical CPU slot for the current processor.
+ * @brief The logical slot of the processor that runs the call: the one its own APIC ID register names.
  *
- * Returns a compacted logical slot index (0 to CPU_TOPOLOGY_MAX_LOGICAL_CPUS-1)
- * corresponding to the current CPU. This is used for allocator domain routing.
+ * @details Before the local APICs run, only the bootstrap processor runs, and its slot is the one of the identifier
+ *          recorded at boot. A slot forced by cpu_topology_debug_force_logical_slot wins over both. The heap's local
+ *          domain and the local NUMA node follow it.
  *
- * If topology discovery failed, returns 0 (BSP slot). If forced slot mode is
- * enabled, returns the forced slot instead.
+ * @return The slot, 0 when CPUID reports no local APIC, or CPU_TOPOLOGY_NO_SLOT when the topology holds no slot for
+ *         the processor's identifier.
  */
 extern uint32_t cpu_topology_get_logical_slot(void);
 
@@ -82,20 +83,19 @@ extern uint32_t cpu_topology_get_logical_slot(void);
 extern uint32_t cpu_topology_register_discovered_apic_id(uint32_t apic_id);
 
 /**
- * @brief Get the local APIC ID of the current processor.
+ * @brief The APIC ID the topology recorded at boot: the bootstrap processor's, from CPUID, whichever processor calls.
  *
- * Returns the APIC ID registered for the current CPU, or 0 if not available.
+ * @return The identifier, or 0 when CPUID reports no local APIC.
  */
 extern uint32_t cpu_topology_get_local_apic_id(void);
 
 /**
- * @brief Set the local APIC ID for the current processor at runtime.
+ * @brief Replace the identifier the topology recorded at boot, and register it.
  *
- * This is used by APs during their startup sequence to register their APIC ID
- * when topology discovery is already complete. It also marks the APIC ID as
- * valid and online.
+ * @details Checks call it to give the bootstrap processor an identifier the machine lacks. The slot of the processor
+ *          that runs, cpu_topology_get_logical_slot, does not follow it.
  *
- * @param apic_id Local APIC ID or x2APIC ID to set for the current CPU.
+ * @param apic_id Local APIC ID or x2APIC ID, kept whole.
  */
 extern void cpu_topology_set_runtime_local_apic_id(uint32_t apic_id);
 
@@ -119,9 +119,7 @@ extern void cpu_topology_mark_apic_id_online(uint32_t apic_id);
 extern void cpu_topology_unmark_apic_id_online(uint32_t apic_id);
 
 /**
- * @brief Mark the current CPU as online using its runtime APIC ID.
- *
- * This is used by APs during their startup sequence after setting their runtime APIC ID.
+ * @brief Mark online the processor of the identifier recorded at boot: the bootstrap processor.
  */
 extern void cpu_topology_mark_runtime_cpu_online(void);
 
