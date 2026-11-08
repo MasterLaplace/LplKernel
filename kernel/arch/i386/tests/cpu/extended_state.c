@@ -29,6 +29,8 @@ KERNEL_TEST_SUITE(extended_state, KERNEL_TEST_STAGE_PUBLISHED);
                  nearest (Intel SDM vol. 1, 253665-087US, Table 8-4). */
 #define EXTENDED_STATE_TEST_MXCSR_DEFAULT                                                                              \
     0x1F80u /**< The MXCSR after a reset: every exception masked, round to nearest (Intel SDM vol. 1, §10.2.3). */
+#define EXTENDED_STATE_TEST_MXCSR_FLAGS                                                                                \
+    0x3Fu /**< The six exception flags of the MXCSR, which SSE arithmetic sets and only software clears. */
 #define EXTENDED_STATE_TEST_FXSAVE_BYTES 512u    /**< The FXSAVE image. */
 #define EXTENDED_STATE_TEST_FXSAVE_FCW   0u      /**< Where the image holds the x87 control word. */
 #define EXTENDED_STATE_TEST_FXSAVE_MXCSR 24u     /**< Where it holds the MXCSR. */
@@ -37,10 +39,14 @@ KERNEL_TEST_SUITE(extended_state, KERNEL_TEST_STAGE_PUBLISHED);
 
 /**
  * @brief The state a processor read in its own registers.
+ *
+ * @details The FXSAVE image is held here, 16-aligned as FXSAVE needs, rather than on the stack: the kernel's C code
+ *          runs on stacks it does not align to 16 bytes.
  */
 typedef struct {
-    uint32_t control_register_0;          /**< CR0. */
-    uint32_t control_register_4;          /**< CR4. */
+    uint8_t image[EXTENDED_STATE_TEST_FXSAVE_BYTES] __attribute__((aligned(16))); /**< The FXSAVE image read. */
+    uint32_t control_register_0;                                                  /**< CR0. */
+    uint32_t control_register_4;                                                  /**< CR4. */
     uint64_t extended_control_register_0; /**< XCR0, or 0 when CR4.OSXSAVE is clear. */
     uint32_t floating_point_control_word; /**< The x87 control word. */
     uint32_t simd_control_status;         /**< MXCSR. */
@@ -64,9 +70,9 @@ __attribute__((target("xsave"))) static uint64_t extended_state_test_read_xcr0(v
  */
 __attribute__((target("fxsr"))) static void extended_state_test_read(ExtendedStateTestReading_t *reading)
 {
-    uint8_t image[EXTENDED_STATE_TEST_FXSAVE_BYTES] __attribute__((aligned(16)));
+    const uint8_t *const image = reading->image;
 
-    __builtin_ia32_fxsave(image);
+    __builtin_ia32_fxsave(reading->image);
     reading->control_register_0 = asmutils_read_control_register_0();
     reading->control_register_4 = asmutils_read_control_register_4();
     reading->extended_control_register_0 =
@@ -87,7 +93,7 @@ __attribute__((target("fxsr"))) static void extended_state_test_read(ExtendedSta
 __attribute__((target("fxsr"))) static void extended_state_test_load_controls(uint32_t control_word,
                                                                               uint32_t simd_control_status)
 {
-    uint8_t image[EXTENDED_STATE_TEST_FXSAVE_BYTES] __attribute__((aligned(16)));
+    static uint8_t image[EXTENDED_STATE_TEST_FXSAVE_BYTES] __attribute__((aligned(16)));
 
     __builtin_ia32_fxsave(image);
     image[EXTENDED_STATE_TEST_FXSAVE_FCW] = (uint8_t) control_word;
@@ -142,8 +148,8 @@ static uint64_t extended_state_test_expected_xcr0(void)
 
 /**
  * @brief Whether @p reading holds the known state: CR0.NE and CR0.MP set, CR0.EM and CR0.TS clear, CR4.OSXSAVE set
- *        exactly when the processor offers XSAVE, XCR0 at @p expected_xcr0, and the x87 control word and MXCSR at their
- *        initial values.
+ *        exactly when the processor offers XSAVE, XCR0 at @p expected_xcr0, and the x87 control word and the MXCSR's
+ *        controls at their initial values: the MXCSR's exception flags record the SSE arithmetic run since.
  */
 static bool extended_state_test_is_known(const ExtendedStateTestReading_t *reading, bool xsave, uint64_t expected_xcr0)
 {
@@ -155,7 +161,7 @@ static bool extended_state_test_is_known(const ExtendedStateTestReading_t *readi
            ((reading->control_register_4 & EXTENDED_STATE_TEST_CR4_OSXSAVE) != 0u) == xsave &&
            (!xsave || reading->extended_control_register_0 == expected_xcr0) &&
            reading->floating_point_control_word == EXTENDED_STATE_TEST_FCW_AFTER_FNINIT &&
-           reading->simd_control_status == EXTENDED_STATE_TEST_MXCSR_DEFAULT;
+           (reading->simd_control_status & ~EXTENDED_STATE_TEST_MXCSR_FLAGS) == EXTENDED_STATE_TEST_MXCSR_DEFAULT;
 }
 
 /**
@@ -243,9 +249,9 @@ KERNEL_TEST(every_processor_runs_from_the_known_extended_state)
  */
 KERNEL_TEST(initialising_a_processor_resets_its_x87_and_simd_controls)
 {
-    ExtendedStateTestReading_t before;
-    ExtendedStateTestReading_t perturbed;
-    ExtendedStateTestReading_t after;
+    static ExtendedStateTestReading_t before;
+    static ExtendedStateTestReading_t perturbed;
+    static ExtendedStateTestReading_t after;
 
     extended_state_test_read(&before);
     extended_state_test_load_controls(EXTENDED_STATE_TEST_OTHER_FCW, EXTENDED_STATE_TEST_OTHER_MXCSR);
