@@ -517,7 +517,10 @@ Run once at boot by the bootstrap processor.
 5. **`\_PIC (1)` in the APIC model,** where the kernel sends PCI INTx through an I/O APIC; in the PIC model
    `\_PIC` is not called, and `pic_mode_deferred` counts it. Firmware assumes PIC mode until told otherwise
    ([§5.8.1]), and on AMD clients `\_PIC(1)` can rewrite every PIRQ router, which would silence a PCI device driven
-   through the 8259: the boot takes the APIC model only once no PCI interrupt goes through the 8259 (#59).
+   through the 8259. The boot takes the APIC model when the MADT declares an I/O APIC and a device interrupt reaches
+   a core in the mode the local APICs run: xAPIC, or x2APIC under a hypervisor, since on bare metal x2APIC mode takes
+   device interrupts through interrupt remapping alone (#108). A PCI device without MSI then interrupts through its
+   I/O APIC line, never through the 8259; the PIC model keeps it on the 8259.
 6. **Platform `\_SB._OSC`** with UUID `0811B06E-4A27-44F9-8D60-3CBBC22E7B48`, query then commit, claiming none of
    the DWORD 2 capabilities ([§6.2.12.1], [§6.2.12.2]), since the kernel exercises none of them at boot. #302 claims
    CPPC (bits 5, 6 and 10) in a second evaluation.

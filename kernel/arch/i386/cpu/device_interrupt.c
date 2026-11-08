@@ -74,7 +74,7 @@ bool device_interrupt_platform_delivers(void)
 {
     CpuIdentity_t identity;
 
-    if (!apic_is_x2apic_active())
+    if (!apic_runs_x2apic_mode())
         return true;
     cpu_identity_read(&identity);
     return identity.hypervisor;

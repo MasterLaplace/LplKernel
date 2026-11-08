@@ -78,7 +78,8 @@ extern uint32_t device_interrupt_count(uint8_t vector, uint32_t slot);
  * @details Always in xAPIC mode. In x2APIC mode only under a hypervisor: on bare metal, a message or an I/O APIC line
  *          reaches an x2APIC through interrupt remapping alone (Intel SDM vol. 3, 325384-093US, §13.12.6 and
  *          §13.12.7), which this kernel does not program (#108), as Linux states too (try_to_enable_x2apic,
- *          arch/x86/kernel/apic/apic.c).
+ *          arch/x86/kernel/apic/apic.c). It holds before the local APICs are initialised, from the mode they will run
+ *          in (apic_runs_x2apic_mode).
  *
  * @return true when a device's interrupt may be aimed at a core.
  */

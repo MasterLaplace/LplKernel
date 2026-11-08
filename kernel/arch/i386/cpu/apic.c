@@ -14,18 +14,24 @@ extern Serial_t com1;
 static uint32_t g_apic_mmio_base = 0u;
 static bool g_x2apic_active = false;
 
+bool apic_runs_x2apic_mode(void)
+{
+    uint32_t eax = 0u;
+    uint32_t ebx = 0u;
+    uint32_t ecx = 0u;
+    uint32_t edx = 0u;
+
+    asmutils_cpuid(1u, 0u, &eax, &ebx, &ecx, &edx);
+    return (ecx & CPUID_FEAT_ECX_X2APIC) != 0u;
+}
+
 bool apic_initialize_on_cpu(uint32_t mmio_virtual_base)
 {
-    uint32_t eax, ebx, ecx, edx;
-
     g_apic_mmio_base = mmio_virtual_base;
-
-    asmutils_cpuid(1, 0, &eax, &ebx, &ecx, &edx);
-    bool x2apic_supported = (ecx & CPUID_FEAT_ECX_X2APIC) != 0;
 
     uint64_t apic_base = asmutils_read_model_specific_register(IA32_APIC_BASE_MSR);
 
-    if (x2apic_supported)
+    if (apic_runs_x2apic_mode())
     {
         apic_base |= IA32_APIC_BASE_X2APIC_MODE_BIT | IA32_APIC_BASE_ENABLE_BIT;
         asmutils_write_model_specific_register(IA32_APIC_BASE_MSR, apic_base);
