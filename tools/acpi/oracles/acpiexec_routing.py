@@ -251,6 +251,8 @@ def self_test():
          (16, True, False)),
         ("IRQ 0 in _CRS, never listed", irq(1, 0x18), irq(0x0003, 0x18), None),
         ("IRQ 5 without its information byte in both", irq(1 << 5), irq(1 << 5), (5, False, False)),
+        ("IRQ 9 level active-low exclusive in _PRS", irq(1 << 9, 0x08), irq(1 << 9, 0x08), (9, True, True)),
+        ("IRQ 9 level active-high shared in _PRS", irq(1 << 9, 0x10), irq(1 << 9, 0x10), (9, True, False)),
         ("a _CRS that runs past its bytes", bytes([0x89, 0x10, 0x00, 0x09]), extended(0x09, 16), None),
     ]
     failures = 0
