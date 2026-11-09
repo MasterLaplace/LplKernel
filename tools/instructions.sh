@@ -33,6 +33,8 @@ boots alone as a copy named kernel/lpl.kernel: the path it was given does not mo
                   ACPI corpus, which tools/acpi/corpus.sh module <machine> writes, is found by its .acpi
                   suffix
   --machine NAME  QEMU's machine, such as q35 (default: QEMU's own, pc)
+  --cpu NAME      QEMU's processor model, such as max, whose XSAVEOPT a context switch takes
+                  (default: QEMU's own, qemu32, which has no XSAVE)
   --cdrom ISO     boot ISO through GRUB instead of <kernel> alone: a client gets its display and its
                   cartridge only that way. <kernel> is still the image the ISO holds, which names
                   the functions; GRUB passes no --append. The BIOS that reads the ISO for GRUB
@@ -43,7 +45,7 @@ boots alone as a copy named kernel/lpl.kernel: the path it was given does not mo
   --keep DIR      keep the serial log and the raw counts in DIR
   --budget FILE   check the counts against FILE, which records a window and the counts it held
 
-A budget FILE holds key=value lines: from, to, inside, times, skip, machine, append and module give
+A budget FILE holds key=value lines: from, to, inside, times, skip, machine, cpu, append and module give
 the window, unless the command line does, append being the boot line, such as the lpl.test= that picks
 the tests run before a window inside one, and module a path from the repository's root;
 instructions and accesses (loads and stores) record the counts;
@@ -71,6 +73,7 @@ until_text="# Totals:"
 top=25
 append=""
 machine=""
+cpu=""
 timeout_seconds=1800
 times=""
 skip=""
@@ -93,6 +96,7 @@ while [ $# -gt 0 ]; do
         --append) append="${2:?}"; shift 2 ;;
         --module) module="${2:?}"; shift 2 ;;
         --machine) machine="${2:?}"; shift 2 ;;
+        --cpu) cpu="${2:?}"; shift 2 ;;
         --cdrom) cdrom="${2:?}"; shift 2 ;;
         --timeout) timeout_seconds="${2:?}"; shift 2 ;;
         --keep) keep="${2:?}"; shift 2 ;;
@@ -120,6 +124,7 @@ if [ -n "$budget" ]; then
             skip) [ -n "$skip" ] || skip="$value" ;;
             module) [ -n "$module" ] || module="$root/$value" ;;
             machine) [ -n "$machine" ] || machine="$value" ;;
+            cpu) [ -n "$cpu" ] || cpu="$value" ;;
             append) [ -n "$append" ] || append="$value" ;;
             instructions) recorded_instructions="$value" ;;
             accesses) recorded_accesses="$value" ;;
@@ -221,6 +226,7 @@ qemu_command=(qemu-system-i386 "${boot[@]}" -smp 1 -m 512 -display none -no-rebo
               -serial "file:$serial" -icount shift=0,sleep=off -plugin "$plugin,$plugin_args")
 [ -z "$append" ] || qemu_command+=(-append "$append")
 [ -z "$machine" ] || qemu_command+=(-machine "$machine")
+[ -z "$cpu" ] || qemu_command+=(-cpu "$cpu")
 (cd "$work" && exec "${qemu_command[@]}") &
 qemu_pid=$!
 
