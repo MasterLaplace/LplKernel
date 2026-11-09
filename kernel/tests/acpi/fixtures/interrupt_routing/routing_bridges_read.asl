@@ -3,7 +3,8 @@
 
 /**
  * @brief Two root bridges, and what reading the bridges below them leaves unevaluated. Below PCI0, RP01 (1C.0) routes
- *        INTA of device 0 on the bus below it to GSI 16, and ENDP below it, whose _ADR counts in CNTA, holds no _PRT;
+ *        INTA of device 0 on the bus below it to GSI 16, and ENDP below it, whose _ADR counts in CNTA, holds no _PRT,
+ *        nor any Device below it but TZD0, in its ThermalZone TZ10;
  *        HST0, 00.0 with a _HID that counts in CNTH, holds none either, nor GRA0 and GRB0, which both name 02.0 and
  *        count their _STA in CNTG. Of TBLA and TBLB, which both name 03.0, only TBLA holds a _PRT, which routes GSI
  *        17, but it has no child: TBLB, enabled without a _HID, stands for the bridge. Nothing below PCI1 holds a
@@ -40,6 +41,13 @@ DefinitionBlock ("", "DSDT", 2, "LPLTST", "MADEUPML", 0)
                     {
                         CNTA++
                         Return (Zero)
+                    }
+                }
+                ThermalZone (TZ10)
+                {
+                    Device (TZD0) __EXPECT__(3141)
+                    {
+                        Name (_PRT, Package (0x00) {})
                     }
                 }
             }

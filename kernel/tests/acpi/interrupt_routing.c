@@ -439,8 +439,8 @@ KERNEL_TEST(the_bridges_below_are_read_only_where_a_table_lies_below)
                           routing_test_table.count == 1u && routing_test_table.bridges_below == 1u,
                       "RP01 alone is published, and routes GSI 16");
     kernel_test_check(test, routing_test_integer("\\CNTA") == 0u,
-                      "ENDP, the one child of RP01, holds no _PRT: RP01's children are not read, ENDP's _ADR never "
-                      "runs");
+                      "ENDP, the one Device child of RP01, holds no _PRT, and TZD0's lies in RP01's ThermalZone: "
+                      "RP01's children are not read, ENDP's _ADR never runs");
     kernel_test_check(test, routing_test_integer("\\CNTB") == 0u,
                       "nothing below PCI1 holds a _PRT: its children are not read, EP10's _ADR never runs");
     kernel_test_check(test, routing_test_integer("\\CNTG") == 0u && routing_test_table.addresses_shared == 2u,
