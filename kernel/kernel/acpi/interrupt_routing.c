@@ -703,22 +703,23 @@ static bool routing_holds_a_table(const RoutingLoad_t *load, uint32_t device)
 {
     const uint32_t name =
         advanced_configuration_and_power_interface_machine_language_name_segment((const uint8_t *) "_PRT", 0u);
-    uint32_t node = routing_node(load, device)->first_child;
+    const RoutingNode_t *nodes = load->space.nodes;
+    uint32_t node = nodes[device].first_child;
 
     while (node != 0u)
     {
-        const RoutingNode_t *current = routing_node(load, node);
+        const RoutingNode_t *current = &nodes[node];
 
-        if (current->name == name && routing_node(load, current->parent)->type == ROUTING_NODE(DEVICE))
+        if (current->name == name && nodes[current->parent].type == ROUTING_NODE(DEVICE))
             return true;
         if (current->first_child != 0u)
-        {
             node = current->first_child;
-            continue;
+        else
+        {
+            while (node != device && nodes[node].next_sibling == 0u)
+                node = nodes[node].parent;
+            node = (node == device) ? 0u : nodes[node].next_sibling;
         }
-        while (node != device && routing_node(load, node)->next_sibling == 0u)
-            node = routing_node(load, node)->parent;
-        node = (node == device) ? 0u : routing_node(load, node)->next_sibling;
     }
     return false;
 }

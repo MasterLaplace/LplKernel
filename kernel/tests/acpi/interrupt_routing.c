@@ -454,6 +454,8 @@ KERNEL_TEST(the_bridges_below_are_read_only_where_a_table_lies_below)
                       routing_test_routes_below((const uint32_t[]){0x001C0000u}, 1u, 0u, 0u, 16u) &&
                           routing_test_table.count == 1u && routing_test_table.bridges_below == 1u,
                       "RP01 alone is published, and routes GSI 16");
+    kernel_test_check(test, routing_test_integer("\\CNTR") == 0u,
+                      "RP01, alone to name 1C.0, is not scored, though it has a child: its _STA never runs");
     kernel_test_check(test, routing_test_integer("\\CNTA") == 0u,
                       "ENDP, the one Device child of RP01, holds no _PRT, and TZD0's lies in RP01's ThermalZone: "
                       "RP01's children are not read, ENDP's _ADR never runs");

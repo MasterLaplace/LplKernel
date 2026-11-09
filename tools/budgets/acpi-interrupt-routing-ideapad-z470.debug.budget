@@ -1,16 +1,16 @@
 # Window W5 of the ACPI specification (§7.4) on a recorded machine: the publication of the routes of the PCI interrupt
-# pins of the Lenovo IdeaPad Z470, a revision-2 Intel client, in the APIC model, every root bridge's _PRT and the links
-# it names read (§3.11), inside the ring-0 corpus test the_boot_module_machine_loads, on a debug server kernel
-# (./build.sh --server). The boot publishes q35's own routes first, hence skip=1. tools/acpi/corpus.sh module
-# 'Notebook/Lenovo/IdeaPad/IdeaPad Z470/C7F3CC0C50BF' writes the module. Checked by tools/instructions.sh --budget
-# tools/budgets/acpi-interrupt-routing-ideapad-z470.debug.budget kernel/lpl.kernel; a change that moves the count
-# records the new one.
+# pins of the Lenovo IdeaPad Z470, a revision-2 Intel client, in the APIC model, every root bridge's _PRT, those of the
+# 13 bridges below it and the links they name read (§3.11), inside the ring-0 corpus test the_boot_module_machine_loads,
+# on a debug server kernel (./build.sh --server). The boot publishes q35's own routes first, hence skip=1.
+# tools/acpi/corpus.sh module 'Notebook/Lenovo/IdeaPad/IdeaPad Z470/C7F3CC0C50BF' writes the module. Checked by
+# tools/instructions.sh --budget tools/budgets/acpi-interrupt-routing-ideapad-z470.debug.budget kernel/lpl.kernel; a
+# change that moves the count records the new one.
 inside=advanced_configuration_and_power_interface_interrupt_routing_publish
 skip=1
 times=1
 machine=q35
 append=lpl.test=advanced_configuration_and_power_interface_corpus.the_boot_module_machine_loads
 module=build/acpi-corpus/modules/Notebook_Lenovo_IdeaPad_IdeaPad_Z470_C7F3CC0C50BF.acpi
-instructions=242190
-accesses=122534
+instructions=533195
+accesses=250213
 tolerance=1
