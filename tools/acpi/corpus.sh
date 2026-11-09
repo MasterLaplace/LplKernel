@@ -78,9 +78,11 @@ pinned commit into build/acpi-corpus/, never committed and never put in an image
          evaluation it was given is counted apart
   routing  initialises each machine of a list with `test-acpi --loaded`, its presets given, then compares the
          PCI interrupt routes it publishes with those tools/acpi/oracles/acpiexec_routing.py works out apart from
-         the kernel's code, in the sandbox of tools/acpi/sandbox.sh: the root bridges and their _PRT entries from
-         what acpiexec evaluates once told the APIC model, the links they name decoded from their _PRS and _CRS,
-         given the tables the initialisation ended with and the same presets (specification §3.11)
+         the kernel's code, in the sandbox of tools/acpi/sandbox.sh: the root bridges, the bridges below them and
+         their _PRT entries from what acpiexec evaluates once told the APIC model, the links they name decoded from
+         their _PRS and _CRS, given the tables the initialisation ended with and the same presets (specification
+         §3.11); the routes of a bridge tools/acpi/lists/routing-decided.list names are left out, as the section
+         it gives decides, and one it names that publishes none fails the run
   slack  initialises each machine of a list with `test-acpi --loaded`, its presets given; then
          tools/acpi/oracles/acpiexec_slack.py has acpiexec evaluate the needs path a host can ask it for, in the
          order of §3.8, on the tables the initialisation ended with, once as acpiexec runs and once in its
@@ -440,9 +442,13 @@ initialize_check() {
     done
     echo
     echo -n "# PCI interrupt routing of"
-    for key in bridges bridges_absent bridges_failed bridges_unrouted tables_failed entries entries_malformed \
-        entries_repaired entries_dropped links links_unrouted links_failed links_dropped routes; do
+    for key in bridges bridges_absent bridges_failed bridges_unrouted bridges_unwalked bridges_below \
+        bridges_below_dropped addresses_shared tables_failed entries entries_malformed entries_repaired entries_dropped \
+        links links_unrouted links_failed links_dropped routes; do
         echo -n " $key=$(grep '^aml prt model=' <<<"$counts" | grep -o " $key=[0-9]*" | cut -d= -f2 | paste -sd+ | bc)"
+    done
+    for key in children_peak depth_peak; do
+        echo -n " $key=$(grep '^aml prt model=' <<<"$counts" | grep -o " $key=[0-9]*" | cut -d= -f2 | sort -n | tail -1)"
     done
     echo
     echo "# PCI interrupt routing, machines per model:" \
@@ -807,18 +813,39 @@ idle_check() {
     [[ "$agree" -eq $((number - stopped)) ]]
 }
 
+# Prints, one per line, the section, the bridge and the machine of each line of tools/acpi/lists/routing-decided.list
+# but its comments.
+routing_decided() {
+    grep -v '^#' "$ROOT/tools/acpi/lists/routing-decided.list" | grep -v '^$' || true
+}
+
 # Compares the PCI interrupt routes each machine of the list $1 publishes with those
 # tools/acpi/oracles/acpiexec_routing.py works out apart from the kernel's code, run in the sandbox, from what acpiexec
-# evaluates on the tables the initialisation ended with, told the APIC model (specification §3.11).
+# evaluates on the tables the initialisation ended with, told the APIC model (specification §3.11). The routes of a
+# bridge tools/acpi/lists/routing-decided.list names are left out, and one it names that publishes none fails the run.
 routing_check() {
     [[ -x "$ACPICA_BIN/acpiexec" ]] || { echo "routing: no acpiexec, run fetch acpica first" >&2; exit 1; }
     (cd "$ROOT" && xmake build -q test-acpi)
-    local number=0 agree=0 none=0 routes=0 subject ours theirs tables
-    ours="$(mktemp)" theirs="$(mktemp)" tables="$(mktemp -d)"
+    local number=0 agree=0 none=0 routes=0 decided=0 stale=0 subject ours theirs tables section bridge machine kept
+    local -A decided_bridges=()
+    while read -r section bridge machine; do
+        decided_bridges["$machine"]+="$bridge "
+    done < <(routing_decided)
+    ours="$(mktemp)" theirs="$(mktemp)" tables="$(mktemp -d)" kept="$(mktemp)"
     while IFS= read -r subject; do
         number=$((number + 1))
         rm -rf "${tables:?}"/*
         "$HARNESS" --loaded "$LINUXHW/$subject.bin" "$PRESETS" "$tables" 2>&1 | grep -E '^aml route ' >"$ours" || true
+        for bridge in ${decided_bridges["$subject"]:-}; do
+            grep -v -F -e "aml route $bridge:" -e "aml route $bridge/" "$ours" >"$kept" || true
+            if [[ "$(wc -l <"$kept")" -eq "$(wc -l <"$ours")" ]]; then
+                echo "not ok $number $subject: tools/acpi/lists/routing-decided.list names $bridge, which publishes no" \
+                    "route"
+                stale=$((stale + 1))
+            fi
+            decided=$((decided + $(wc -l <"$ours") - $(wc -l <"$kept")))
+            cp "$kept" "$ours"
+        done
         cp "$PRESETS" "$tables/presets.txt"
         "$ROOT/tools/acpi/sandbox.sh" "$tables" /usr/bin/python3 -I "$ROOT/tools/acpi/oracles/acpiexec_routing.py" \
             "$ACPICA_BIN" "$tables/presets.txt" $(ls "$tables"/*.dat | sort) >"$theirs" 2>&1 || true
@@ -832,9 +859,10 @@ routing_check() {
             diff "$ours" "$theirs" | head -8 | sed 's/^/    # /' || true
         fi
     done < <(reports "$1")
-    rm -rf "$ours" "$theirs" "$tables"
-    echo "# routing: $agree of $number agree with acpiexec, $routes routes, $none publishing none on both sides"
-    [[ "$number" -gt 0 && "$agree" -eq "$number" ]]
+    rm -rf "$ours" "$theirs" "$tables" "$kept"
+    echo "# routing: $agree of $number agree with acpiexec, $routes routes, $none publishing none on both sides;" \
+        "$decided routes left out as tools/acpi/lists/routing-decided.list decides, $stale listed bridges publishing none"
+    [[ "$number" -gt 0 && "$agree" -eq "$number" && "$stale" -eq 0 ]]
 }
 
 # Prints, over the `aml run limits` lines of the runs $1, the times each limit of §6.1 was reached, summed, and the

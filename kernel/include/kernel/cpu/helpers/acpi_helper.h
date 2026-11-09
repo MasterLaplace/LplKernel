@@ -101,8 +101,8 @@ extern void write_acpi_machine_language_record(Serial_t *serial);
 extern void write_advanced_configuration_and_power_interface_processor_idle_record(Serial_t *serial);
 
 /**
- * @brief Writes one acpi.prt record: the interrupt model step 5 told firmware, what reading the root bridges' _PRT
- *        counted, the routes the boot published and their fold (§3.11).
+ * @brief Writes one acpi.prt record: the interrupt model step 5 told firmware, what reading the _PRT of the root
+ *        bridges and of the bridges below them counted, the routes the boot published and their fold (§3.11).
  *
  * @param serial The port the record goes to.
  */

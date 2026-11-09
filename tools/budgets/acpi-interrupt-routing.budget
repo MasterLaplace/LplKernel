@@ -1,11 +1,12 @@
 # Window W5 of the ACPI specification (§7.4): the publication of the routes of q35's PCI interrupt pins, every root
-# bridge's _PRT and the links it names read (§3.11), on a release server kernel (SMOKE_TESTS=0 ./build.sh --server). The
-# boot tells firmware the APIC model, so q35's _PRT names its eight GSIx links, whose _CRS and _PRS are data.
-# Checked by tools/instructions.sh --budget tools/budgets/acpi-interrupt-routing.budget kernel/lpl.kernel; a change that
-# moves the publication records the new counts.
+# bridge's _PRT and the links it names read, and no _ADR, since no Device below PCI0 holds a _PRT (§3.11), on a release
+# server kernel (SMOKE_TESTS=0 ./build.sh --server). The boot tells firmware the APIC model, so q35's _PRT names its
+# eight GSIx links, whose _CRS and _PRS are data. Checked by tools/instructions.sh --budget
+# tools/budgets/acpi-interrupt-routing.budget kernel/lpl.kernel; a change that moves the publication records the new
+# counts.
 inside=advanced_configuration_and_power_interface_interrupt_routing_publish
 times=1
 machine=q35
-instructions=354430
-accesses=186677
+instructions=356747
+accesses=188428
 tolerance=1

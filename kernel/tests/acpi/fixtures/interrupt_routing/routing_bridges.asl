@@ -7,8 +7,9 @@
  *        bridge in its _CID, has no _PRT. PCI2, which _CID names a host bridge as a String in a Package, on segment 1
  *        and the bus 2 its _BBN method gives, wires device 5's INTA to GSI 40; PCI5, functioning but not present by
  *        its _STA, device 6's to GSI 41. PCI6's _BBN and PCI7's _SEG fail, so their _PRT is not read; PCI9's _PRT is
- *        an Integer. BRG0, below PCI2, PCI3, a PCI Express root complex alone, and DEV2, whose _HID fails, are no
- *        root bridges, and their _PRT is not read.
+ *        an Integer. PCI3, a PCI Express root complex alone, and DEV2, whose _HID fails, are no root bridges, and
+ *        their _PRT is not read. BRG0, 05.0 below PCI2, is no root bridge either, but a bridge below one: it routes
+ *        device 0's INTA on the bus below it to GSI 41.
  */
 DefinitionBlock ("", "DSDT", 2, "LPLTST", "MADEUPML", 0)
 {

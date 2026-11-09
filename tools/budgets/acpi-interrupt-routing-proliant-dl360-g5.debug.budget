@@ -1,16 +1,17 @@
 # Window W5 of the ACPI specification (§7.4) on a recorded machine: the publication of the routes of the PCI interrupt
-# pins of the HP ProLiant DL360 G5, a server, in the APIC model, every root bridge's _PRT and the links it names read
-# (§3.11), inside the ring-0 corpus test the_boot_module_machine_loads, on a debug server kernel (./build.sh --server).
-# The boot publishes q35's own routes first, hence skip=1. tools/acpi/corpus.sh module
-# 'Server/Hewlett-Packard/ProLiant/ProLiant DL360 G5/A8DA802364DF' writes the module. Checked by tools/instructions.sh
-# --budget tools/budgets/acpi-interrupt-routing-proliant-dl360-g5.debug.budget kernel/lpl.kernel; a change that moves
-# the count records the new one.
+# pins of the HP ProLiant DL360 G5, a server, in the APIC model, every root bridge's _PRT, the 9 _PRT of the 11 bridges
+# below it, three deep, and the links they name read (§3.11), inside the ring-0 corpus test
+# the_boot_module_machine_loads, on a debug server kernel (./build.sh --server). The boot publishes q35's own routes
+# first, hence skip=1. tools/acpi/corpus.sh module 'Server/Hewlett-Packard/ProLiant/ProLiant DL360 G5/A8DA802364DF'
+# writes the module. Checked by tools/instructions.sh --budget
+# tools/budgets/acpi-interrupt-routing-proliant-dl360-g5.debug.budget kernel/lpl.kernel; a change that moves the count
+# records the new one.
 inside=advanced_configuration_and_power_interface_interrupt_routing_publish
 skip=1
 times=1
 machine=q35
 append=lpl.test=advanced_configuration_and_power_interface_corpus.the_boot_module_machine_loads
 module=build/acpi-corpus/modules/Server_Hewlett-Packard_ProLiant_ProLiant_DL360_G5_A8DA802364DF.acpi
-instructions=76835
-accesses=39195
+instructions=248420
+accesses=122973
 tolerance=1

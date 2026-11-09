@@ -1034,19 +1034,43 @@ static void harness_print_idle(AdvancedConfigurationAndPowerInterfaceMachineLang
 }
 
 /**
- * @brief Prints what reading the root bridges' _PRT counted, then each entry published, with the path of the Device
- *        its Source names, or `wired`: its interrupt and how it signals, or `none` when its link gives none.
+ * @brief Prints the bridges from a route's root bridge down to bridge @p bridge, each as `/<device>.<function>`.
+ */
+static void harness_print_bridges(uint16_t bridge)
+{
+    uint32_t addresses[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_INTERRUPT_ROUTING_MAX_DEPTH];
+    uint32_t depth = 0u;
+
+    for (uint16_t index = bridge;
+         index != 0u && depth < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_INTERRUPT_ROUTING_MAX_DEPTH;
+         index = harness_routing.below[index - 1u].above)
+        addresses[depth++] = harness_routing.below[index - 1u].address;
+    while (depth != 0u)
+    {
+        --depth;
+        printf("/%02X.%X", addresses[depth] >> 16, addresses[depth] & 0xFFFFu);
+    }
+}
+
+/**
+ * @brief Prints what reading the bridges' _PRT counted, then each entry published: its root bridge's segment and bus,
+ *        the bridges from there down to the one whose _PRT holds it, its device and pin, then its interrupt and how it
+ *        signals, or `none` when its link gives none, and the path of the Device its Source names, or `wired`.
  */
 static void harness_print_routing(AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load)
 {
     char path[HARNESS_PATH_BYTES];
 
-    printf("aml prt model=%s bridges=%u bridges_absent=%u bridges_failed=%u bridges_unrouted=%u tables_failed=%u "
-           "entries=%u entries_malformed=%u entries_repaired=%u entries_dropped=%u links=%u links_unrouted=%u "
-           "links_failed=%u links_dropped=%u routes=%u fold=0x%08X\n",
+    printf("aml prt model=%s bridges=%u bridges_absent=%u bridges_failed=%u bridges_unrouted=%u bridges_unwalked=%u "
+           "bridges_below=%u bridges_below_dropped=%u addresses_shared=%u children_peak=%u depth_peak=%u "
+           "tables_failed=%u entries=%u entries_malformed=%u "
+           "entries_repaired=%u entries_dropped=%u links=%u links_unrouted=%u links_failed=%u links_dropped=%u "
+           "routes=%u fold=0x%08X\n",
            advanced_configuration_and_power_interface_interrupt_routing_model_name(harness_routing.model),
            harness_routing.bridges, harness_routing.bridges_absent, harness_routing.bridges_failed,
-           harness_routing.bridges_unrouted, harness_routing.tables_failed, harness_routing.entries,
+           harness_routing.bridges_unrouted, harness_routing.bridges_unwalked, harness_routing.bridges_below,
+           harness_routing.bridges_below_dropped, harness_routing.addresses_shared, harness_routing.children_peak,
+           harness_routing.depth_peak, harness_routing.tables_failed, harness_routing.entries,
            harness_routing.entries_malformed, harness_routing.entries_repaired, harness_routing.entries_dropped,
            harness_routing.links, harness_routing.links_unrouted, harness_routing.links_failed,
            harness_routing.links_dropped, harness_routing.count,
@@ -1060,13 +1084,13 @@ static void harness_print_routing(AdvancedConfigurationAndPowerInterfaceMachineL
         else if (advanced_configuration_and_power_interface_machine_language_namespace_path(&load->space, route->link,
                                                                                             path, sizeof(path)) == 0u)
             memcpy(path, "too_deep", sizeof("too_deep"));
+        printf("aml route %04X:%02X", route->segment, route->bus);
+        harness_print_bridges(route->bridge);
         if (route->interrupt == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_INTERRUPT_ROUTING_NO_INTERRUPT)
-            printf("aml route %04X:%02X:%02X.%c none %s\n", route->segment, route->bus, route->device, 'A' + route->pin,
-                   path);
+            printf(":%02X.%c none %s\n", route->device, 'A' + route->pin, path);
         else
-            printf("aml route %04X:%02X:%02X.%c interrupt=%u %s %s %s\n", route->segment, route->bus, route->device,
-                   'A' + route->pin, route->interrupt, route->level ? "level" : "edge",
-                   route->active_low ? "low" : "high", path);
+            printf(":%02X.%c interrupt=%u %s %s %s\n", route->device, 'A' + route->pin, route->interrupt,
+                   route->level ? "level" : "edge", route->active_low ? "low" : "high", path);
     }
 }
 
