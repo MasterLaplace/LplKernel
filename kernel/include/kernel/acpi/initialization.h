@@ -239,7 +239,7 @@ extern const char *advanced_configuration_and_power_interface_platform_capabilit
  * @brief Loads this machine's definition blocks at boot, into the boot's load, with the caps of the
  *        build's profile, and initialises the namespace they build (§3.8 steps 1 to 9), its processor
  *        objects bound to the boot's MADT, after the boot's switch to ACPI mode; then publishes the routes of
- *        the PCI interrupt pins of its root buses (§3.11).
+ *        the PCI interrupt pins of its root buses and of the buses below the bridges it describes (§3.11).
  *
  * @param monitor_wait    The processors implement MONITOR/MWAIT.
  * @param interrupt_model Where the kernel sends PCI interrupts: an
