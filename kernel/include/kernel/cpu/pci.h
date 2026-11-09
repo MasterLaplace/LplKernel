@@ -57,6 +57,9 @@
 /** Header type: bit 7 marks a multi-function device, low 7 bits select layout. */
 #define PERIPHERAL_COMPONENT_INTERCONNECT_HEADER_TYPE_MULTIFUNCTION_MASK 0x80u
 #define PERIPHERAL_COMPONENT_INTERCONNECT_HEADER_TYPE_LAYOUT_MASK        0x7Fu
+#define PERIPHERAL_COMPONENT_INTERCONNECT_HEADER_LAYOUT_BRIDGE           0x01u /**< Header layout 1: a PCI-to-PCI bridge. */
+#define PERIPHERAL_COMPONENT_INTERCONNECT_HEADER_LAYOUT_CARDBUS          0x02u /**< Header layout 2: a CardBus bridge. */
+#define PERIPHERAL_COMPONENT_INTERCONNECT_BUSES                          256u  /**< Bus numbers of a segment. */
 
 /**
  * @brief Read a 32-bit configuration register (mechanism #1).
@@ -148,7 +151,8 @@ typedef struct PeripheralComponentInterconnectDevice {
 
 /**
  * @brief Brute-force enumerate every bus/device/function and record present
- *        devices (up to PERIPHERAL_COMPONENT_INTERCONNECT_MAX_DEVICES).
+ *        devices (up to PERIPHERAL_COMPONENT_INTERCONNECT_MAX_DEVICES), and the
+ *        bridge that leads to each bus (peripheral_component_interconnect_find_bridge_to).
  *
  * Honours the multi-function header-type bit so single-function devices are not
  * probed on functions 1-7. Replaces the previous device table on each call.
@@ -164,6 +168,18 @@ extern uint32_t peripheral_component_interconnect_get_device_count(void);
  * @brief Return a recorded device by index, or NULL when out of range.
  */
 extern const PeripheralComponentInterconnectDevice_t *peripheral_component_interconnect_get_device(uint32_t index);
+
+/**
+ * @brief Finds the bridge whose secondary bus is @p bus, as the last scan found it: the first function of header layout
+ *        1 or 2 whose Secondary Bus Number register names @p bus, whether or not the table of functions had room for
+ *        it.
+ *
+ * @param bus        A bus number.
+ * @param out_bridge Receives the bridge, its identity and classification read from its configuration space.
+ * @return false when no bridge leads to @p bus: a root bus, bus 0 among them.
+ */
+extern bool peripheral_component_interconnect_find_bridge_to(uint8_t bus,
+                                                             PeripheralComponentInterconnectDevice_t *out_bridge);
 
 /**
  * @brief Finds the first enumerated device of a given class and subclass.

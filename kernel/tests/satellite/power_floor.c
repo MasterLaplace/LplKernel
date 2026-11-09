@@ -178,8 +178,6 @@ static void power_floor_check_the_line_follows_its_slot(KernelTest_t *test,
  */
 static void power_floor_check_capture_line(KernelTest_t *test, const PeripheralComponentInterconnectDevice_t *device)
 {
-    const AdvancedConfigurationAndPowerInterfaceInterruptRoutingTable_t *routing =
-        advanced_configuration_and_power_interface_interrupt_routing();
     const uint8_t pin = peripheral_component_interconnect_config_read_byte(device->bus, device->device,
                                                                            device->function, POWER_FLOOR_INTERRUPT_PIN);
     const uint8_t vector = hardware_abstraction_layer_audio_capture_interrupt_vector();
@@ -193,10 +191,9 @@ static void power_floor_check_capture_line(KernelTest_t *test, const PeripheralC
     uint32_t refused = 0u;
     uint32_t elsewhere = 0u;
 
-    kernel_test_check(test,
-                      pin != 0u && advanced_configuration_and_power_interface_interrupt_routing_find(
-                                       routing, 0u, device->bus, device->device, (uint8_t) (pin - 1u), &route),
-                      "the published routes name the controller's pin");
+    kernel_test_check(
+        test, pin != 0u && input_output_advanced_programmable_interrupt_controller_find_device_route(device, &route),
+        "the published routes name the controller's pin, behind its bridges or on its root bus");
     kernel_test_check(test, vector != 0u && line == route.interrupt,
                       "without MSI, it comes on the I/O APIC line its pin's route gives");
     kernel_test_check(
@@ -426,7 +423,9 @@ KERNEL_TEST(the_capture_stream_delivers_buffers)
  * @details QEMU's intel-hda offers MSI unless told `msi=off`: `qemu-system-i386 -machine q35 -smp 2 -audiodev
  *          none,id=lplaudio -device intel-hda -device hda-duplex,audiodev=lplaudio -kernel kernel/lpl.kernel` routes a
  *          message and `-device intel-hda,msi=off` the I/O APIC line, on a satellite kernel (`./build.sh
- *          --satellite`); `-cpu max,-hypervisor` keeps xAPIC mode and changes neither. The 8259 line is left to
+ *          --satellite`); behind a bridge, `-device pcie-root-port,id=lplport,chassis=1 -device
+ *          intel-hda,msi=off,bus=lplport` the line its pin swizzles to; `-cpu max,-hypervisor` keeps xAPIC mode and
+ *          changes none of them. The 8259 line is left to
  *          x2APIC mode handed over by firmware on bare metal, which no device interrupt reaches and QEMU's firmware
  *          never hands over.
  */

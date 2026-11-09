@@ -28,12 +28,16 @@
 #define ROUTING_FUNCTIONING    0x08u   /**< _STA bit 3: the device works. */
 #define ROUTING_ENABLED        0x02u   /**< _STA bit 1: the device is enabled and decodes its resources. */
 #define ROUTING_HOST_BRIDGE                                                                                            \
-    0x030AD041u                          /**< EisaId ("PNP0A03"): a PCI host bridge, which a PCI Express root          \
-                                              complex (PNP0A08) names in its _CID. */
-#define ROUTING_LINK         0x0F0CD041u /**< EisaId ("PNP0C0F"): a PCI interrupt link. */
-#define ROUTING_NO_INTERRUPT ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_INTERRUPT_ROUTING_NO_INTERRUPT
-#define ROUTING_IRQ_SHORT    2u /**< Bytes of an IRQ descriptor without its information byte (ACPI 6.6 §6.4.2.1). */
-#define ROUTING_IRQ_FULL     3u /**< With it. */
+    0x030AD041u                             /**< EisaId ("PNP0A03"): a PCI host bridge, which a PCI Express root       \
+                                                 complex (PNP0A08) names in its _CID. */
+#define ROUTING_LINK            0x0F0CD041u /**< EisaId ("PNP0C0F"): a PCI interrupt link. */
+#define ROUTING_NO_INTERRUPT    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_INTERRUPT_ROUTING_NO_INTERRUPT
+#define ROUTING_NO_BRIDGE       0xFFFFu /**< No bridge is published for a hop. */
+#define ROUTING_UNUSABLE_SOURCE ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_INTERRUPT_ROUTING_UNUSABLE_SOURCE
+#define ROUTING_DROPPED_ENTRIES ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_INTERRUPT_ROUTING_DROPPED_ENTRIES
+#define ROUTING_DROPPED_BRIDGES ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_INTERRUPT_ROUTING_DROPPED_BRIDGES
+#define ROUTING_IRQ_SHORT       2u /**< Bytes of an IRQ descriptor without its information byte (ACPI 6.6 §6.4.2.1). */
+#define ROUTING_IRQ_FULL        3u /**< With it. */
 #define ROUTING_EXTENDED_SHORTEST                                                                                      \
     6u /**< Bytes of the shortest Extended Interrupt descriptor: flags, count and one interrupt (§6.4.3.6). */
 #define ROUTING_EXTENDED_TABLE 2u          /**< Where its table of interrupts starts. */
@@ -49,6 +53,7 @@ typedef AdvancedConfigurationAndPowerInterfaceInitializationMachine_t RoutingMac
 typedef AdvancedConfigurationAndPowerInterfaceInterruptRoutingTable_t RoutingTable_t;
 typedef AdvancedConfigurationAndPowerInterfaceInterruptRoute_t Route_t;
 typedef AdvancedConfigurationAndPowerInterfaceInterruptRoutingBridge_t RoutingBridge_t;
+typedef AdvancedConfigurationAndPowerInterfaceInterruptRoutingHop_t RoutingHop_t;
 typedef AdvancedConfigurationAndPowerInterfaceMachineLanguageNode_t RoutingNode_t;
 typedef AdvancedConfigurationAndPowerInterfaceResourceInterrupt_t RoutingInterrupt_t;
 typedef AdvancedConfigurationAndPowerInterfaceResource_t RoutingResource_t;
@@ -490,13 +495,23 @@ static bool routing_read_entry(RoutingLoad_t *load, RoutingCounts_t *counts, Rou
     if (!shaped || routing_integer(load, entry, 0u, &address) != ROUTING_OK ||
         routing_integer(load, entry, 1u, &pin) != ROUTING_OK ||
         (swapped && routing_integer(load, entry, 2u, &index) != ROUTING_OK) ||
-        !routing_source(load, entry, swapped ? 3u : 2u, &link) ||
         ((address >> ROUTING_DEVICE_SHIFT) & ROUTING_DEVICE_MASK) >= ROUTING_DEVICES || pin >= ROUTING_PINS)
     {
         ++table->entries_malformed;
         return false;
     }
     table->entries_repaired += swapped ? 1u : 0u;
+    out_route->device = (uint8_t) ((address >> ROUTING_DEVICE_SHIFT) & ROUTING_DEVICE_MASK);
+    out_route->pin = (uint8_t) pin;
+    if (!routing_source(load, entry, swapped ? 3u : 2u, &link))
+    {
+        ++table->entries_malformed;
+        out_route->interrupt = ROUTING_NO_INTERRUPT;
+        out_route->link = ROUTING_UNUSABLE_SOURCE;
+        out_route->level = 0u;
+        out_route->active_low = 0u;
+        return true;
+    }
     if (link != 0u)
     {
         ++table->links;
@@ -513,8 +528,6 @@ static bool routing_read_entry(RoutingLoad_t *load, RoutingCounts_t *counts, Rou
         interrupt.number = (uint32_t) index;
     out_route->interrupt = interrupt.number;
     out_route->link = link;
-    out_route->device = (uint8_t) ((address >> ROUTING_DEVICE_SHIFT) & ROUTING_DEVICE_MASK);
-    out_route->pin = (uint8_t) pin;
     out_route->level = interrupt.level ? 1u : 0u;
     out_route->active_low = interrupt.active_low ? 1u : 0u;
     return true;
@@ -547,6 +560,8 @@ static void routing_read_table(RoutingLoad_t *load, RoutingCounts_t *counts, Rou
         if (table->count == ROUTING_MAX_ROUTES)
         {
             ++table->entries_dropped;
+            if (bridge != 0u)
+                table->below[bridge - 1u].dropped |= ROUTING_DROPPED_ENTRIES;
             continue;
         }
         if (advanced_configuration_and_power_interface_machine_language_package_element(load, &routes, element,
@@ -771,6 +786,19 @@ static uint32_t routing_first_holder(const RoutingLoad_t *load, uint32_t first, 
 }
 
 /**
+ * @brief Counts a bridge left out right below bridge @p above, a root bridge for 0, and marks that one: a lookup
+ * through a bridge that none stands for below it can no longer tell one without a _PRT from one left out.
+ */
+static void routing_drop_a_bridge(RoutingTable_t *table, uint16_t above)
+{
+    ++table->bridges_below_dropped;
+    if (above == 0u)
+        table->roots_dropped |= ROUTING_DROPPED_BRIDGES;
+    else
+        table->below[above - 1u].dropped |= ROUTING_DROPPED_BRIDGES;
+}
+
+/**
  * @brief Publishes the bridges right below @p parent, the root bridge on segment @p segment and bus @p bus when
  *        @p above is 0, bridge @p above below it otherwise, @p depth bridges below the root bridge, then reads each
  *        one's _PRT and the bridges below it, depth first.
@@ -801,7 +829,7 @@ static void routing_read_bridges_below(RoutingLoad_t *load, RoutingCounts_t *cou
             !routing_function_address(load, counts, child, &address))
             continue;
         if (count == ROUTING_MAX_CHILDREN)
-            ++table->bridges_below_dropped;
+            routing_drop_a_bridge(table, above);
         else
             routing_children[count++] = (RoutingChild_t){.node = child, .address = address};
     }
@@ -827,7 +855,7 @@ static void routing_read_bridges_below(RoutingLoad_t *load, RoutingCounts_t *cou
             continue;
         if (depth > ROUTING_MAX_DEPTH || table->bridges_below == ROUTING_MAX_BRIDGES)
         {
-            ++table->bridges_below_dropped;
+            routing_drop_a_bridge(table, above);
             continue;
         }
         table->below[table->bridges_below++] = (RoutingBridge_t){.node = chosen,
@@ -878,6 +906,75 @@ static uint32_t routing_fold_bridges(uint32_t fold, const RoutingTable_t *table,
     return fold;
 }
 
+/**
+ * @brief The bridge published right below bridge @p above, 0 for the root bridge on segment @p segment and bus @p bus,
+ *        whose _ADR names the PCI function @p address, counted from 1; ROUTING_NO_BRIDGE when none is.
+ */
+static uint16_t routing_bridge_below(const RoutingTable_t *table, uint16_t segment, uint8_t bus, uint16_t above,
+                                     uint32_t address)
+{
+    for (uint32_t index = 0u; index < table->bridges_below; ++index)
+    {
+        const RoutingBridge_t *bridge = &table->below[index];
+
+        if (bridge->above == above && bridge->address == address && bridge->segment == segment && bridge->bus == bus)
+            return (uint16_t) (index + 1u);
+    }
+    return ROUTING_NO_BRIDGE;
+}
+
+/**
+ * @brief Writes into @p out_chain the bridge published for each of the @p hop_count hops @p hops names below the root
+ *        bridge on segment @p segment and bus @p bus, each the companion of its hop below the one above it, level 0
+ *        the root bridge itself, down to the first hop none stands for or the deepest a boot publishes.
+ *
+ * @return How many levels @p out_chain holds, 1 for the root bridge alone.
+ */
+static uint32_t routing_published_chain(const RoutingTable_t *table, uint16_t segment, uint8_t bus,
+                                        const RoutingHop_t *hops, uint32_t hop_count, uint16_t *out_chain)
+{
+    uint32_t level = 0u;
+
+    out_chain[0] = 0u;
+    while (level < hop_count && level < ROUTING_MAX_DEPTH)
+    {
+        const uint16_t bridge =
+            routing_bridge_below(table, segment, bus, out_chain[level],
+                                 ((uint32_t) hops[level].device << ROUTING_DEVICE_SHIFT) | hops[level].function);
+
+        if (bridge == ROUTING_NO_BRIDGE)
+            break;
+        out_chain[++level] = bridge;
+    }
+    return level + 1u;
+}
+
+/**
+ * @brief What the table left out of bridge @p bridge, or right below a root bridge for 0: ROUTING_DROPPED_* bits.
+ */
+static uint8_t routing_dropped(const RoutingTable_t *table, uint16_t bridge)
+{
+    return (bridge == 0u) ? table->roots_dropped : table->below[bridge - 1u].dropped;
+}
+
+/**
+ * @brief The first entry the _PRT of bridge @p bridge, 0 for the root bridge on segment @p segment and bus @p bus,
+ *        holds for pin @p pin of device @p device, or NULL.
+ */
+static const Route_t *routing_first_entry(const RoutingTable_t *table, uint16_t segment, uint8_t bus, uint16_t bridge,
+                                          uint8_t device, uint8_t pin)
+{
+    for (uint32_t index = 0u; index < table->count; ++index)
+    {
+        const Route_t *route = &table->routes[index];
+
+        if (route->bridge == bridge && route->segment == segment && route->bus == bus && route->device == device &&
+            route->pin == pin)
+            return route;
+    }
+    return NULL;
+}
+
 void advanced_configuration_and_power_interface_interrupt_routing_publish(RoutingLoad_t *load,
                                                                           const RoutingMachine_t *machine,
                                                                           RoutingCounts_t *initialization,
@@ -919,7 +1016,10 @@ void advanced_configuration_and_power_interface_interrupt_routing_publish(Routin
                 routing_read_table(load, initialization, out_table, &links, index, (uint16_t) segment, (uint8_t) bus,
                                    0u);
             if (root_count == ROUTING_MAX_ROOTS)
+            {
                 ++out_table->bridges_unwalked;
+                out_table->roots_dropped |= ROUTING_DROPPED_BRIDGES;
+            }
             else
                 roots[root_count++] =
                     (RoutingRoot_t){.node = index, .segment = (uint16_t) segment, .bus = (uint8_t) bus};
@@ -931,20 +1031,39 @@ void advanced_configuration_and_power_interface_interrupt_routing_publish(Routin
 }
 
 bool advanced_configuration_and_power_interface_interrupt_routing_find(const RoutingTable_t *table, uint16_t segment,
-                                                                       uint8_t bus, uint8_t device, uint8_t pin,
+                                                                       uint8_t bus, const RoutingHop_t *hops,
+                                                                       uint32_t hop_count, uint8_t device, uint8_t pin,
                                                                        Route_t *out_route)
 {
-    for (uint32_t index = 0u; index < table->count; ++index)
-    {
-        const Route_t *route = &table->routes[index];
+    uint16_t chain[ROUTING_MAX_DEPTH + 1u];
+    const uint32_t published = routing_published_chain(table, segment, bus, hops, hop_count, chain);
 
-        if (route->bridge != 0u || route->segment != segment || route->bus != bus || route->device != device ||
-            route->pin != pin)
-            continue;
-        *out_route = *route;
-        return route->interrupt != ROUTING_NO_INTERRUPT;
+    if (published <= hop_count && (routing_dropped(table, chain[published - 1u]) & ROUTING_DROPPED_BRIDGES) != 0u)
+        return false;
+    for (uint32_t level = hop_count;; --level)
+    {
+        const Route_t *route =
+            (level < published) ? routing_first_entry(table, segment, bus, chain[level], device, pin) : NULL;
+
+        if (route != NULL)
+        {
+            *out_route = *route;
+            return route->interrupt != ROUTING_NO_INTERRUPT;
+        }
+        if (level == 0u ||
+            (level < published && (routing_dropped(table, chain[level]) & ROUTING_DROPPED_ENTRIES) != 0u))
+            return false;
+
+        const RoutingHop_t *hop = &hops[level - 1u];
+
+        if (!hop->cardbus)
+            pin = (uint8_t) ((pin + device) % ROUTING_PINS);
+        else if (hop->pin == 0u || hop->pin > ROUTING_PINS)
+            return false;
+        else
+            pin = (uint8_t) (hop->pin - 1u);
+        device = hop->device;
     }
-    return false;
 }
 
 bool advanced_configuration_and_power_interface_interrupt_routing_leaves_the_8259(const RoutingTable_t *table)

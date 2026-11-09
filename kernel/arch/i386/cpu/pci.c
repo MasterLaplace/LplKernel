@@ -5,6 +5,7 @@
 #include <kernel/memory/vmm.h>
 
 #include <stddef.h>
+#include <string.h>
 
 /** Identity dword: vendor id | device id << 16. */
 #define PERIPHERAL_COMPONENT_INTERCONNECT_DWORD_IDENTITY 0x00u
@@ -78,22 +79,31 @@ static bool peripheral_component_interconnect_express_declared[PERIPHERAL_COMPON
 static PeripheralComponentInterconnectDevice_t
     peripheral_component_interconnect_devices[PERIPHERAL_COMPONENT_INTERCONNECT_MAX_DEVICES];
 
+/**
+ * @brief The bridge that leads to one bus, as a scan found it.
+ */
+typedef struct PeripheralComponentInterconnectBridgeLink {
+    uint8_t bus;      /**< The bridge's bus. */
+    uint8_t device;   /**< Its device. */
+    uint8_t function; /**< Its function. */
+    uint8_t found;    /**< 1 once a bridge names the bus as its secondary one. */
+} PeripheralComponentInterconnectBridgeLink_t;
+
+static PeripheralComponentInterconnectBridgeLink_t
+    peripheral_component_interconnect_bridge_links[PERIPHERAL_COMPONENT_INTERCONNECT_BUSES]; /**< Indexed by the
+                                                                                                secondary bus. */
+
 static uint32_t peripheral_component_interconnect_device_count = 0u;
 
-static void peripheral_component_interconnect_record_function(uint8_t bus, uint8_t device, uint8_t function)
+static void peripheral_component_interconnect_read_function(uint8_t bus, uint8_t device, uint8_t function,
+                                                            PeripheralComponentInterconnectDevice_t *entry)
 {
-    if (peripheral_component_interconnect_device_count >= PERIPHERAL_COMPONENT_INTERCONNECT_MAX_DEVICES)
-        return;
-
     uint32_t identity = peripheral_component_interconnect_config_read_dword(
         bus, device, function, PERIPHERAL_COMPONENT_INTERCONNECT_DWORD_IDENTITY);
     uint32_t classification = peripheral_component_interconnect_config_read_dword(
         bus, device, function, PERIPHERAL_COMPONENT_INTERCONNECT_DWORD_CLASSIFICATION);
     uint32_t header = peripheral_component_interconnect_config_read_dword(
         bus, device, function, PERIPHERAL_COMPONENT_INTERCONNECT_DWORD_HEADER);
-
-    PeripheralComponentInterconnectDevice_t *entry =
-        &peripheral_component_interconnect_devices[peripheral_component_interconnect_device_count];
 
     entry->bus = bus;
     entry->device = device;
@@ -105,8 +115,33 @@ static void peripheral_component_interconnect_record_function(uint8_t bus, uint8
     entry->subclass = (uint8_t) ((classification >> 16u) & 0xFFu);
     entry->class_code = (uint8_t) ((classification >> 24u) & 0xFFu);
     entry->header_type = (uint8_t) ((header >> 16u) & 0xFFu);
+}
 
-    ++peripheral_component_interconnect_device_count;
+static void peripheral_component_interconnect_record_function(const PeripheralComponentInterconnectDevice_t *found)
+{
+    if (peripheral_component_interconnect_device_count >= PERIPHERAL_COMPONENT_INTERCONNECT_MAX_DEVICES)
+        return;
+    peripheral_component_interconnect_devices[peripheral_component_interconnect_device_count++] = *found;
+}
+
+static void peripheral_component_interconnect_record_bridge(const PeripheralComponentInterconnectDevice_t *found)
+{
+    const uint8_t layout = found->header_type & PERIPHERAL_COMPONENT_INTERCONNECT_HEADER_TYPE_LAYOUT_MASK;
+
+    if (layout != PERIPHERAL_COMPONENT_INTERCONNECT_HEADER_LAYOUT_BRIDGE &&
+        layout != PERIPHERAL_COMPONENT_INTERCONNECT_HEADER_LAYOUT_CARDBUS)
+        return;
+
+    const uint8_t secondary = peripheral_component_interconnect_config_read_byte(
+        found->bus, found->device, found->function, PERIPHERAL_COMPONENT_INTERCONNECT_REGISTER_SECONDARY_BUS);
+    PeripheralComponentInterconnectBridgeLink_t *link = &peripheral_component_interconnect_bridge_links[secondary];
+
+    if (secondary == 0u || link->found != 0u)
+        return;
+    *link = (PeripheralComponentInterconnectBridgeLink_t){.bus = found->bus,
+                                                          .device = found->device,
+                                                          .function = found->function,
+                                                          .found = 1u};
 }
 
 /**
@@ -342,6 +377,7 @@ void peripheral_component_interconnect_config_write(uint8_t bus, uint8_t device,
 void peripheral_component_interconnect_scan(void)
 {
     peripheral_component_interconnect_device_count = 0u;
+    memset(peripheral_component_interconnect_bridge_links, 0, sizeof(peripheral_component_interconnect_bridge_links));
 
     for (uint16_t bus = 0u; bus < 256u; ++bus)
     {
@@ -365,7 +401,11 @@ void peripheral_component_interconnect_scan(void)
                 if (function_vendor == PERIPHERAL_COMPONENT_INTERCONNECT_INVALID_VENDOR_ID)
                     continue;
 
-                peripheral_component_interconnect_record_function(bus8, device, function);
+                PeripheralComponentInterconnectDevice_t found;
+
+                peripheral_component_interconnect_read_function(bus8, device, function, &found);
+                peripheral_component_interconnect_record_function(&found);
+                peripheral_component_interconnect_record_bridge(&found);
             }
         }
     }
@@ -432,6 +472,16 @@ bool peripheral_component_interconnect_memory_window_is_reachable(
     const PeripheralComponentInterconnectBaseAddressRegister_t *bar)
 {
     return !bar->is_io && (bar->base >> 32u) == 0u;
+}
+
+bool peripheral_component_interconnect_find_bridge_to(uint8_t bus, PeripheralComponentInterconnectDevice_t *out_bridge)
+{
+    const PeripheralComponentInterconnectBridgeLink_t *link = &peripheral_component_interconnect_bridge_links[bus];
+
+    if (link->found == 0u)
+        return false;
+    peripheral_component_interconnect_read_function(link->bus, link->device, link->function, out_bridge);
+    return true;
 }
 
 const PeripheralComponentInterconnectDevice_t *peripheral_component_interconnect_find_by_class(uint8_t class_code,

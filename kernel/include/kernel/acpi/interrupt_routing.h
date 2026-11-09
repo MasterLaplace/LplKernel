@@ -46,6 +46,13 @@
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_INTERRUPT_ROUTING_MAX_CHILDREN                                      \
     256u /**< Devices of one bridge whose _ADR names a PCI function compared to choose its bridges, one for each       \
               function of a bus (§6.1). */
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_INTERRUPT_ROUTING_DROPPED_ENTRIES                                   \
+    0x01u /**< Entries of a bridge's _PRT came once the table was full. */
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_INTERRUPT_ROUTING_DROPPED_BRIDGES                                   \
+    0x02u /**< A bridge right below one was left out, or not looked for. */
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_INTERRUPT_ROUTING_UNUSABLE_SOURCE                                   \
+    0xFFFFFFFFu /**< The link of an entry whose Source is neither an Integer nor a name that resolves to a Device: no  \
+                     node has that index. */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_INTERRUPT_ROUTING_NO_INTERRUPT                                      \
     0xFFFFFFFFu /**< The interrupt of an entry whose link gives none: a lookup that finds it first finds no route. */
 
@@ -57,7 +64,9 @@ typedef struct AdvancedConfigurationAndPowerInterfaceInterruptRoute {
                              APIC model, an ISA IRQ in the PIC model;
                              ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_INTERRUPT_ROUTING_NO_INTERRUPT when the entry
                              names a link that gives none. */
-    uint32_t link;      /**< The node of the Device the entry's Source names, or 0 for a pin wired to it. */
+    uint32_t link;      /**< The node of the Device the entry's Source names, 0 for a pin wired to it, or
+                             ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_INTERRUPT_ROUTING_UNUSABLE_SOURCE for a Source
+                             neither, published without an interrupt. */
     uint16_t segment;   /**< The root bridge's _SEG, 0 without one. */
     uint16_t bridge;    /**< The bridge below the root bridge whose _PRT holds the entry, counted from 1 in the table's
                              below; 0 for the root bridge's own _PRT, whose device sits on the root bus. */
@@ -80,7 +89,21 @@ typedef struct AdvancedConfigurationAndPowerInterfaceInterruptRoutingBridge {
     uint16_t above;   /**< The bridge it sits below, counted from 1 in the table's below; 0 when it sits right below
                            its root bridge, on the root bus. */
     uint8_t bus;      /**< Its root bridge's _BBN. */
+    uint8_t dropped;  /**< What the table left out of it: ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_INTERRUPT_ROUTING_
+                           DROPPED_ENTRIES and DROPPED_BRIDGES bits, 0 for none. */
 } AdvancedConfigurationAndPowerInterfaceInterruptRoutingBridge_t;
+
+/**
+ * @brief A bridge between a PCI function and its root bus, as a lookup goes through it.
+ */
+typedef struct AdvancedConfigurationAndPowerInterfaceInterruptRoutingHop {
+    uint8_t device;   /**< The bridge's device, on the bus above it. */
+    uint8_t function; /**< Its function. */
+    bool cardbus;     /**< A CardBus bridge, whose own pin every function behind it takes, as Linux v6.17 takes it
+                           (acpi_pci_irq_lookup); false for a PCI-to-PCI bridge, which swizzles theirs. */
+    uint8_t pin;      /**< A CardBus bridge's Interrupt Pin, 1 to 4 for INTA to INTD; 0, none, or a value past 4, which
+                           the PCI specification reserves, gives no route. Unread for a PCI-to-PCI bridge. */
+} AdvancedConfigurationAndPowerInterfaceInterruptRoutingHop_t;
 
 /**
  * @brief The routes of one boot, and what reading them counted.
@@ -100,8 +123,9 @@ typedef struct AdvancedConfigurationAndPowerInterfaceInterruptRoutingTable {
     uint32_t tables_failed;     /**< _PRT evaluations that failed or gave no Package. */
     uint32_t entries;           /**< Elements of the _PRT packages read. */
     uint32_t entries_malformed; /**< Of those, the ones left out: no Package of four, an Address or a Pin that is no
-                                     Integer, no Integer SourceIndex either way round, a device past 31, a pin past 3,
-                                     or a Source that is neither an Integer nor a name that resolves to a Device. */
+                                     Integer, no Integer SourceIndex either way round, a device past 31 or a pin past
+                                     3; and the ones published without an interrupt whose Source is neither an Integer
+                                     nor a name that resolves to a Device. */
     uint32_t entries_repaired;  /**< Of those, the ones whose Source and SourceIndex were read swapped, as ACPICA
                                      repairs an entry whose SourceIndex is no Integer. */
     uint32_t entries_dropped;   /**< Of those, the ones read once the table was full. */
@@ -122,6 +146,9 @@ typedef struct AdvancedConfigurationAndPowerInterfaceInterruptRoutingTable {
     uint32_t children_peak;         /**< The most Devices of one bridge whose _ADR names a PCI function. */
     uint32_t depth_peak;            /**< The most bridges between a root bridge and one published below it, that one
                                          included. */
+    uint8_t
+        roots_dropped; /**< ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_INTERRUPT_ROUTING_DROPPED_BRIDGES when a bridge
+                            right below a root bridge was left out, or the bridges below one were not walked. */
     AdvancedConfigurationAndPowerInterfaceInterruptRoute_t
         routes[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_INTERRUPT_ROUTING_MAX_ROUTES]; /**< The routes, in the order
                                                                                              their entries were
@@ -168,20 +195,35 @@ extern void advanced_configuration_and_power_interface_interrupt_routing_publish
     AdvancedConfigurationAndPowerInterfaceInterruptRoutingTable_t *out_table);
 
 /**
- * @brief Finds where pin @p pin of device @p device on root bus @p bus of segment @p segment goes: the first entry of
- *        the root bridge's own _PRT the table holds for it, as Linux takes the first matching _PRT entry.
+ * @brief Finds where pin @p pin of device @p device goes, on the bus below the @p hop_count bridges @p hops names from
+ *        root bus @p bus of segment @p segment down, as Linux v6.17 looks a PCI function up (acpi_pci_irq_lookup).
+ *
+ * @details The first entry for the device and pin of the _PRT of the bridge above the function's bus decides: the
+ *          root bridge's on the root bus, otherwise the one of the bridge published for it below the root bridge.
+ *          Without such an entry, or without a bridge published for it, the pin goes through that bridge, swizzled
+ *          to (pin + device) mod 4, or replaced by a CardBus bridge's own, and the bridge's device and that pin are
+ *          looked up on the bus above, up to the root bridge's _PRT. An entry found ends the lookup, whatever its link
+ *          gives. Where the table left out what the lookup would read, it ends there without a route: the entries of
+ *          a bridge's _PRT past the table's routes, or a bridge left out right below the last bridge published on the
+ *          way, or right below a root bridge.
  *
  * @param table     A published table.
  * @param segment   The PCI segment group.
- * @param bus       The bus, a root bus.
- * @param device    The device number, 0 to 31.
- * @param pin       The pin: 0 to 3, INTA to INTD.
- * @param out_route Receives the route when there is one.
- * @return false when the table holds no entry for that pin, or its first one gives no interrupt.
+ * @param bus       The root bus.
+ * @param hops      The bridges between the root bus and the function's bus, the one on the root bus first; NULL
+ *                  when @p hop_count is 0.
+ * @param hop_count How many, 0 for a function on the root bus.
+ * @param device    The function's device number, 0 to 31.
+ * @param pin       Its pin: 0 to 3, INTA to INTD.
+ * @param out_route Receives the route of the entry found.
+ * @return false when no _PRT up to the root bridge's holds an entry, when the first one found gives no interrupt,
+ *         when a CardBus bridge on the way has no pin or one past 4, or when the table left out what the lookup would
+ *         read.
  */
 extern bool advanced_configuration_and_power_interface_interrupt_routing_find(
     const AdvancedConfigurationAndPowerInterfaceInterruptRoutingTable_t *table, uint16_t segment, uint8_t bus,
-    uint8_t device, uint8_t pin, AdvancedConfigurationAndPowerInterfaceInterruptRoute_t *out_route);
+    const AdvancedConfigurationAndPowerInterfaceInterruptRoutingHop_t *hops, uint32_t hop_count, uint8_t device,
+    uint8_t pin, AdvancedConfigurationAndPowerInterfaceInterruptRoute_t *out_route);
 
 /**
  * @brief Folds what @p table publishes with FNV-1a: its model and count, then each route's interrupt, segment, bus,

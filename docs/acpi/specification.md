@@ -86,9 +86,9 @@ Each item is left out on purpose. "Brings it back" names what reverses the decis
 | `LoadTable` with a RootPath, ParameterPath or ParameterData, `Load` from a Buffer, either run while a table is declared | every call site on the corpus passes `""`, `""`, `Zero`, and loads from a region or a field, in a method; another form fails with `load_form_unsupported` | a needs-path call site with another form |
 | `_REG` for SystemMemory and SystemIO | ACPI declares both always available, and OSPM runs no `_REG` for them ([§6.5.4]) | a needs-path `_REG` that tests either space |
 | Opcodes outside the needs path | not reached on the path to `_CST` | the needs path of a later need, or a counted `unimplemented_operator` |
-| The lookup of a function behind bridges, and the swizzle of its pin through a bridge whose `_PRT` holds no entry for it (`acpi_pci_irq_lookup`) | the routes of the bridges are published; the lookup comes with its first caller | a device behind a bridge that has neither MSI nor MSI-X (#801) |
+| Alternative Routing-ID: Linux looks every function behind a bridge that forwards ARI up as device 0 (`pci_ari_enabled`) | the kernel enables no ARI forwarding, and looks a function up by the device its configuration address names | a function without MSI behind a bridge firmware left forwarding ARI |
 | Choosing a link's interrupt through `_SRS` and `_DIS`, as Linux does for a link without a current one and, in the APIC model, to move one to the least shared interrupt of its `_PRS` (`acpi_irq_balance`) | QEMU's firmware routes its links before the kernel starts; a corpus dump holds no state of the router its links read | a link found unrouted on a target |
-| A `_PRT` Source name that resolves to nothing, which ACPICA keeps empty and Linux reads as a pin wired to its SourceIndex | the SourceIndex of such an entry indexes a link's resources, not an interrupt: the entry is left out (`entries_malformed`) | a target whose `_PRT` names a missing link |
+| A `_PRT` Source name that resolves to nothing, which ACPICA keeps empty and Linux reads as a pin wired to its SourceIndex | the SourceIndex of such an entry indexes a link's resources, not an interrupt: the entry is published without one (`entries_malformed`), and stops a lookup as the one Linux keeps does | a target whose `_PRT` names a missing link |
 | A `_PRT` Source given as a String | the Source is a NamePath ([§6.2.14]); ACPICA also takes a String | a machine that gives one |
 | A root bridge's bus from the bus range of its `_CRS` | `_BBN` gives it, as for a PCI_Config region (§3.6); Linux reads `_CRS` first | a root bridge whose `_CRS` and `_BBN` disagree |
 | T-states, S1 and S2, `_GTS`, `_BFS`, `_TTS`, hotplug, WMI, video extensions, APEI, active cooling | no need asks for them | the issue that names one |
@@ -771,8 +771,11 @@ bridge firmware describes, are published, as Linux v6.17 reads them when a drive
   bits ignored as Linux ignores them; an Integer Pin, 0 to 3 for INTA to INTD; a Source; an Integer SourceIndex. An
   entry of another shape, a device past 31 or a pin past 3, which no lookup would match, is left out and counted
   (`entries_malformed`); where ACPICA refuses the whole table for an entry of the wrong shape, the others are kept. A
-  SourceIndex that is no Integer is read swapped with the Source, as ACPICA repairs a `_PRT` (`AcpiNsRepair_PRT`),
-  and counted (`entries_repaired`).
+  SourceIndex that is no Integer is read swapped with the Source, as ACPICA repairs a `_PRT` (`AcpiNsRepair_PRT`), and
+  counted (`entries_repaired`). An entry whose Address and Pin are read but whose Source is neither an Integer nor a
+  name that resolves to a Device, a String, a name that resolves to nothing or to another object, is published without
+  an interrupt and counted (`entries_malformed`): a lookup stops on it, as Linux stops on the entry it matches, and
+  finds no route.
 - **A wired pin.** A Source that is an Integer, of any value, as ACPICA reads it, wires the pin to the interrupt its
   SourceIndex gives, level-triggered and active-low, as PCI interrupts are.
 - **A link.** A Source that names a Device names an interrupt link. Its SourceIndex must be 0, as Linux supports
@@ -790,8 +793,18 @@ bridge firmware describes, are published, as Linux v6.17 reads them when a drive
 - **The interrupt** is a Global System Interrupt in the APIC model, an ISA IRQ in the PIC model: firmware's `_PRT`
   answers for the model step 5 told it. When `\_PIC (1)` fails, the model is unknown: the routes are published and
   counted, and no driver takes a line from them, nor from the 8259 (§3.8 step 5).
-- **A lookup** on a root bus takes the first entry of its root bridge's `_PRT` for a segment, bus, device and pin, as
-  Linux takes the first matching entry, and finds no route when that entry has no interrupt.
+- **A lookup** goes as Linux looks a PCI function up (`acpi_pci_irq_lookup`). The first entry for its device and pin
+  of the `_PRT` of the bridge above its bus decides, the root bridge's on a root bus, and finds no route when it has no
+  interrupt. Without such an entry, or without a bridge published for that PCI bridge, the pin goes through it,
+  swizzled to (pin + device) mod 4 (`pci_swizzle_interrupt_pin`), or replaced by the Interrupt Pin of a CardBus bridge,
+  class 0x0607, a CardBus bridge without one giving no route; the bridge's device and that pin are then looked up on the
+  bus above, up to the root bridge's `_PRT`. An Interrupt Pin past 4, the function's or a CardBus bridge's, gives no
+  route either, where Linux looks it up as it is and swizzles it on: the PCI specification reserves those values, and a
+  function that has gone away reads 0xFF. The bridges between a function and its root bus are the ones the PCI scan
+  finds leading to each bus, by their Secondary Bus Number register. Where the table left out what the lookup would
+  read, it finds no route rather than swizzle past it, since the `_PRT` left out might have named the pin: the entries
+  of a bridge's `_PRT` that came once the table was full, or a bridge left out right below the one above the bridge it
+  goes through, or right below any root bridge (`entries_dropped`, `bridges_below_dropped`, `bridges_unwalked`).
 - **The table is published once,** as plain data the drivers read, with one `[LPLTLM] acpi.prt` line: the model, the
   counts and the fold of the routes.
 

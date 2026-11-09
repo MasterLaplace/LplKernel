@@ -32,8 +32,11 @@
 #define ACPI_ISO_TRIGGER_EDGE         0x0004u
 #define ACPI_ISO_TRIGGER_LEVEL        0x000Cu
 
-#define IOAPIC_PCI_INTERRUPT_PIN 0x3Du /**< A PCI function's Interrupt Pin register: 0 none, 1 to 4 INTA to INTD. */
-#define IOAPIC_PCI_PINS          4u    /**< INTA to INTD. */
+#define IOAPIC_PCI_INTERRUPT_PIN    0x3Du /**< A PCI function's Interrupt Pin register: 0 none, 1 to 4 INTA to INTD. */
+#define IOAPIC_PCI_PINS             4u    /**< INTA to INTD. */
+#define IOAPIC_PCI_CARDBUS_CLASS    0x06u /**< The class of a bridge. */
+#define IOAPIC_PCI_CARDBUS_SUBCLASS 0x07u /**< The subclass of a CardBus bridge. */
+#define IOAPIC_PCI_MAX_BRIDGES      INPUT_OUTPUT_ADVANCED_PROGRAMMABLE_INTERRUPT_CONTROLLER_MAX_BRIDGES
 #define IOAPIC_LAST_REACHABLE_ENTRY                                                                                    \
     0x77u /**< The last entry an I/O APIC's 8-bit register index reaches: entry n takes registers 0x10 + 2n and        \
                0x11 + 2n (Intel 82093AA datasheet, §3.2.4), and 0x78 would wrap to 0x00. */
@@ -324,21 +327,45 @@ static bool io_apic_record_device_line(uint32_t line, uint8_t vector)
 }
 
 /**
- * @brief The route the boot published for the interrupt pin of @p device, when the APIC model was told and the
- *        function has a pin.
+ * @brief Writes into @p out_hops the bridges between @p device and its root bus, the one on the root bus first, as the
+ *        PCI scan found them, and into @p out_root_bus that bus.
+ *
+ * @return false when more than IOAPIC_PCI_MAX_BRIDGES lead to it.
  */
-static bool io_apic_device_route(const PeripheralComponentInterconnectDevice_t *device,
-                                 AdvancedConfigurationAndPowerInterfaceInterruptRoute_t *out_route)
+static bool io_apic_bridges_above(const PeripheralComponentInterconnectDevice_t *device,
+                                  AdvancedConfigurationAndPowerInterfaceInterruptRoutingHop_t *out_hops,
+                                  uint32_t *out_count, uint8_t *out_root_bus)
 {
-    const AdvancedConfigurationAndPowerInterfaceInterruptRoutingTable_t *routing =
-        advanced_configuration_and_power_interface_interrupt_routing();
-    const uint8_t pin = peripheral_component_interconnect_config_read_byte(device->bus, device->device,
-                                                                           device->function, IOAPIC_PCI_INTERRUPT_PIN);
+    PeripheralComponentInterconnectDevice_t bridge;
+    uint8_t bus = device->bus;
+    uint32_t count = 0u;
 
-    return routing->model == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_INTERRUPT_MODEL_APIC && pin != 0u &&
-           pin <= IOAPIC_PCI_PINS &&
-           advanced_configuration_and_power_interface_interrupt_routing_find(routing, 0u, device->bus, device->device,
-                                                                             (uint8_t) (pin - 1u), out_route);
+    while (peripheral_component_interconnect_find_bridge_to(bus, &bridge))
+    {
+        if (count == IOAPIC_PCI_MAX_BRIDGES)
+            return false;
+        const bool cardbus =
+            bridge.class_code == IOAPIC_PCI_CARDBUS_CLASS && bridge.subclass == IOAPIC_PCI_CARDBUS_SUBCLASS;
+
+        out_hops[count].device = bridge.device;
+        out_hops[count].function = bridge.function;
+        out_hops[count].cardbus = cardbus;
+        out_hops[count].pin = cardbus ? peripheral_component_interconnect_config_read_byte(
+                                            bridge.bus, bridge.device, bridge.function, IOAPIC_PCI_INTERRUPT_PIN) :
+                                        0u;
+        ++count;
+        bus = bridge.bus;
+    }
+    for (uint32_t low = 0u, high = count; low + 1u < high; ++low, --high)
+    {
+        const AdvancedConfigurationAndPowerInterfaceInterruptRoutingHop_t hop = out_hops[low];
+
+        out_hops[low] = out_hops[high - 1u];
+        out_hops[high - 1u] = hop;
+    }
+    *out_count = count;
+    *out_root_bus = bus;
+    return true;
 }
 
 void input_output_advanced_programmable_interrupt_controller_initialize_routing_scaffold(void)
@@ -630,6 +657,24 @@ uint32_t input_output_advanced_programmable_interrupt_controller_get_unreachable
     return io_apic_unreachable_inputs;
 }
 
+bool input_output_advanced_programmable_interrupt_controller_find_device_route(
+    const PeripheralComponentInterconnectDevice_t *device,
+    AdvancedConfigurationAndPowerInterfaceInterruptRoute_t *out_route)
+{
+    const AdvancedConfigurationAndPowerInterfaceInterruptRoutingTable_t *routing =
+        advanced_configuration_and_power_interface_interrupt_routing();
+    const uint8_t pin = peripheral_component_interconnect_config_read_byte(device->bus, device->device,
+                                                                           device->function, IOAPIC_PCI_INTERRUPT_PIN);
+    AdvancedConfigurationAndPowerInterfaceInterruptRoutingHop_t hops[IOAPIC_PCI_MAX_BRIDGES];
+    uint32_t hop_count = 0u;
+    uint8_t root_bus = 0u;
+
+    return routing->model == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_INTERRUPT_MODEL_APIC && pin != 0u &&
+           pin <= IOAPIC_PCI_PINS && io_apic_bridges_above(device, hops, &hop_count, &root_bus) &&
+           advanced_configuration_and_power_interface_interrupt_routing_find(
+               routing, 0u, root_bus, hops, hop_count, device->device, (uint8_t) (pin - 1u), out_route);
+}
+
 bool input_output_advanced_programmable_interrupt_controller_route_device(
     const PeripheralComponentInterconnectDevice_t *device, uint32_t slot, uint8_t vector, uint32_t *out_line)
 {
@@ -639,10 +684,10 @@ bool input_output_advanced_programmable_interrupt_controller_route_device(
     const uint32_t apic_id = cpu_topology_get_apic_id_at_slot(slot);
 
     *out_line = INPUT_OUTPUT_ADVANCED_PROGRAMMABLE_INTERRUPT_CONTROLLER_NO_LINE;
-    if (!io_apic_device_route(device, &route) || !io_apic_entry_of_line(route.interrupt, &unit, &entry) ||
-        io_apic_line_is_taken(route.interrupt, vector) || apic_id == CPU_TOPOLOGY_NO_PROCESSOR ||
-        !io_apic_can_name_destination(apic_id) || !device_interrupt_platform_delivers() ||
-        !io_apic_record_device_line(route.interrupt, vector))
+    if (!input_output_advanced_programmable_interrupt_controller_find_device_route(device, &route) ||
+        !io_apic_entry_of_line(route.interrupt, &unit, &entry) || io_apic_line_is_taken(route.interrupt, vector) ||
+        apic_id == CPU_TOPOLOGY_NO_PROCESSOR || !io_apic_can_name_destination(apic_id) ||
+        !device_interrupt_platform_delivers() || !io_apic_record_device_line(route.interrupt, vector))
         return false;
 
     const uint32_t low = (uint32_t) vector | (route.level ? IOAPIC_REDIR_LOW_TRIGGER_LEVEL : 0u) |
