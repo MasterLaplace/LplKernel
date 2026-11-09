@@ -380,8 +380,11 @@ KERNEL_TEST(the_bridges_below_a_root_bridge_are_the_companions_linux_takes)
                           routing_test_routes_below((const uint32_t[]){0x001C0001u, 0u}, 2u, 0u, 0u, 21u),
                       "RP02, 1C.1 by its _ADR method, routes GSI 20, and HIDB below it 21: a _HID keeps out 00.0 only "
                       "right below the root bridge");
-    kernel_test_check(test, routing_test_routes_below((const uint32_t[]){0x001C0002u}, 1u, 0u, 0u, 22u),
-                      "of 1C.2, DUPB, enabled without a _HID, routes GSI 22: DUPA, without a child, is refused");
+    kernel_test_check(test,
+                      routing_test_routes_below((const uint32_t[]){0x001C0002u}, 1u, 0u, 0u, 22u) &&
+                          routing_test_integer("\\CNTU") == 0u,
+                      "of 1C.2, DUPB, enabled without a _HID, scores high and routes GSI 22: DUPA, without a child, is "
+                      "refused, and DUPC after it is not scored");
     kernel_test_check(test, routing_test_routes_below((const uint32_t[]){0x00020000u}, 1u, 0u, 0u, 23u),
                       "of 02.0, VIDA, a video device by its _DOS without _STA whose child is a PowerResource, routes "
                       "GSI 23, past VIDB, enabled with a _HID, and VIDC, not enabled");
@@ -412,8 +415,8 @@ KERNEL_TEST(the_bridges_below_a_root_bridge_are_the_companions_linux_takes)
                               ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_INTERRUPT_ROUTING_MAX_DEPTH,
                       "21 bridges are published, DEEP and the seven below it among them, eight deep; DP09, the ninth "
                       "below the root bridge, is dropped");
-    kernel_test_check(test, routing_test_table.addresses_shared == 8u && routing_test_table.children_peak == 25u,
-                      "eight functions are each named by several children, 25 of the root bridge's children name a "
+    kernel_test_check(test, routing_test_table.addresses_shared == 8u && routing_test_table.children_peak == 26u,
+                      "eight functions are each named by several children, 26 of the root bridge's children name a "
                       "function");
     kernel_test_check(test,
                       routing_test_counts.statuses[ROUTING_TEST_STATUS(INDEX_OUT_OF_RANGE)] == 1u &&

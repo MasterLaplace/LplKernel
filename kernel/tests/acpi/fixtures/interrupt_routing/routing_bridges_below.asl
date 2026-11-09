@@ -6,7 +6,8 @@
  *        (1C.0) routes INTA to GSI 17 and INTD to 18; PXSX (00.0 below it) has no _PRT and sits above DSP0 (01.0),
  *        which routes INTB to 19 and counts its _STA evaluations in CNTS. RP02, 1C.1 by an _ADR method and with a
  *        _HID, routes 20; HIDB, 00.0 with a _HID below it, 21. Of the children that name one function, the one Linux
- *        scores best routes: DUPB, of 1C.2, 22, since DUPA has no child; VIDA, a video device by its _DOS whose child
+ *        scores best routes: DUPB, of 1C.2, 22, since DUPA has no child, so that DUPC, whose _STA counts in CNTU,
+ *        is not scored; VIDA, a video device by its _DOS whose child
  *        is a PowerResource, of 02.0, 23, past VIDB, enabled with a _HID, and VIDC, not enabled; TZA0, of 06.0, 24,
  *        whose ThermalZone child scores it high, so that TZB0, whose _STA counts in CNTT, is not scored; PRA0, of
  *        07.0, 25, whose child is a Processor; R080, of 08.0, 26, by its _ROM, past L080 and its EisaId _HID; P090,
@@ -21,6 +22,7 @@ DefinitionBlock ("", "DSDT", 2, "LPLTST", "MADEUPML", 0)
     Name (BADV, Buffer (0x01) { 0x00 })
     Name (CNTS, Zero)
     Name (CNTT, Zero)
+    Name (CNTU, Zero)
     Scope (\_SB)
     {
         Device (PCI0)
@@ -74,6 +76,17 @@ DefinitionBlock ("", "DSDT", 2, "LPLTST", "MADEUPML", 0)
                 Name (_ADR, 0x001C0002)
                 Method (_STA, 0, NotSerialized) { Return (0x0F) }
                 Name (_PRT, Package (0x01) { Package (0x04) { 0xFFFF, Zero, Zero, 0x16 } })
+                Device (CHLD) { Name (_ADR, Zero) }
+            }
+            Device (DUPC)
+            {
+                Name (_ADR, 0x001C0002)
+                Method (_STA, 0, NotSerialized)
+                {
+                    CNTU++
+                    Return (0x0F)
+                }
+                Name (_PRT, Package (0x01) { Package (0x04) { 0xFFFF, Zero, Zero, 0x41 } })
                 Device (CHLD) { Name (_ADR, Zero) }
             }
             Device (VIDB) __EXPECT__(3073)
