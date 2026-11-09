@@ -501,13 +501,18 @@ static bool routing_read_entry(RoutingLoad_t *load, RoutingCounts_t *counts, Rou
         return false;
     }
     table->entries_repaired += swapped ? 1u : 0u;
+    out_route->device = (uint8_t) ((address >> ROUTING_DEVICE_SHIFT) & ROUTING_DEVICE_MASK);
+    out_route->pin = (uint8_t) pin;
     if (!routing_source(load, entry, swapped ? 3u : 2u, &link))
     {
         ++table->entries_malformed;
-        link = ROUTING_UNUSABLE_SOURCE;
-        interrupt = (RoutingInterrupt_t){.number = ROUTING_NO_INTERRUPT};
+        out_route->interrupt = ROUTING_NO_INTERRUPT;
+        out_route->link = ROUTING_UNUSABLE_SOURCE;
+        out_route->level = 0u;
+        out_route->active_low = 0u;
+        return true;
     }
-    else if (link != 0u)
+    if (link != 0u)
     {
         ++table->links;
         const RoutingOutcome_t outcome =
@@ -523,8 +528,6 @@ static bool routing_read_entry(RoutingLoad_t *load, RoutingCounts_t *counts, Rou
         interrupt.number = (uint32_t) index;
     out_route->interrupt = interrupt.number;
     out_route->link = link;
-    out_route->device = (uint8_t) ((address >> ROUTING_DEVICE_SHIFT) & ROUTING_DEVICE_MASK);
-    out_route->pin = (uint8_t) pin;
     out_route->level = interrupt.level ? 1u : 0u;
     out_route->active_low = interrupt.active_low ? 1u : 0u;
     return true;
