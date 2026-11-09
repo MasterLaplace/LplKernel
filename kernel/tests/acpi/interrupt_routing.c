@@ -481,6 +481,7 @@ KERNEL_TEST(a_function_behind_bridges_takes_the_entry_linux_finds_on_the_way_up)
     static const RoutingTestHop_t root_port[] = {{.device = 0x1Cu}};
     static const RoutingTestHop_t downstream[] = {{.device = 0x1Cu}, {.device = 0u}, {.device = 2u}};
     static const RoutingTestHop_t linked[] = {{.device = 0x1Du}};
+    static const RoutingTestHop_t below_linked[] = {{.device = 0x1Du}, {.device = 0u}};
     static const RoutingTestHop_t undescribed[] = {{.device = 5u}};
     static const RoutingTestHop_t other_function[] = {
         {.device = 0x1Cu, .function = 1u},
@@ -539,13 +540,26 @@ KERNEL_TEST(a_function_behind_bridges_takes_the_entry_linux_finds_on_the_way_up)
                           &routing_test_table, 0u, 0u, gone_cardbus, 2u, 2u, 0u, &route),
                       "behind a CardBus bridge whose Interrupt Pin reads 0xFF, a reserved value, there is no route, "
                       "where swizzling it on would reach GSI 18 of device 0x1C");
+    kernel_test_check(test, routing_test_reaches(below_linked, 2u, 0u, 0u, 25u),
+                      "behind RPXS, 00.0 below RP05, device 0 INTA takes RPXS's entry, GSI 25, though PXSX, 00.0 "
+                      "below RP01, is published before it");
+    kernel_test_check(test,
+                      advanced_configuration_and_power_interface_interrupt_routing_find(
+                          &routing_test_table, 0u, 1u, root_port, 1u, 0u, 0u, &route) &&
+                          route.interrupt == 26u &&
+                          advanced_configuration_and_power_interface_interrupt_routing_find(
+                              &routing_test_table, 1u, 0u, root_port, 1u, 0u, 0u, &route) &&
+                          route.interrupt == 27u,
+                      "behind 1C.0 of bus 1, RQ01 below PCI1 routes device 0 INTA to GSI 26, and behind 1C.0 of "
+                      "segment 1, RS01 below PCI2 to 27, where RP01, 1C.0 of bus 0 of segment 0, has no _PRT");
     kernel_test_check(test,
                       !advanced_configuration_and_power_interface_interrupt_routing_find(
                           &routing_test_table, 0u, 1u, downstream, 3u, 0u, 0u, &route) &&
                           !advanced_configuration_and_power_interface_interrupt_routing_find(
                               &routing_test_table, 1u, 0u, downstream, 3u, 0u, 0u, &route),
-                      "from bus 1, or from bus 0 of segment 1, which no root bridge stands for, the same bridges lead "
-                      "to no route: DSP2's entry is not taken");
+                      "from bus 1, and from segment 1, behind the bridges that lead to DSP2 on bus 0, the pin swizzles "
+                      "up to INTC of RQ01 and RS01, which name INTA alone, and to PCI1 and PCI2, which have no _PRT: "
+                      "there is no route, DSP2's entry and PCI0's not taken");
     routing_test_close(test);
 }
 

@@ -5,7 +5,8 @@
  * @brief A root bridge whose _PRT wires the four pins of devices 0x1C and 0x1D to GSI 16 to 19 and 20 to 23, and the
  *        bridges below it. RP01 (1C.0) has no _PRT; PXSX (00.0 below it) neither, and DSP2 (02.0 below PXSX) wires
  *        device 0's INTA to GSI 24 alone. RP05 (1D.0) wires device 0's INTA through LNKZ, a link that gives no
- *        interrupt.
+ *        interrupt, and RPXS (00.0 below it) to GSI 25. RQ01, 1C.0 below PCI1 on bus 1, and RS01, 1C.0 below PCI2 on
+ *        segment 1, wire it to GSI 26 and 27; neither root bridge has a _PRT.
  */
 DefinitionBlock ("", "DSDT", 2, "LPLTST", "MADEUPML", 0)
 {
@@ -47,6 +48,31 @@ DefinitionBlock ("", "DSDT", 2, "LPLTST", "MADEUPML", 0)
             {
                 Name (_ADR, 0x001D0000)
                 Name (_PRT, Package (0x01) { Package (0x04) { 0xFFFF, Zero, \_SB.LNKZ, Zero } })
+                Device (RPXS)
+                {
+                    Name (_ADR, Zero)
+                    Name (_PRT, Package (0x01) { Package (0x04) { 0xFFFF, Zero, Zero, 0x19 } })
+                }
+            }
+        }
+        Device (PCI1)
+        {
+            Name (_HID, EisaId ("PNP0A03"))
+            Name (_BBN, One)
+            Device (RQ01)
+            {
+                Name (_ADR, 0x001C0000)
+                Name (_PRT, Package (0x01) { Package (0x04) { 0xFFFF, Zero, Zero, 0x1A } })
+            }
+        }
+        Device (PCI2)
+        {
+            Name (_HID, EisaId ("PNP0A03"))
+            Name (_SEG, One)
+            Device (RS01)
+            {
+                Name (_ADR, 0x001C0000)
+                Name (_PRT, Package (0x01) { Package (0x04) { 0xFFFF, Zero, Zero, 0x1B } })
             }
         }
     }
