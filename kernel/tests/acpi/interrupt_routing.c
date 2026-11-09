@@ -442,6 +442,35 @@ KERNEL_TEST(the_bridges_below_a_root_bridge_are_the_companions_linux_takes)
 }
 
 /**
+ * @brief The children of a bridge are read only when a Device among them holds a _PRT or sits above one that does,
+ *        and the children that name one function are scored only when one of them does: no bridge routes anything
+ *        otherwise.
+ */
+KERNEL_TEST(the_bridges_below_are_read_only_where_a_table_lies_below)
+{
+    if (!routing_test_run(test, routing_bridges_read_aml, sizeof(routing_bridges_read_aml), ROUTING_TEST_APIC))
+        return;
+    kernel_test_check(test,
+                      routing_test_routes_below((const uint32_t[]){0x001C0000u}, 1u, 0u, 0u, 16u) &&
+                          routing_test_table.count == 1u && routing_test_table.bridges_below == 1u,
+                      "RP01 alone is published, and routes GSI 16");
+    kernel_test_check(test, routing_test_integer("\\CNTA") == 0u,
+                      "ENDP, the one Device child of RP01, holds no _PRT, and TZD0's lies in RP01's ThermalZone: "
+                      "RP01's children are not read, ENDP's _ADR never runs");
+    kernel_test_check(test, routing_test_integer("\\CNTB") == 0u,
+                      "nothing below PCI1 holds a _PRT: its children are not read, EP10's _ADR never runs");
+    kernel_test_check(test, routing_test_integer("\\CNTG") == 0u && routing_test_table.addresses_shared == 2u,
+                      "GRA0 and GRB0 both name 02.0 and hold no _PRT: they are counted among the functions several "
+                      "children name, with 03.0, and never scored");
+    kernel_test_check(test, routing_test_integer("\\CNTH") == 1u,
+                      "HST0, 00.0 right below the root bridge, holds no _PRT: its _HID runs once, as the search for "
+                      "root bridges runs it, and not again for the rule on 00.0");
+    kernel_test_check(test, routing_test_table.children_peak == 6u,
+                      "the six children of PCI0 that name a function are compared");
+    routing_test_close(test);
+}
+
+/**
  * @brief A function behind bridges takes the entry Linux finds on the way up: the first one of the _PRT of the bridge
  *        above its bus for its device and pin; without one, its pin swizzled through that bridge, (pin + device) mod
  *        4, or replaced by a CardBus bridge's own, for the bridge's device on the bus above, up to the root bridge.
