@@ -695,6 +695,8 @@ KERNEL_TEST(the_root_bridges_routes_come_before_those_of_the_bridges_below_them)
  */
 KERNEL_TEST(the_bridges_below_root_bridges_past_the_ones_a_boot_walks_are_not_read)
 {
+    RoutingTestRoute_t route = {0};
+
     if (!routing_test_run(test, routing_many_roots_aml, sizeof(routing_many_roots_aml), ROUTING_TEST_APIC))
         return;
     kernel_test_check(test,
@@ -706,9 +708,15 @@ KERNEL_TEST(the_bridges_below_root_bridges_past_the_ones_a_boot_walks_are_not_re
                           routing_test_routes(0u, 16u, 1u, 0u, 32u, ROUTING_TEST_LEVEL, ROUTING_TEST_LOW, 0u),
                       "RB0F and RB10 route device 1 INTA of their buses to GSI 31 and 32 in their own _PRT");
     kernel_test_check(test,
-                      routing_test_table.count == 18u && routing_test_table.below[0].bus == 15u &&
+                      routing_test_table.count == 19u && routing_test_table.below[0].bus == 15u &&
                           routing_test_routes_below((const uint32_t[]){0x001C0000u}, 1u, 0u, 0u, 79u),
                       "below RB0F, P1C0 routes GSI 79; RB10's P1C0 is not read");
+    kernel_test_check(
+        test,
+        !advanced_configuration_and_power_interface_interrupt_routing_find(
+            &routing_test_table, 0u, 16u, (const RoutingTestHop_t[]){{.device = 0x1Cu}}, 1u, 0u, 0u, &route),
+        "behind 1C.0 of RB10, whose bridges are not walked, there is no route, where swizzling would "
+        "reach GSI 48 of device 0x1C INTA");
     routing_test_close(test);
 }
 

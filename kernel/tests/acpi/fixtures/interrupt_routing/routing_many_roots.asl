@@ -3,8 +3,8 @@
 
 /**
  * @brief Seventeen root bridges, RB00 to RB10 on buses 0 to 16, each routing device 1's INTA to GSI 16 plus its bus in
- *        its own _PRT. Below RB0F and RB10, the sixteenth and the seventeenth, P1C0 (1C.0) routes INTA of device 0 on
- *        the bus below it to GSI 79 and 80.
+ *        its own _PRT, and RB10's device 0x1C's INTA to GSI 48 too. Below RB0F and RB10, the sixteenth and the
+ *        seventeenth, P1C0 (1C.0) routes INTA of device 0 on the bus below it to GSI 79 and 80.
  */
 DefinitionBlock ("", "DSDT", 2, "LPLTST", "MADEUPML", 0)
 {
@@ -115,7 +115,11 @@ DefinitionBlock ("", "DSDT", 2, "LPLTST", "MADEUPML", 0)
         {
             Name (_HID, EisaId ("PNP0A03"))
             Name (_BBN, 0x10)
-            Name (_PRT, Package (0x01) { Package (0x04) { 0x0001FFFF, Zero, Zero, 0x20 } })
+            Name (_PRT, Package (0x02)
+            {
+                Package (0x04) { 0x0001FFFF, Zero, Zero, 0x20 },
+                Package (0x04) { 0x001CFFFF, Zero, Zero, 0x30 }
+            })
             Device (P1C0)
             {
                 Name (_ADR, 0x001C0000)
