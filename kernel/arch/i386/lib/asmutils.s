@@ -142,6 +142,26 @@ asmutils_read_control_register_4:
     movl %cr4, %eax
     ret
 
+.globl asmutils_write_control_register_0
+.type asmutils_write_control_register_0, @function
+asmutils_write_control_register_0:
+    movl 4(%esp), %eax
+    movl %eax, %cr0
+    ret
+
+.globl asmutils_write_control_register_4
+.type asmutils_write_control_register_4, @function
+asmutils_write_control_register_4:
+    movl 4(%esp), %eax
+    movl %eax, %cr4
+    ret
+
+.globl asmutils_initialize_floating_point_unit
+.type asmutils_initialize_floating_point_unit, @function
+asmutils_initialize_floating_point_unit:
+    fninit
+    ret
+
 .globl asmutils_cpuid
 .type asmutils_cpuid, @function
 asmutils_cpuid:
