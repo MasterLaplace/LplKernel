@@ -13,8 +13,8 @@
  * notice and the permission notice are kept. See the LICENSE file.
  *
  * @file interrupt_routing.h
- * @brief Where each PCI interrupt pin of a root bus goes: every PCI root bridge's _PRT evaluated, the interrupt
- *        links it names resolved, and the routes published as plain data.
+ * @brief Where each PCI interrupt pin goes: the _PRT of every PCI root bridge and of every bridge below one
+ *        evaluated, the interrupt links they name resolved, and the routes published as plain data.
  *
  * Layer L6 of the specification (docs/acpi/specification.md, §3.11): ordinary kernel code that asks the
  * interpreter to evaluate objects and reads plain results.
@@ -36,11 +36,18 @@
     256u /**< Routes one boot publishes; the entries after them are counted and not read (§6.1). */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_INTERRUPT_ROUTING_MAX_LINKS                                         \
     64u /**< Interrupt links one boot resolves; an entry that names another is counted as dropped (§6.1). */
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_INTERRUPT_ROUTING_MAX_BRIDGES                                       \
+    64u /**< Bridges below a root bridge one boot publishes; one past them is counted as dropped (§6.1). */
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_INTERRUPT_ROUTING_MAX_DEPTH                                         \
+    8u /**< Bridges between a root bridge and the deepest one published, itself included (§6.1). */
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_INTERRUPT_ROUTING_MAX_CHILDREN                                      \
+    256u /**< Devices of one bridge whose _ADR names a PCI function compared to choose its bridges, one for each       \
+              function of a bus (§6.1). */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_INTERRUPT_ROUTING_NO_INTERRUPT                                      \
     0xFFFFFFFFu /**< The interrupt of an entry whose link gives none: a lookup that finds it first finds no route. */
 
 /**
- * @brief Where one interrupt pin of a device on a root bus goes, as a _PRT entry and its link say.
+ * @brief Where one interrupt pin of a device goes, as a _PRT entry and its link say.
  */
 typedef struct AdvancedConfigurationAndPowerInterfaceInterruptRoute {
     uint32_t interrupt; /**< The input of the interrupt controller the pin reaches: a Global System Interrupt in the
@@ -49,12 +56,28 @@ typedef struct AdvancedConfigurationAndPowerInterfaceInterruptRoute {
                              names a link that gives none. */
     uint32_t link;      /**< The node of the Device the entry's Source names, or 0 for a pin wired to it. */
     uint16_t segment;   /**< The root bridge's _SEG, 0 without one. */
-    uint8_t bus;        /**< Its _BBN, 0 without one. */
+    uint16_t bridge;    /**< The bridge below the root bridge whose _PRT holds the entry, counted from 1 in the table's
+                             below; 0 for the root bridge's own _PRT, whose device sits on the root bus. */
+    uint8_t bus;        /**< The root bridge's _BBN, 0 without one. */
     uint8_t device;     /**< The device number the entry's Address names, 0 to 31. */
     uint8_t pin;        /**< The pin: 0 to 3, INTA to INTD. */
     uint8_t level;      /**< 1 when level-triggered, 0 when edge-triggered, or without an interrupt. */
     uint8_t active_low; /**< 1 when active-low, 0 when active-high, or without an interrupt. */
 } AdvancedConfigurationAndPowerInterfaceInterruptRoute_t;
+
+/**
+ * @brief A Device below a root bridge that answers, by its _ADR, for a PCI-to-PCI bridge: the ACPI companion Linux
+ *        v6.17 gives that bridge (acpi_pci_find_companion), whose _PRT routes the devices of its secondary bus.
+ */
+typedef struct AdvancedConfigurationAndPowerInterfaceInterruptRoutingBridge {
+    uint32_t node;    /**< The Device. */
+    uint32_t address; /**< The PCI bridge its _ADR names, on the bus of the bridge above it: its device in bits 16 to
+                           20, its function in bits 0 to 2. */
+    uint16_t segment; /**< Its root bridge's _SEG. */
+    uint16_t above;   /**< The bridge it sits below, counted from 1 in the table's below; 0 when it sits right below
+                           its root bridge, on the root bus. */
+    uint8_t bus;      /**< Its root bridge's _BBN. */
+} AdvancedConfigurationAndPowerInterfaceInterruptRoutingBridge_t;
 
 /**
  * @brief The routes of one boot, and what reading them counted.
@@ -84,17 +107,38 @@ typedef struct AdvancedConfigurationAndPowerInterfaceInterruptRoutingTable {
     uint32_t links_failed;      /**< Of those, the ones whose link's _STA, _PRS or _CRS failed, gave no Buffer, or gave
                                      a resource template ACPICA refuses. */
     uint32_t links_dropped;     /**< Of those, the ones whose link came past the ones a boot resolves. */
+    uint32_t bridges_below;     /**< Bridges below a root bridge published: each one whose _PRT is read, and each one
+                                     above such a bridge. */
+    uint32_t bridges_below_dropped; /**< Bridges below a root bridge left out, the bridges below them not looked at:
+                                         one past the ones a boot publishes, one deeper than a boot goes, or a Device
+                                         past the ones of its bridge a boot compares. */
+    uint32_t addresses_shared;      /**< _ADR values that two Devices or more of one bridge give, the Device Linux
+                                         scores best taken for them. */
+    uint32_t children_peak;         /**< The most Devices of one bridge whose _ADR names a PCI function. */
+    uint32_t depth_peak;            /**< The most bridges between a root bridge and one published below it, that one
+                                         included. */
     AdvancedConfigurationAndPowerInterfaceInterruptRoute_t
         routes[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_INTERRUPT_ROUTING_MAX_ROUTES]; /**< The routes, in the order
                                                                                              their entries were
                                                                                              read. */
+    AdvancedConfigurationAndPowerInterfaceInterruptRoutingBridge_t
+        below[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_INTERRUPT_ROUTING_MAX_BRIDGES]; /**< The bridges below a root
+                                                                                            bridge, each after the one
+                                                                                            it sits below. */
 } AdvancedConfigurationAndPowerInterfaceInterruptRoutingTable_t;
 
 /**
- * @brief Publishes where each PCI interrupt pin of every root bus goes (§3.11): evaluates the _PRT of each PCI root
- *        bridge _STA keeps in, in declaration order, and reads each entry as ACPICA and Linux read it.
+ * @brief Publishes where each PCI interrupt pin goes (§3.11): evaluates the _PRT of each PCI root bridge _STA keeps
+ *        in, in declaration order, then that of each bridge below it, and reads each entry as ACPICA and Linux read
+ *        it.
  *
- * @details A Source that is an Integer wires the pin to the interrupt its SourceIndex gives, level-triggered and
+ * @details A bridge below a root bridge is the Device Linux v6.17 takes as the ACPI companion of a PCI-to-PCI bridge
+ *          (acpi_pci_find_companion, acpi_find_child_device): a child of the root bridge, or of the bridge above it,
+ *          whose _ADR names a PCI function; of several children that name the same one, the first Linux scores
+ *          best, by their children, _STA and _HID; never a child of the root bridge whose _ADR names function 0 of
+ * device 0 and that has a _HID. Such a Device is published when it holds a _PRT or sits above one that does, depth
+ *          first in declaration order, right after its root bridge's routes or the bridge above it.
+ *          A Source that is an Integer wires the pin to the interrupt its SourceIndex gives, level-triggered and
  *          active-low, as PCI interrupts are (Linux v6.17 acpi_pci_irq_enable). A Source that names an interrupt
  *          link gives the link's current interrupt, as Linux v6.17 reads it (acpi_pci_link_get_current,
  *          acpi_pci_link_allocate): the first interrupt of the first IRQ or Extended Interrupt descriptor of its
@@ -107,8 +151,8 @@ typedef struct AdvancedConfigurationAndPowerInterfaceInterruptRoutingTable {
  * @param load           A load whose namespace the initialisation has initialised (§3.8).
  * @param machine        The interrupt model step 5 told firmware.
  * @param initialization The counts the sequence keeps: the _STA evaluations and the failures, per status.
- * @param out_table      Receives the routes and the counts, the counts zeroed first; the routes past its count are
- *                       left as they were.
+ * @param out_table      Receives the routes, the bridges and the counts, the counts zeroed first; the routes and
+ *                       the bridges past their counts are left as they were.
  */
 extern void advanced_configuration_and_power_interface_interrupt_routing_publish(
     AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
@@ -117,8 +161,8 @@ extern void advanced_configuration_and_power_interface_interrupt_routing_publish
     AdvancedConfigurationAndPowerInterfaceInterruptRoutingTable_t *out_table);
 
 /**
- * @brief Finds where pin @p pin of device @p device on bus @p bus of segment @p segment goes: the first entry the
- *        table holds for it, as Linux takes the first matching _PRT entry.
+ * @brief Finds where pin @p pin of device @p device on root bus @p bus of segment @p segment goes: the first entry of
+ *        the root bridge's own _PRT the table holds for it, as Linux takes the first matching _PRT entry.
  *
  * @param table     A published table.
  * @param segment   The PCI segment group.
@@ -134,8 +178,9 @@ extern bool advanced_configuration_and_power_interface_interrupt_routing_find(
 
 /**
  * @brief Folds what @p table publishes with FNV-1a: its model and count, then each route's interrupt, segment, bus,
- *        device, pin, trigger and polarity, little-endian. The link's node is left out: a node index is no fixed
- *        identity of the firmware.
+ *        the bridges from its root bridge down to the one whose _PRT holds it, their count then each one's address,
+ *        and its device, pin, trigger and polarity, little-endian. The link's node is left out: a node index is no
+ *        fixed identity of the firmware.
  *
  * @param table A published table.
  * @return The fold.

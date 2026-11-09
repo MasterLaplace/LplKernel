@@ -1,0 +1,16 @@
+# The bridges of corpus machines whose routes tools/acpi/corpus.sh routing publishes and acpiexec cannot see, each after
+# the section of the specification that decides how the kernel loads them (specification §8.6), as `<section> <bridge>
+# <machine>`, the bridge written as the `aml route` lines name it. The routes of a listed bridge are left out of the
+# comparison; one listed whose routes the kernel does not publish fails the run, so that the list stays true.
+#
+# §3.6 skips a table-level statement that fails and goes on with the load, where ACPICA deletes every object of a table
+# whose load fails (AcpiNsLoadTable). On each machine below, a table declares the bridges listed and opens a Scope a
+# later table declares: acpiexec deletes them, and the kernel keeps them.
+#
+# Microsoft Surface Laptop 3: TcssSsdt declares TRP0 to TRP3, the Thunderbolt root ports, and opens
+# `Scope (\_SB.PCI0.XHC.RHUB.HS09)`, which xh_ed000 declares; acpiexec reports `AE_NOT_FOUND, (SSDT:TcssSsdt) while
+# loading table`.
+§3.6 0000:00/07.0 Tablet/Microsoft/Surface/Surface Laptop 3/4E426AB8062D
+§3.6 0000:00/07.1 Tablet/Microsoft/Surface/Surface Laptop 3/4E426AB8062D
+§3.6 0000:00/07.2 Tablet/Microsoft/Surface/Surface Laptop 3/4E426AB8062D
+§3.6 0000:00/07.3 Tablet/Microsoft/Surface/Surface Laptop 3/4E426AB8062D

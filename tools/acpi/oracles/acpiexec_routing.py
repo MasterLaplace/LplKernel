@@ -1,35 +1,46 @@
-"""The PCI interrupt routes a machine publishes, worked out apart from the kernel's code: its root bridges and their
-_PRT entries from what ACPICA's acpiexec evaluates once told the APIC model, the interrupt links those entries name
-decoded here from their _PRS and _CRS, as the `aml route` lines `test-acpi --initialize` prints (specification §3.11).
+"""The PCI interrupt routes a machine publishes, worked out apart from the kernel's code: its root bridges, the
+bridges below them and their _PRT entries from what ACPICA's acpiexec evaluates once told the APIC model, the interrupt
+links those entries name decoded here from their _PRS and _CRS, as the `aml route` lines `test-acpi --initialize`
+prints (specification §3.11).
 
 Usage: python3 -I tools/acpi/oracles/acpiexec_routing.py <acpica bin directory> <presets> <table>...
        python3 -I tools/acpi/oracles/acpiexec_routing.py --self-test
 
 --self-test checks the descriptor decoding and the rule that reads a link on made-up templates, then the lines a swapped
-entry, an entry whose link gives no interrupt and a wired pin print, each expected route written by hand, and exits 1
-when one differs.
+entry, an entry whose link gives no interrupt and a wired pin print, then the bridges taken below a made-up root bridge,
+each expected route and bridge written by hand, and exits 1 when one differs.
 
 The tables are those `test-acpi --loaded` writes, the DSDT first. acpiexec loads them without running them to list the
 namespace (tools/acpi/oracles/acpiexec_namespace.py). Its debugger buffer holds 16 KiB, which a _PRT of 128 entries
 overflows, so an SSDT written and compiled here with the pinned iasl gives each Device that holds a _PRT two methods:
 one the count of its entries, one an entry by its index. Each run has region fill 0, no repair of return values and
 the presets as NVS values (`-fv 0 -dr -fi nvs.txt`), runs _REG, _STA and _INI, and evaluates `\\_PIC 1` first. The
-first evaluates the _HID, _CID, _STA, _SEG and _BBN of each such Device, the _STA of each Device above it, and the count
-of its entries; the second its entries, then lists the namespace, whose node addresses tell which link an entry names;
-the third the _HID, _CID, _STA, _PRS and _CRS of each link.
+first evaluates the _HID, _CID, _STA, _SEG and _BBN of each such Device and of each Device above one, the _STA of each
+Device above those, the count of each one's entries, then the _ADR, _STA and _HID of each Device child of them; the
+second the entries of the root bridges and of the bridges below them, then lists the namespace, whose node addresses
+tell which link an entry names; the third the _HID, _CID, _STA, _PRS and _CRS of each link.
 
 A root bridge is a Device whose _HID or _CID names PNP0A03, as an EisaId or a String; its _PRT is read when its _STA,
 0x0F without one, and that of each Device above it say present or functioning, one that fails keeping it out, and when
-its _SEG and _BBN, 0 without one, do not fail. An entry is a Package of four: an Integer Address whose bits 16 to 31
-name a device below 32, an Integer Pin below 4, a Source and an Integer SourceIndex, the two read swapped when the
-SourceIndex is no Integer, as ACPICA repairs a _PRT, which `-dr` and the helper's names keep acpiexec from doing. A
-Source that is an Integer wires the pin to the SourceIndex, level-triggered and active-low. A Source that references a
-Device names it, and the pin goes to the interrupt it gives as a link, read when the SourceIndex is 0: present or
-functioning by its _STA, whose _HID or _CID names PNP0C0F; its current interrupt the first one of the first IRQ or
-Extended Interrupt descriptor of its _CRS that names one; kept when the first such descriptor of its _PRS lists it, 0
-never listed, with that descriptor's trigger and polarity; each template read only when ACPICA would convert it: each
-descriptor within its bytes, each interrupt descriptor whole, an End Tag of two bytes closing it. Such an entry whose
-Device gives no interrupt is printed `none`. Any other entry is left out.
+its _SEG and _BBN, 0 without one, do not fail. Below it, a bridge is the Device Linux takes as the ACPI companion of a
+PCI-to-PCI bridge (acpi_pci_find_companion, acpi_find_child_device): a Device child of the root bridge or of the bridge
+above it whose _ADR, an Integer, names a device below 32 and a function below 8; of the children whose _ADR names the
+same one, the first alone, or the first scored best, each scored once a second is met, the walk stopping at the first
+scored high: without children, refused; without _STA, middle for a video device (a _DOD, _DOS or _ROM, or a _VPO, _GPD
+and _SPD), low otherwise; refused when its _STA fails or lacks bit 1; low with a _HID that gives an Integer or a String,
+high without; never, right below the root bridge, one whose _ADR is 0 and that has such a _HID. A bridge is kept when it
+or a Device below it holds a _PRT, up to 8 below the root bridge and 64 in all, its children past the first 256 left
+out; its entries come after its root bridge's or the bridge above it, depth first in declaration order, and each one's
+line names the bridges from the root bridge down, as `/<device>.<function>`. An entry is a Package of four: an Integer
+Address whose bits 16 to 31 name a device below 32, an Integer Pin below 4, a Source and an Integer SourceIndex, the two
+read swapped when the SourceIndex is no Integer, as ACPICA repairs a _PRT, which `-dr` and the helper's names keep
+acpiexec from doing. A Source that is an Integer wires the pin to the SourceIndex, level-triggered and active-low. A
+Source that references a Device names it, and the pin goes to the interrupt it gives as a link, read when the
+SourceIndex is 0: present or functioning by its _STA, whose _HID or _CID names PNP0C0F; its current interrupt the first
+one of the first IRQ or Extended Interrupt descriptor of its _CRS that names one; kept when the first such descriptor of
+its _PRS lists it, 0 never listed, with that descriptor's trigger and polarity; each template read only when ACPICA
+would convert it: each descriptor within its bytes, each interrupt descriptor whole, an End Tag of two bytes closing it.
+Such an entry whose Device gives no interrupt is printed `none`. Any other entry is left out.
 """
 import os
 import re
@@ -48,7 +59,11 @@ ROOT = (0x030AD041, "PNP0A03")
 LINK = (0x0F0CD041, "PNP0C0F")
 PRESENT_OR_FUNCTIONING = 0x09
 NO_STATUS = 0x0F
-DEVICES, PINS = 32, 4
+ENABLED = 0x02
+DEVICES, PINS, FUNCTIONS = 32, 4, 8
+REFUSED, LOW, MIDDLE, HIGH = 1, 2, 3, 4
+MAX_DEPTH, MAX_BRIDGES, MAX_CHILDREN = 8, 64, 256
+OWNING = ("Device", "Processor", "Thermal", "Power")
 REFERENCE = re.compile(r"^\s*\[Object Reference\] = (0x[0-9a-f]+) <Node>\s+Name (\S{4}) (\S+)")
 LISTED = re.compile(r"^\s*(\d+)\s+(\S{4})\s+(\S+)\s+(0x[0-9a-f]+)\s+[0-9A-F]{3}")
 
@@ -201,36 +216,136 @@ def read_link(found, nodes, path):
     return current[0][0], possible[1][0], possible[1][1]
 
 
+def children_of(nodes):
+    """Each node's children, in declaration order, keyed by the parent's path."""
+    found = {}
+    for path in nodes:
+        found.setdefault(path.rsplit(".", 1)[0] if "." in path else "\\", []).append(path)
+    return found
+
+
+def function_address(found, nodes, path):
+    """The PCI function the _ADR of @p path names, device << 16 | function, or None: no _ADR, one that fails, or one
+    past device 31 or function 7."""
+    if path + "._ADR" not in nodes:
+        return None
+    value = acpiexec_idle.integer_of(found.get(path + "._ADR"))
+    if value is None or value >> 16 >= DEVICES or value & 0xFFFF >= FUNCTIONS:
+        return None
+    return value
+
+
+def has_identifier(found, nodes, path):
+    """Whether @p path has a _HID that gives an Integer or a String."""
+    result = found.get(path + "._HID") if path + "._HID" in nodes else None
+    return result is not None and result[0] in ("integer", "string")
+
+
+def score(found, nodes, kids, path):
+    """How Linux scores @p path among Devices that name the same function, a bridge's children checked."""
+    if not any(nodes[child][0] in OWNING for child in kids.get(path, [])):
+        return REFUSED
+    if path + "._STA" not in nodes:
+        video = any(path + name in nodes for name in ("._DOD", "._DOS", "._ROM")) or \
+            all(path + name in nodes for name in ("._VPO", "._GPD", "._SPD"))
+        return MIDDLE if video else LOW
+    status = acpiexec_idle.integer_of(found.get(path + "._STA"))
+    if status is None or not status & ENABLED:
+        return REFUSED
+    return LOW if has_identifier(found, nodes, path) else HIGH
+
+
+def choose(found, nodes, kids, group):
+    """The Device Linux takes among @p group, Devices that name the same function, in declaration order."""
+    chosen, best = group[0], None
+    for candidate in group[1:]:
+        if best is None:
+            best = score(found, nodes, kids, chosen)
+            if best == HIGH:
+                break
+        value = score(found, nodes, kids, candidate)
+        if value > best:
+            chosen, best = candidate, value
+        if best == HIGH:
+            break
+    return chosen
+
+
+def holds_table(nodes, path):
+    """Whether @p path, or a node below it, has a _PRT child whose parent is a Device."""
+    return any(node.startswith(path + ".") and node.endswith("._PRT") and nodes.get(node[:-5], ("",))[0] == "Device"
+               for node in nodes)
+
+
+def bridges_below(found, nodes, kids, root, published):
+    """The bridges below root bridge @p root, as (path, label, its bridges) trees in declaration order, taken in the
+    kernel's order, all the bridges right below one before those below them; @p published, a one-element list, counts
+    the bridges taken below every root bridge."""
+    def below(scope, label, depth):
+        functions = [(child, function_address(found, nodes, child)) for child in kids.get(scope, [])
+                     if nodes[child][0] == "Device"]
+        functions = [(child, address) for child, address in functions if address is not None][:MAX_CHILDREN]
+        seen, mine = set(), []
+        for _, address in functions:
+            if address in seen:
+                continue
+            seen.add(address)
+            chosen = choose(found, nodes, kids, [child for child, other in functions if other == address])
+            if (depth == 1 and address == 0 and has_identifier(found, nodes, chosen)) or \
+                    not holds_table(nodes, chosen):
+                continue
+            if depth > MAX_DEPTH or published[0] == MAX_BRIDGES:
+                continue
+            published[0] += 1
+            mine.append((chosen, "%s/%02X.%X" % (label, address >> 16, address & 0xFFFF)))
+        return [(path, name, below(path, name, depth + 1)) for path, name in mine]
+
+    return below(root, "", 1)
+
+
 def routes(bridges, entries, links):
-    """The `aml route` lines: @p bridges, each (path, segment, bus), in declaration order; @p entries, each bridge's
-    list of entry results; @p links, each link path's (interrupt, level, active_low) or None."""
+    """The `aml route` lines: @p bridges, each (path, segment, bus, bridges below), the root bridges in declaration
+    order, each bridge below one a (path, label, bridges below) tree; @p entries, each bridge's list of entry results;
+    @p links, each link path's (interrupt, level, active_low) or None."""
     lines = []
-    for path, segment, bus in bridges:
-        for entry in entries[path]:
-            if entry is None or entry[0] != "package" or len(entry[1]) != 4:
+
+    def walk(path, segment, bus, label, below):
+        lines.extend(table_lines(entries.get(path, []), "%04X:%02X%s" % (segment & 0xFFFF, bus & 0xFF, label), links))
+        for child, name, deeper in below:
+            walk(child, segment, bus, name, deeper)
+
+    for path, segment, bus, below in bridges:
+        walk(path, segment, bus, "", below)
+    return lines
+
+
+def table_lines(entries, where, links):
+    """The `aml route` lines of one _PRT's @p entries, each prefixed with @p where, its root bus and bridges."""
+    lines = []
+    for entry in entries:
+        if entry is None or entry[0] != "package" or len(entry[1]) != 4:
+            continue
+        address, pin, source, index = entry[1]
+        if index[0] != "integer":
+            source, index = index, source
+        if address[0] != "integer" or pin[0] != "integer" or index[0] != "integer":
+            continue
+        device, pin = address[1] >> 16 & 0xFFFF, pin[1]
+        if device >= DEVICES or pin >= PINS:
+            continue
+        if source[0] == "integer":
+            route = (index[1], True, True, "wired")
+        elif source[0] == "reference" and source[2] == "Device" and source[1] in links:
+            read = links[source[1]][1] if index[1] == 0 else None
+            if read is None:
+                lines.append("aml route %s:%02X.%c none %s" % (where, device, "ABCD"[pin], links[source[1]][0]))
                 continue
-            address, pin, source, index = entry[1]
-            if index[0] != "integer":
-                source, index = index, source
-            if address[0] != "integer" or pin[0] != "integer" or index[0] != "integer":
-                continue
-            device, pin = address[1] >> 16 & 0xFFFF, pin[1]
-            if device >= DEVICES or pin >= PINS:
-                continue
-            if source[0] == "integer":
-                route = (index[1], True, True, "wired")
-            elif source[0] == "reference" and source[2] == "Device" and source[1] in links:
-                read = links[source[1]][1] if index[1] == 0 else None
-                if read is None:
-                    lines.append("aml route %04X:%02X:%02X.%c none %s" % (
-                        segment & 0xFFFF, bus & 0xFF, device, "ABCD"[pin], links[source[1]][0]))
-                    continue
-                route = read + (links[source[1]][0],)
-            else:
-                continue
-            lines.append("aml route %04X:%02X:%02X.%c interrupt=%u %s %s %s" % (
-                segment & 0xFFFF, bus & 0xFF, device, "ABCD"[pin], route[0], "level" if route[1] else "edge",
-                "low" if route[2] else "high", route[3]))
+            route = read + (links[source[1]][0],)
+        else:
+            continue
+        lines.append("aml route %s:%02X.%c interrupt=%u %s %s %s" % (
+            where, device, "ABCD"[pin], route[0], "level" if route[1] else "edge", "low" if route[2] else "high",
+            route[3]))
     return lines
 
 
@@ -316,12 +431,71 @@ def self_test():
     links = {"0x1": ("\\LNKA", (11, True, True)), "0x2": ("\\LNKB", None)}
     expected = ["aml route 0000:00:01.A interrupt=11 level low \\LNKA", "aml route 0000:00:02.A none \\LNKB",
                 "aml route 0000:00:03.B interrupt=20 level low wired"]
-    got = routes([("\\PCI0", 0, 0)], entries, links)
+    got = routes([("\\PCI0", 0, 0, [])], entries, links)
     if got != expected:
         print("self-test: a swapped entry, a link that gives none and a wired pin read %s, expected %s"
               % (got, expected))
         failures += 1
+    failures += self_test_bridges()
     print("self-test: pass" if failures == 0 else "self-test: %d failure(s)" % failures)
+    return failures
+
+
+def self_test_bridges():
+    """Checks the bridges taken below a made-up root bridge, and the lines their entries print; returns the count of
+    cases that differ."""
+    def device(path, address=None, **objects):
+        made = {path: ("Device", "")}
+        if address is not None:
+            made[path + "._ADR"] = ("Integer", "")
+            found[path + "._ADR"] = ("integer", address)
+        for name, value in objects.items():
+            made[path + "." + name] = ("Integer", "")
+            if value is not None:
+                found[path + "." + name] = value
+        nodes.update(made)
+
+    nodes, found, failures = {}, {}, 0
+    device("\\PCI0", _PRT=None)
+    device("\\PCI0.RP01", 0x001C0000, _PRT=None)
+    device("\\PCI0.RP01.PXSX", 0, _PRT=None)
+    device("\\PCI0.DUPA", 0x001C0001, _PRT=None)
+    device("\\PCI0.DUPB", 0x001C0001, _STA=("integer", 0x0F), _PRT=None)
+    device("\\PCI0.DUPB.CHLD")
+    device("\\PCI0.HIDD", 0, _HID=("integer", 0x0A0CD041), _PRT=None)
+    device("\\PCI0.ALLF", 0x001DFFFF, _PRT=None)
+    device("\\PCI0.EMPT", 0x001E0000)
+    for index, (status, extra) in enumerate([(None, "_DOS"), (("integer", 0x0F), "_HID"), (("integer", 0x0D), None)]):
+        path = "\\PCI0.SCO%u" % index
+        device(path, 0x00030000)
+        device(path + ".CHLD")
+        if status is not None:
+            device(path, 0x00030000, _STA=status)
+        if extra is not None:
+            device(path, 0x00030000, **{extra: ("string", "LPLT0001") if extra == "_HID" else None})
+    kids = children_of(nodes)
+    got = choose(found, nodes, kids, ["\\PCI0.SCO%u" % index for index in range(3)])
+    if got != "\\PCI0.SCO0":
+        print("self-test: a video device without _STA, one with a _HID and one not enabled choose %s, expected "
+              "\\PCI0.SCO0" % got)
+        failures += 1
+    tree = bridges_below(found, nodes, kids, "\\PCI0", [0])
+    expected = [("\\PCI0.RP01", "/1C.0", [("\\PCI0.RP01.PXSX", "/1C.0/00.0", [])]), ("\\PCI0.DUPB", "/1C.1", [])]
+    if tree != expected:
+        print("self-test: the bridges below a made-up root bridge read %s, expected %s" % (tree, expected))
+        failures += 1
+    wired = [("package", [("integer", 0x0000FFFF), ("integer", pin), ("integer", 0), ("integer", 16 + pin)])
+             for pin in range(3)]
+    entries = {"\\PCI0": [wired[0]], "\\PCI0.RP01": [wired[1]], "\\PCI0.RP01.PXSX": [wired[2]],
+               "\\PCI0.DUPB": [wired[0]]}
+    expected = ["aml route 0000:00:00.A interrupt=16 level low wired",
+                "aml route 0000:00/1C.0:00.B interrupt=17 level low wired",
+                "aml route 0000:00/1C.0/00.0:00.C interrupt=18 level low wired",
+                "aml route 0000:00/1C.1:00.A interrupt=16 level low wired"]
+    got = routes([("\\PCI0", 0, 0, tree)], entries, {})
+    if got != expected:
+        print("self-test: the entries of the bridges below a root bridge read %s, expected %s" % (got, expected))
+        failures += 1
     return failures
 
 
@@ -354,29 +528,47 @@ def main():
         if not os.path.exists(os.path.join(work, compiled)):
             print("aml route unevaluated helper")
             return
-        identity = ["evaluate %s.%s" % (path, name) for path in candidates
+        kids, holding = children_of(nodes), set(candidates)
+        holding |= {above for candidate in candidates for above in ancestors(nodes, candidate)}
+        scopes = [path for path in nodes if path in holding]
+        identity = ["evaluate %s.%s" % (path, name) for path in scopes
                     for name in ("_HID", "_CID", "_STA", "_SEG", "_BBN") if path + "." + name in nodes]
-        identity += ["evaluate %s._STA" % path for path in sorted({above for candidate in candidates
-                                                                    for above in ancestors(nodes, candidate)})
+        identity += ["evaluate %s._STA" % path for path in sorted({above for scope in scopes
+                                                                    for above in ancestors(nodes, scope)} - holding)
                      if path + "._STA" in nodes]
         counts = ["evaluate \\%s%03X" % (letters[0], index) for index in range(len(candidates))]
-        found, _ = results(run(bin_directory, work, tables + [compiled], ["evaluate \\_PIC 1"] + identity + counts))
-        bridges, commands = [], []
-        for index, path in enumerate(candidates):
+        addresses_of = list(dict.fromkeys("evaluate %s.%s" % (child, name) for scope in scopes
+                                          for child in kids.get(scope, []) if nodes[child][0] == "Device"
+                                          for name in ("_ADR", "_STA", "_HID") if child + "." + name in nodes))
+        found, _ = results(run(bin_directory, work, tables + [compiled],
+                               ["evaluate \\_PIC 1"] + identity + counts + addresses_of))
+        count_of = {path: acpiexec_idle.integer_of(found.get("\\%s%03X" % (letters[0], index)))
+                    for index, path in enumerate(candidates)}
+        bridges, published = [], [0]
+        for path in scopes:
             if not (names(found.get(path + "._HID"), ROOT) or names(found.get(path + "._CID"), ROOT)) or \
                     not all(present(found, nodes, device) for device in [path] + ancestors(nodes, path)):
                 continue
             segment, bus = number(found, nodes, path, "_SEG"), number(found, nodes, path, "_BBN")
-            count = acpiexec_idle.integer_of(found.get("\\%s%03X" % (letters[0], index)))
-            if count is None or segment is None or bus is None:
+            if segment is None or bus is None:
                 continue
-            bridges.append((path, index, segment, bus, count))
-            commands += ["evaluate \\%s%03X %u" % (letters[1], index, entry) for entry in range(count)]
+            bridges.append((path, segment, bus, bridges_below(found, nodes, kids, path, published)))
+        read, stack = [], [(path, below) for path, _, _, below in reversed(bridges)]
+        while stack:
+            path, below = stack.pop()
+            read.append(path)
+            stack.extend((child, deeper) for child, _, deeper in reversed(below))
+        commands = ["evaluate \\%s%03X %u" % (letters[1], candidates.index(path), entry) for path in read
+                    if count_of.get(path) is not None for entry in range(count_of[path])]
         entries_found, addresses = results(run(bin_directory, work, tables + [compiled],
                                                ["evaluate \\_PIC 1"] + commands + ["namespace"]))
         entries, wanted = {}, {}
-        for path, index, _, _, count in bridges:
-            entries[path] = [entries_found.get("\\%s%03X %u" % (letters[1], index, entry)) for entry in range(count)]
+        for path in read:
+            if count_of.get(path) is None:
+                continue
+            index = candidates.index(path)
+            entries[path] = [entries_found.get("\\%s%03X %u" % (letters[1], index, entry))
+                             for entry in range(count_of[path])]
             for entry in entries[path]:
                 if entry is not None and entry[0] == "package" and len(entry[1]) == 4 and \
                         entry[1][2][0] == "reference" and entry[1][2][1] in addresses:
@@ -385,7 +577,7 @@ def main():
                          for name in ("_HID", "_CID", "_STA", "_PRS", "_CRS") if path + "." + name in nodes]
         link_found, _ = results(run(bin_directory, work, tables, ["evaluate \\_PIC 1"] + link_commands))
         links = {address: (path, read_link(link_found, nodes, path)) for address, path in wanted.items()}
-        print("\n".join(routes([(path, segment, bus) for path, _, segment, bus, _ in bridges], entries, links)))
+        print("\n".join(routes(bridges, entries, links)))
     finally:
         shutil.rmtree(work)
 

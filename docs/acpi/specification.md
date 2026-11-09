@@ -44,7 +44,7 @@ links to its page in the PDF.
 | N10 namespace | the DSDT and SSDTs, then `Load` and `LoadTable` at run time | #535 to #539, #546 |
 | N11 firmware handshake | ACPI mode, `\_OSI`, `\_REV`, `_REG`, `_STA` and `_INI`, `\_SB._OSC`, processor `_OSC` or `_PDC` | #540 to #545 |
 | N12 `_CST` for every CPU | entry register, type, latency and power, bound to a CPU slot | #57, #298, #135 |
-| N13 PCI INTx routing | `\_PIC (1)` in the APIC model; where each interrupt pin of a root bus goes, from every root bridge's `_PRT` and the links it names | #59 |
+| N13 PCI INTx routing | `\_PIC (1)` in the APIC model; where each interrupt pin of a root bus, or of a bus below a bridge firmware describes, goes, from the `_PRT` of every root bridge and of every bridge below one, and the links they name | #59, #801 |
 
 The later needs reuse the same layers, each adding its own entry points to the needs path (§4.1): P-states and
 CPPC (#302), reset and soft-off (#294), events and the embedded controller (#547), battery, AC, thermal and lid (#548), sleep states (#295).
@@ -58,7 +58,9 @@ The needs path is the set of evaluations the kernel makes at boot, and every met
 - `\_SB._OSC`, and processor `_OSC` or `_PDC`;
 - `_CST`, and the `_UID` that binds a processor to its CPU (§3.10);
 - `_ADR`, `_SEG`, `_BBN`, `_HID` and `_CID`, which a PCI_Config region evaluates as it attaches (§3.6);
-- `\_PIC`, each root bridge's `_PRT`, and the `_PRS` and `_CRS` of each link it names (§3.11);
+- `\_PIC`, the `_PRT` of each root bridge and of each bridge below one, the `_ADR` of their Device children, the
+  `_STA` and `_HID` of children that name the same function, and the `_PRS` and `_CRS` of each link they name
+  (§3.11);
 - the tables that `Load` and `LoadTable` bring in.
 
 It decides which opcodes are executed (§4.1). It is computed on every corpus machine twice: as a static closure,
@@ -84,7 +86,7 @@ Each item is left out on purpose. "Brings it back" names what reverses the decis
 | `LoadTable` with a RootPath, ParameterPath or ParameterData, `Load` from a Buffer, either run while a table is declared | every call site on the corpus passes `""`, `""`, `Zero`, and loads from a region or a field, in a method; another form fails with `load_form_unsupported` | a needs-path call site with another form |
 | `_REG` for SystemMemory and SystemIO | ACPI declares both always available, and OSPM runs no `_REG` for them ([§6.5.4]) | a needs-path `_REG` that tests either space |
 | Opcodes outside the needs path | not reached on the path to `_CST` | the needs path of a later need, or a counted `unimplemented_operator` |
-| The `_PRT` of a bridge below a root bridge, and the swizzle of a pin through a bridge | the kernel's one PCI INTx consumer, the audio controller, sits on a root bus | a device behind a bridge that has neither MSI nor MSI-X |
+| The lookup of a function behind bridges, and the swizzle of its pin through a bridge whose `_PRT` holds no entry for it (`acpi_pci_irq_lookup`) | the routes of the bridges are published; the lookup comes with its first caller | a device behind a bridge that has neither MSI nor MSI-X (#801) |
 | Choosing a link's interrupt through `_SRS` and `_DIS`, as Linux does for a link without a current one and, in the APIC model, to move one to the least shared interrupt of its `_PRS` (`acpi_irq_balance`) | QEMU's firmware routes its links before the kernel starts; a corpus dump holds no state of the router its links read | a link found unrouted on a target |
 | A `_PRT` Source name that resolves to nothing, which ACPICA keeps empty and Linux reads as a pin wired to its SourceIndex | the SourceIndex of such an entry indexes a link's resources, not an interrupt: the entry is left out (`entries_malformed`) | a target whose `_PRT` names a missing link |
 | A `_PRT` Source given as a String | the Source is a NamePath ([§6.2.14]); ACPICA also takes a String | a machine that gives one |
@@ -729,9 +731,9 @@ Notifies queued since. A table loaded during step 8 or step 9 that gives a proce
 
 ### 3.11 What `_PRT` publishes
 
-Once the sequence of §3.8 is over, the routes of the PCI interrupt pins of every root bus are published, as Linux v6.17
-reads them when a driver enables a device (`acpi_pci_irq_enable`, `acpi_pci_link_allocate_irq`), without the `_SRS`
-it may then run (§1.4).
+Once the sequence of §3.8 is over, the routes of the PCI interrupt pins of every root bus, and of every bus below a
+bridge firmware describes, are published, as Linux v6.17 reads them when a driver enables a device
+(`acpi_pci_irq_enable`, `acpi_pci_link_allocate_irq`), without the `_SRS` it may then run (§1.4).
 
 - **Root bridges.** Each Device whose `_HID` or `_CID` names PNP0A03, as an EisaId or a String, alone or in a `_CID`
   Package, in declaration order, as Linux binds its PCI root driver (`pci_root.c`): a PCI Express root complex names
@@ -741,6 +743,22 @@ it may then run (§1.4).
   `_SEG` and its bus its `_BBN`, 0 without one, as a PCI_Config region reads them (§3.6); one that fails keeps the
   bridge out, as Linux refuses such a root bridge (`acpi_pci_root_add`). A bridge kept out by `_STA`
   (`bridges_absent`), by `_SEG` or `_BBN` (`bridges_failed`), or without a `_PRT` (`bridges_unrouted`) is counted.
+- **Bridges below a root bridge.** Linux reads the `_PRT` of the device object it gives the bridge above a function's
+  bus (`acpi_pci_irq_find_prt_entry`): for a PCI-to-PCI bridge, the child of its parent bus's object whose `_ADR`
+  equals its device in bits 16 to 31 and its function in bits 0 to 15 (`acpi_pci_find_companion`,
+  `acpi_find_child_device`). Below each root bridge read, a Device child of the root bridge, or of a bridge below it,
+  whose `_ADR` gives such a value, an Integer as for `_SEG`, stands for the bridge it names, whatever its `_STA`; one
+  whose `_ADR` fails is counted under its status. Of the children that name the same function (`addresses_shared`),
+  the first stands alone; among several, Linux scores each once it meets a second, in declaration order, and takes
+  the first scored best, stopping at the first scored high: refused without a Device, Processor, ThermalZone or
+  PowerResource child; without `_STA`, middle for a video device, one with a `_DOD`, a `_DOS` or a `_ROM`, or with a
+  `_VPO`, a `_GPD` and a `_SPD` (`acpi_is_video_device`), low otherwise; refused when its `_STA` fails or lacks bit 1,
+  enabled; low with a `_HID` that gives an Integer or a String, high without. Right below the root bridge, one whose
+  `_ADR` is 0 and that has such a `_HID` stands for nothing, as Linux ignores it on a root bus. A bridge is published
+  when it, or a Device below it, holds a `_PRT`, depth first in declaration order, the bridges right below one
+  before those below them: its entries follow those of its root bridge or of the bridge above it, and route the
+  devices of the bus below it. One past the bridges a boot publishes, deeper than a boot goes, or past the children of
+  one bridge a boot compares, is counted (`bridges_below_dropped`), and nothing below it is read (§6.1).
 - **Entries** ([§6.2.14]). A Package of four: an Integer Address whose bits 16 to 31 name the device, its function
   bits ignored as Linux ignores them; an Integer Pin, 0 to 3 for INTA to INTD; a Source; an Integer SourceIndex. An
   entry of another shape, a device past 31 or a pin past 3, which no lookup would match, is left out and counted
@@ -764,8 +782,8 @@ it may then run (§1.4).
 - **The interrupt** is a Global System Interrupt in the APIC model, an ISA IRQ in the PIC model: firmware's `_PRT`
   answers for the model step 5 told it. When `\_PIC (1)` fails, the model is unknown: the routes are published and
   counted, and no driver takes a line from them, nor from the 8259 (§3.8 step 5).
-- **A lookup** takes the first entry of a segment, bus, device and pin, as Linux takes the first matching entry, and
-  finds no route when that entry has no interrupt.
+- **A lookup** on a root bus takes the first entry of its root bridge's `_PRT` for a segment, bus, device and pin, as
+  Linux takes the first matching entry, and finds no route when that entry has no interrupt.
 - **The table is published once,** as plain data the drivers read, with one `[LPLTLM] acpi.prt` line: the model, the
   counts and the fold of the routes.
 
@@ -1129,6 +1147,9 @@ that reaches it. The corpus runs report the peaks.
 | Notify ring | 64 entries; an overflow is dropped and counted |
 | States one CPU slot publishes | 7, as Linux, whose table of `ACPI_PROCESSOR_MAX_POWER` (8) keeps its first entry for C0; the states after them are counted, not read |
 | Entries of PCI interrupt routes one boot publishes | 256; the entries after them are counted, not read |
+| Bridges below a root bridge one boot publishes | 64; one more is counted as dropped, and nothing below it is read |
+| Bridges between a root bridge and the deepest one published | 8 (`depth_peak`); a deeper one is counted as dropped |
+| Children of one bridge whose `_ADR` names a PCI function, compared to choose its bridges | 256, one for each function of a bus (`children_peak`); one more is counted as dropped |
 | Interrupt links one boot reads | 64; an entry that names another is published without an interrupt and counted as dropped |
 | Region mapping cache | 64 entries, each the pages one access touched |
 | Pre-decoded records per load | 128 records, 256 operators, 256 constants and 64 names, 4 per record; a cache whose records, operators, constants or names are full is emptied whole, counted, and the loop that filled it builds no more, never a failure |
@@ -1445,8 +1466,13 @@ The PCI interrupt routes are compared with `acpiexec` (`tools/acpi/corpus.sh rou
 cannot print a `_PRT` of 128 entries, so an SSDT compiled by the pinned iasl gives each Device with a `_PRT` a method
 that counts its entries and one that returns an entry by its index, evaluated in a second run; the links those entries
 name are read in a third, and `tools/acpi/oracles/acpiexec_routing.py` decodes their `_PRS` and `_CRS` apart from the
-kernel's code (§3.11). A dump holds no state of the routers links read, so on the corpus the comparison reaches wired
-pins and links that route nothing; the oracle's `--self-test` compares the reading of links on made-up templates.
+kernel's code (§3.11). The first run also evaluates the `_ADR`, `_STA` and `_HID` of the Device children of each
+Device with a `_PRT` or above one, from which the oracle chooses the bridges below each root bridge as Linux does,
+apart from the kernel's code. A dump holds no state of the routers links read, so on the corpus the comparison reaches
+wired pins and links that route nothing; the oracle's `--self-test` compares the reading of links on made-up
+templates, and the bridges it chooses below a made-up root bridge. ACPICA deletes every object of a table whose load
+fails (`AcpiNsLoadTable`), where §3.6 skips the statement and goes on: a bridge such a table declares has routes
+acpiexec cannot see, and `tools/acpi/lists/routing-decided.list` names it, its routes left out of the comparison.
 
 A needs-path result that differs between `acpiexec` and `acpiexec -es` marks a machine that relies on slack
 behaviour, and reopens the implicit-return and uninitialised-operand rules of §5.2. Methods that read `Timer` are

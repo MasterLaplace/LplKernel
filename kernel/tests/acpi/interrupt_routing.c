@@ -21,7 +21,7 @@ KERNEL_TEST_SUITE(advanced_configuration_and_power_interface_interrupt_routing, 
 #define ROUTING_TEST_EDGE      0u    /**< When edge-triggered. */
 #define ROUTING_TEST_LOW       1u    /**< Its active_low field when active-low. */
 #define ROUTING_TEST_HIGH      0u    /**< When active-high. */
-#define ROUTING_TEST_TABLE     2048u /**< Bytes of AML the largest made-up table holds, and more. */
+#define ROUTING_TEST_TABLE     8192u /**< Bytes of AML the largest made-up table holds, and more. */
 #define ROUTING_TEST_UNKNOWN   ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_INTERRUPT_MODEL_UNKNOWN
 #define ROUTING_TEST_NONE      ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_INTERRUPT_ROUTING_NO_INTERRUPT
 #define ROUTING_TEST_OFFSET    0x811C9DC5u /**< FNV-1a's offset basis. */
@@ -128,6 +128,34 @@ static bool routing_test_unrouted(uint8_t device, uint8_t pin)
 
     return !advanced_configuration_and_power_interface_interrupt_routing_find(&routing_test_table, 0u, 0u, device, pin,
                                                                               &route);
+}
+
+/**
+ * @brief Whether the table routes pin @p pin of device @p device, on the bus below the @p depth bridges @p addresses
+ *        names from the root bridge down, each one's device and function as its _ADR gives them, to @p interrupt,
+ *        level-triggered and active-low, wired.
+ */
+static bool routing_test_routes_below(const uint32_t *addresses, uint32_t depth, uint8_t device, uint8_t pin,
+                                      uint32_t interrupt)
+{
+    for (uint32_t index = 0u; index < routing_test_table.count; ++index)
+    {
+        const RoutingTestRoute_t *route = &routing_test_table.routes[index];
+        uint16_t bridge = route->bridge;
+        uint32_t level = depth;
+
+        if (route->device != device || route->pin != pin)
+            continue;
+        while (bridge != 0u && level != 0u && routing_test_table.below[bridge - 1u].address == addresses[level - 1u])
+        {
+            bridge = routing_test_table.below[bridge - 1u].above;
+            --level;
+        }
+        if (route->bridge != 0u && bridge == 0u && level == 0u)
+            return route->interrupt == interrupt && route->level == ROUTING_TEST_LEVEL &&
+                   route->active_low == ROUTING_TEST_LOW && route->link == 0u;
+    }
+    return false;
 }
 
 /**
@@ -311,13 +339,104 @@ KERNEL_TEST(only_the_root_bridges_present_by_their_status_are_read)
     kernel_test_check(test, routing_test_routes(0u, 0u, 6u, 0u, 41u, ROUTING_TEST_LEVEL, ROUTING_TEST_LOW, 0u),
                       "PCI5, functioning but not present, routes device 6 INTA to GSI 41");
     kernel_test_check(test,
-                      routing_test_table.count == 2u && routing_test_unrouted(7u, 0u) && routing_test_unrouted(12u, 0u),
-                      "nothing else is published: not BRG0's, PCI3's nor DEV2's _PRT");
+                      routing_test_table.bridges_below == 1u && routing_test_table.below[0].segment == 1u &&
+                          routing_test_table.below[0].bus == 2u && routing_test_table.routes[1].segment == 1u &&
+                          routing_test_table.routes[1].bus == 2u &&
+                          routing_test_routes_below((const uint32_t[]){0x00050000u}, 1u, 0u, 0u, 41u),
+                      "BRG0, a bridge below PCI2 by its _ADR, routes device 0 INTA of the bus below 05.0 to GSI 41");
+    kernel_test_check(test,
+                      routing_test_table.count == 3u && routing_test_unrouted(7u, 0u) && routing_test_unrouted(12u, 0u),
+                      "nothing else is published: not PCI3's nor DEV2's _PRT");
     kernel_test_check(test,
                       routing_test_counts.statuses[ROUTING_TEST_STATUS(INDEX_OUT_OF_RANGE)] == 4u &&
                           routing_test_counts.statuses[ROUTING_TEST_STATUS(TYPE_MISMATCH)] == 1u,
                       "PCI4's _STA, PCI6's _BBN, PCI7's _SEG and DEV2's _HID fail once each, PCI9's _PRT has the "
                       "wrong type");
+    routing_test_close(test);
+}
+
+/**
+ * @brief Below a root bridge, a bridge is the Device Linux takes as a PCI bridge's companion: a child of the root
+ *        bridge or of the bridge above it whose _ADR names a PCI function; of several that name the same one, the
+ *        first scored best; never one right below the root bridge whose _ADR is 0 and that has a _HID. One that holds
+ *        a _PRT or sits above one is published, up to eight below the root bridge, and its entries route the devices
+ *        of its secondary bus.
+ */
+KERNEL_TEST(the_bridges_below_a_root_bridge_are_the_companions_linux_takes)
+{
+    if (!routing_test_run(test, routing_bridges_below_aml, sizeof(routing_bridges_below_aml), ROUTING_TEST_APIC))
+        return;
+    kernel_test_check(test, routing_test_routes(0u, 0u, 1u, 0u, 16u, ROUTING_TEST_LEVEL, ROUTING_TEST_LOW, 0u),
+                      "the root bridge routes device 1 INTA of the root bus to GSI 16");
+    kernel_test_check(test,
+                      routing_test_routes_below((const uint32_t[]){0x001C0000u}, 1u, 0u, 0u, 17u) &&
+                          routing_test_routes_below((const uint32_t[]){0x001C0000u}, 1u, 0u, 3u, 18u),
+                      "RP01, 1C.0, routes INTA and INTD of the bus below it to GSI 17 and 18");
+    kernel_test_check(test,
+                      routing_test_routes_below((const uint32_t[]){0x001C0000u, 0u, 0x00010000u}, 3u, 0u, 1u, 19u),
+                      "DSP0, 01.0 below PXSX, 00.0 below RP01, routes INTB to GSI 19");
+    kernel_test_check(test,
+                      routing_test_routes_below((const uint32_t[]){0x001C0001u}, 1u, 0u, 0u, 20u) &&
+                          routing_test_routes_below((const uint32_t[]){0x001C0001u, 0u}, 2u, 0u, 0u, 21u),
+                      "RP02, 1C.1 by its _ADR method, routes GSI 20, and HIDB below it 21: a _HID keeps out 00.0 only "
+                      "right below the root bridge");
+    kernel_test_check(test, routing_test_routes_below((const uint32_t[]){0x001C0002u}, 1u, 0u, 0u, 22u),
+                      "of 1C.2, DUPB, enabled without a _HID, routes GSI 22: DUPA, without a child, is refused");
+    kernel_test_check(test, routing_test_routes_below((const uint32_t[]){0x00020000u}, 1u, 0u, 0u, 23u),
+                      "of 02.0, VIDA, a video device by its _DOS without _STA whose child is a PowerResource, routes "
+                      "GSI 23, past VIDB, enabled with a _HID, and VIDC, not enabled");
+    kernel_test_check(test,
+                      routing_test_routes_below((const uint32_t[]){0x00060000u}, 1u, 0u, 0u, 24u) &&
+                          routing_test_integer("\\CNTT") == 0u,
+                      "of 06.0, TZA0, whose child is a ThermalZone, scores high and routes GSI 24: TZB0 is not scored, "
+                      "its _STA never run");
+    kernel_test_check(test, routing_test_routes_below((const uint32_t[]){0x00070000u}, 1u, 0u, 0u, 25u),
+                      "of 07.0, PRA0, whose child is a Processor, routes GSI 25");
+    kernel_test_check(test, routing_test_routes_below((const uint32_t[]){0x00080000u}, 1u, 0u, 0u, 26u),
+                      "of 08.0, R080, a video device by its _ROM, routes GSI 26, past L080 and its EisaId _HID");
+    kernel_test_check(test,
+                      routing_test_routes_below((const uint32_t[]){0x00090000u}, 1u, 0u, 0u, 27u) &&
+                          routing_test_routes_below((const uint32_t[]){0x000A0000u}, 1u, 0u, 0u, 28u),
+                      "a _VPO, a _GPD and a _SPD make P090 a video device, which routes GSI 27; NA10 to NA30, each "
+                      "without one of them, do not pass L0A0, which routes 28");
+    kernel_test_check(test, routing_test_routes_below((const uint32_t[]){0x000B0000u}, 1u, 0u, 0u, 29u),
+                      "of 0B.0, D0B0, a video device by its _DOD, routes GSI 29");
+    kernel_test_check(test, routing_test_integer("\\CNTS") == 0u,
+                      "DSP0, the one child of PXSX that names 01.0, is not scored: its _STA never runs");
+    kernel_test_check(test, routing_test_table.count == 14u && routing_test_unrouted(0u, 0u),
+                      "nothing else is published: none of the Devices scored lower, HIDD, ALLF, BIGD, BADA, NOAD, "
+                      "TZHD nor DP09, and no entry of a bridge is the root bus's");
+    kernel_test_check(test,
+                      routing_test_table.bridges_below == 21u && routing_test_table.bridges_below_dropped == 1u &&
+                          routing_test_table.depth_peak ==
+                              ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_INTERRUPT_ROUTING_MAX_DEPTH,
+                      "21 bridges are published, DEEP and the seven below it among them, eight deep; DP09, the ninth "
+                      "below the root bridge, is dropped");
+    kernel_test_check(test, routing_test_table.addresses_shared == 8u && routing_test_table.children_peak == 25u,
+                      "eight functions are each named by several children, 25 of the root bridge's children name a "
+                      "function");
+    kernel_test_check(test, routing_test_counts.statuses[ROUTING_TEST_STATUS(INDEX_OUT_OF_RANGE)] == 1u,
+                      "BADA's _ADR fails once, counted");
+    routing_test_close(test);
+}
+
+/**
+ * @brief A bridge past the 64 a boot publishes, and a child past the 256 of one bridge whose _ADR is compared, are
+ *        counted as dropped.
+ */
+KERNEL_TEST(the_bridges_past_the_ones_a_boot_publishes_are_dropped)
+{
+    if (!routing_test_run(test, routing_many_bridges_aml, sizeof(routing_many_bridges_aml), ROUTING_TEST_APIC))
+        return;
+    kernel_test_check(test, routing_test_table.children_peak == 256u,
+                      "256 children of the root bridge are compared, one for each function of its bus");
+    kernel_test_check(test,
+                      routing_test_table.bridges_below ==
+                              ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_INTERRUPT_ROUTING_MAX_BRIDGES &&
+                          routing_test_table.bridges_below_dropped == 2u,
+                      "64 bridges are published; B040, the 65th, and B100, the 257th child, are dropped");
+    kernel_test_check(test, routing_test_table.count == 0u && routing_test_table.addresses_shared == 0u,
+                      "their _PRT are empty, and B100 is not compared with B000");
     routing_test_close(test);
 }
 
@@ -410,22 +529,29 @@ static uint32_t routing_test_fnv(const uint8_t *bytes, uint32_t count)
 
 /**
  * @brief The fold of a table of two routes is FNV-1a over its model, its count as four bytes, then each route's
- *        interrupt as four bytes, segment as two, bus, device, pin, trigger and polarity, little-endian; the link
- *        is left out, and changing any other field changes the fold.
+ *        interrupt as four bytes, segment as two, bus, the count of bridges from its root bridge down to the one
+ *        whose _PRT holds it then each one's address as four bytes, device, pin, trigger and polarity,
+ *        little-endian; the link is left out, and changing any other field changes the fold.
  */
 KERNEL_TEST(the_fold_covers_every_published_field)
 {
     static RoutingTestTable_t table;
     const uint8_t expected[] = {
-        0x01u, 0x02u, 0x00u, 0x00u, 0x00u, 0x10u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x03u, 0x00u,
-        0x01u, 0x01u, 0x0Bu, 0x01u, 0x00u, 0x00u, 0x02u, 0x00u, 0x04u, 0x05u, 0x03u, 0x00u, 0x00u,
+        0x01u, 0x02u, 0x00u, 0x00u, 0x00u, 0x10u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u, 0x00u,
+        0x03u, 0x00u, 0x01u, 0x01u, 0x0Bu, 0x01u, 0x00u, 0x00u, 0x02u, 0x00u, 0x04u, 0x02u, 0x00u,
+        0x00u, 0x1Cu, 0x00u, 0x02u, 0x00u, 0x01u, 0x00u, 0x05u, 0x03u, 0x00u, 0x00u,
     };
 
     memset(&table, 0, sizeof(table));
     table.model = ROUTING_TEST_APIC;
     table.count = 2u;
+    table.bridges_below = 2u;
+    table.below[0] = (AdvancedConfigurationAndPowerInterfaceInterruptRoutingBridge_t){.address = 0x001C0000u};
+    table.below[1] =
+        (AdvancedConfigurationAndPowerInterfaceInterruptRoutingBridge_t){.address = 0x00010002u, .above = 1u};
     table.routes[0] = (RoutingTestRoute_t){.interrupt = 16u, .device = 3u, .level = 1u, .active_low = 1u, .link = 7u};
-    table.routes[1] = (RoutingTestRoute_t){.interrupt = 0x10Bu, .segment = 2u, .bus = 4u, .device = 5u, .pin = 3u};
+    table.routes[1] =
+        (RoutingTestRoute_t){.interrupt = 0x10Bu, .segment = 2u, .bridge = 2u, .bus = 4u, .device = 5u, .pin = 3u};
 
     const uint32_t fold = advanced_configuration_and_power_interface_interrupt_routing_fold(&table);
 
@@ -441,6 +567,10 @@ KERNEL_TEST(the_fold_covers_every_published_field)
     table.routes[0].active_low = 0u;
     kernel_test_check(test, advanced_configuration_and_power_interface_interrupt_routing_fold(&table) != fold,
                       "a polarity changed changes it");
+    table.routes[0].active_low = 1u;
+    table.below[0].address = 0x001C0001u;
+    kernel_test_check(test, advanced_configuration_and_power_interface_interrupt_routing_fold(&table) != fold,
+                      "a bridge's function changed changes it");
     kernel_test_measure_hexadecimal(test, "fold", fold);
 }
 
