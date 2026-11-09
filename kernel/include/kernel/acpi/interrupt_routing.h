@@ -80,6 +80,18 @@ typedef struct AdvancedConfigurationAndPowerInterfaceInterruptRoutingBridge {
 } AdvancedConfigurationAndPowerInterfaceInterruptRoutingBridge_t;
 
 /**
+ * @brief A bridge between a PCI function and its root bus, as a lookup goes through it.
+ */
+typedef struct AdvancedConfigurationAndPowerInterfaceInterruptRoutingHop {
+    uint8_t device;   /**< The bridge's device, on the bus above it. */
+    uint8_t function; /**< Its function. */
+    bool cardbus;     /**< A CardBus bridge, whose own pin every function behind it takes, as Linux v6.17 takes it
+                           (acpi_pci_irq_lookup); false for a PCI-to-PCI bridge, which swizzles theirs. */
+    uint8_t pin;      /**< A CardBus bridge's Interrupt Pin, 1 to 4 for INTA to INTD; 0, none, or a value past 4, which
+                           the PCI specification reserves, gives no route. Unread for a PCI-to-PCI bridge. */
+} AdvancedConfigurationAndPowerInterfaceInterruptRoutingHop_t;
+
+/**
  * @brief The routes of one boot, and what reading them counted.
  */
 typedef struct AdvancedConfigurationAndPowerInterfaceInterruptRoutingTable {
@@ -161,20 +173,32 @@ extern void advanced_configuration_and_power_interface_interrupt_routing_publish
     AdvancedConfigurationAndPowerInterfaceInterruptRoutingTable_t *out_table);
 
 /**
- * @brief Finds where pin @p pin of device @p device on root bus @p bus of segment @p segment goes: the first entry of
- *        the root bridge's own _PRT the table holds for it, as Linux takes the first matching _PRT entry.
+ * @brief Finds where pin @p pin of device @p device goes, on the bus below the @p hop_count bridges @p hops names from
+ *        root bus @p bus of segment @p segment down, as Linux v6.17 looks a PCI function up (acpi_pci_irq_lookup).
+ *
+ * @details The first entry for the device and pin of the _PRT of the bridge above the function's bus decides: the
+ *          root bridge's on the root bus, otherwise the one of the bridge published for it below the root bridge.
+ *          Without such an entry, or without a bridge published for it, the pin goes through that bridge, swizzled
+ *          to (pin + device) mod 4, or replaced by a CardBus bridge's own, and the bridge's device and that pin are
+ *          looked up on the bus above, up to the root bridge's _PRT. An entry found ends the lookup, whatever its link
+ *          gives.
  *
  * @param table     A published table.
  * @param segment   The PCI segment group.
- * @param bus       The bus, a root bus.
- * @param device    The device number, 0 to 31.
- * @param pin       The pin: 0 to 3, INTA to INTD.
- * @param out_route Receives the route when there is one.
- * @return false when the table holds no entry for that pin, or its first one gives no interrupt.
+ * @param bus       The root bus.
+ * @param hops      The bridges between the root bus and the function's bus, the one on the root bus first; NULL
+ *                  when @p hop_count is 0.
+ * @param hop_count How many, 0 for a function on the root bus.
+ * @param device    The function's device number, 0 to 31.
+ * @param pin       Its pin: 0 to 3, INTA to INTD.
+ * @param out_route Receives the route of the entry found.
+ * @return false when no _PRT up to the root bridge's holds an entry, when the first one found gives no interrupt, or
+ *         when a CardBus bridge on the way has no pin or one past 4.
  */
 extern bool advanced_configuration_and_power_interface_interrupt_routing_find(
     const AdvancedConfigurationAndPowerInterfaceInterruptRoutingTable_t *table, uint16_t segment, uint8_t bus,
-    uint8_t device, uint8_t pin, AdvancedConfigurationAndPowerInterfaceInterruptRoute_t *out_route);
+    const AdvancedConfigurationAndPowerInterfaceInterruptRoutingHop_t *hops, uint32_t hop_count, uint8_t device,
+    uint8_t pin, AdvancedConfigurationAndPowerInterfaceInterruptRoute_t *out_route);
 
 /**
  * @brief Folds what @p table publishes with FNV-1a: its model and count, then each route's interrupt, segment, bus,

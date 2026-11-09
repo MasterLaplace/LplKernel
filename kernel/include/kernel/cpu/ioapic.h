@@ -23,6 +23,7 @@
 #ifndef KERNEL_CPU_INPUT_OUTPUT_ADVANCED_PROGRAMMABLE_INTERRUPT_CONTROLLER_H
 #define KERNEL_CPU_INPUT_OUTPUT_ADVANCED_PROGRAMMABLE_INTERRUPT_CONTROLLER_H
 
+#include <kernel/acpi/interrupt_routing.h>
 #include <kernel/acpi/tables.h>
 #include <kernel/cpu/paging.h>
 #include <kernel/cpu/pci.h>
@@ -217,16 +218,40 @@ extern uint32_t input_output_advanced_programmable_interrupt_controller_reachabl
  */
 extern uint32_t input_output_advanced_programmable_interrupt_controller_get_unreachable_inputs(void);
 
+#define INPUT_OUTPUT_ADVANCED_PROGRAMMABLE_INTERRUPT_CONTROLLER_MAX_BRIDGES                                            \
+    32u /**< Bridges a lookup goes through between a PCI function and its root bus; a longer chain, a loop of          \
+             misnumbered buses among them, gets no route. */
+
+/**
+ * @brief Finds the route the boot published for the interrupt pin of PCI function @p device, once the boot took the
+ *        APIC model, as Linux v6.17 looks a function up (ACPI specification, §3.11).
+ *
+ * @details The bridges between the function and its root bus are those the PCI scan found leading to each bus
+ *          (peripheral_component_interconnect_find_bridge_to); a CardBus bridge, of class 0x06 and subclass 0x07,
+ *          hands its own Interrupt Pin to the functions behind it, any other bridge swizzles theirs.
+ *
+ * @param device    The function, on segment 0.
+ * @param out_route Receives the route.
+ * @return false when the boot did not take the APIC model, the function has no interrupt pin or one past 4, which
+ *         the PCI specification reserves, more than
+ *         INPUT_OUTPUT_ADVANCED_PROGRAMMABLE_INTERRUPT_CONTROLLER_MAX_BRIDGES bridges lead to it, or the lookup finds
+ *         no route.
+ */
+extern bool input_output_advanced_programmable_interrupt_controller_find_device_route(
+    const PeripheralComponentInterconnectDevice_t *device,
+    AdvancedConfigurationAndPowerInterfaceInterruptRoute_t *out_route);
+
 /**
  * @brief Routes the interrupt pin of PCI function @p device through its I/O APIC line to the processor of logical slot
  *        @p slot with @p vector, and unmasks the line.
  *
- * @details The line is the Global System Interrupt the boot's published routes give the pin (ACPI specification,
- *          §3.11), programmed with their trigger and polarity, fixed delivery and a physical destination. It is
+ * @details The line is the Global System Interrupt the route of its pin gives
+ *          (input_output_advanced_programmable_interrupt_controller_find_device_route), behind bridges or on a root
+ *          bus, programmed with the route's trigger and polarity, fixed delivery and a physical destination. It is
  *          programmed only once the boot took the APIC model, told to firmware through `\_PIC (1)` where it has one
  *          (§3.8 step 5): the routes then answer for the I/O APIC. The line is masked while its entry is written.
  *
- * @param device   The function, on a root bus of segment 0.
+ * @param device   The function, on segment 0.
  * @param slot     The logical CPU slot whose local APIC the line interrupts.
  * @param vector   The vector, from device_interrupt_allocate.
  * @param out_line Receives the Global System Interrupt, or

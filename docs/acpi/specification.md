@@ -86,7 +86,7 @@ Each item is left out on purpose. "Brings it back" names what reverses the decis
 | `LoadTable` with a RootPath, ParameterPath or ParameterData, `Load` from a Buffer, either run while a table is declared | every call site on the corpus passes `""`, `""`, `Zero`, and loads from a region or a field, in a method; another form fails with `load_form_unsupported` | a needs-path call site with another form |
 | `_REG` for SystemMemory and SystemIO | ACPI declares both always available, and OSPM runs no `_REG` for them ([§6.5.4]) | a needs-path `_REG` that tests either space |
 | Opcodes outside the needs path | not reached on the path to `_CST` | the needs path of a later need, or a counted `unimplemented_operator` |
-| The lookup of a function behind bridges, and the swizzle of its pin through a bridge whose `_PRT` holds no entry for it (`acpi_pci_irq_lookup`) | the routes of the bridges are published; the lookup comes with its first caller | a device behind a bridge that has neither MSI nor MSI-X (#801) |
+| Alternative Routing-ID: Linux looks every function behind a bridge that forwards ARI up as device 0 (`pci_ari_enabled`) | the kernel enables no ARI forwarding, and looks a function up by the device its configuration address names | a function without MSI behind a bridge firmware left forwarding ARI |
 | Choosing a link's interrupt through `_SRS` and `_DIS`, as Linux does for a link without a current one and, in the APIC model, to move one to the least shared interrupt of its `_PRS` (`acpi_irq_balance`) | QEMU's firmware routes its links before the kernel starts; a corpus dump holds no state of the router its links read | a link found unrouted on a target |
 | A `_PRT` Source name that resolves to nothing, which ACPICA keeps empty and Linux reads as a pin wired to its SourceIndex | the SourceIndex of such an entry indexes a link's resources, not an interrupt: the entry is left out (`entries_malformed`) | a target whose `_PRT` names a missing link |
 | A `_PRT` Source given as a String | the Source is a NamePath ([§6.2.14]); ACPICA also takes a String | a machine that gives one |
@@ -782,8 +782,15 @@ bridge firmware describes, are published, as Linux v6.17 reads them when a drive
 - **The interrupt** is a Global System Interrupt in the APIC model, an ISA IRQ in the PIC model: firmware's `_PRT`
   answers for the model step 5 told it. When `\_PIC (1)` fails, the model is unknown: the routes are published and
   counted, and no driver takes a line from them, nor from the 8259 (§3.8 step 5).
-- **A lookup** on a root bus takes the first entry of its root bridge's `_PRT` for a segment, bus, device and pin, as
-  Linux takes the first matching entry, and finds no route when that entry has no interrupt.
+- **A lookup** goes as Linux looks a PCI function up (`acpi_pci_irq_lookup`). The first entry for its device and pin
+  of the `_PRT` of the bridge above its bus decides, the root bridge's on a root bus, and finds no route when it has no
+  interrupt. Without such an entry, or without a bridge published for that PCI bridge, the pin goes through it,
+  swizzled to (pin + device) mod 4 (`pci_swizzle_interrupt_pin`), or replaced by the Interrupt Pin of a CardBus
+  bridge, class 0x0607, none of which gives no route; the bridge's device and that pin are then looked up on the bus
+  above, up to the root bridge's `_PRT`. An Interrupt Pin past 4, the function's or a CardBus bridge's, gives no route
+  either, where Linux looks it up as it is and swizzles it on: the PCI specification reserves those values, and a
+  function that has gone away reads 0xFF. The bridges between a function and its root bus are the ones the PCI scan
+  finds leading to each bus, by their Secondary Bus Number register.
 - **The table is published once,** as plain data the drivers read, with one `[LPLTLM] acpi.prt` line: the model, the
   counts and the fold of the routes.
 
