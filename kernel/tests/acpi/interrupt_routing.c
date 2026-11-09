@@ -340,10 +340,11 @@ KERNEL_TEST(only_the_root_bridges_present_by_their_status_are_read)
                       "PCI5, functioning but not present, routes device 6 INTA to GSI 41");
     kernel_test_check(test,
                       routing_test_table.bridges_below == 1u && routing_test_table.below[0].segment == 1u &&
-                          routing_test_table.below[0].bus == 2u && routing_test_table.routes[1].segment == 1u &&
-                          routing_test_table.routes[1].bus == 2u &&
+                          routing_test_table.below[0].bus == 2u && routing_test_table.routes[2].bridge == 1u &&
+                          routing_test_table.routes[2].segment == 1u && routing_test_table.routes[2].bus == 2u &&
                           routing_test_routes_below((const uint32_t[]){0x00050000u}, 1u, 0u, 0u, 41u),
-                      "BRG0, a bridge below PCI2 by its _ADR, routes device 0 INTA of the bus below 05.0 to GSI 41");
+                      "BRG0, a bridge below PCI2 by its _ADR, routes device 0 INTA of the bus below 05.0 to GSI 41, "
+                      "its entry published after those of PCI2 and PCI5, the two root bridges read");
     kernel_test_check(test,
                       routing_test_table.count == 3u && routing_test_unrouted(7u, 0u) && routing_test_unrouted(12u, 0u),
                       "nothing else is published: not PCI3's nor DEV2's _PRT");
@@ -404,24 +405,29 @@ KERNEL_TEST(the_bridges_below_a_root_bridge_are_the_companions_linux_takes)
                       "without one of them, do not pass L0A0, which routes 28");
     kernel_test_check(test, routing_test_routes_below((const uint32_t[]){0x000B0000u}, 1u, 0u, 0u, 29u),
                       "of 0B.0, D0B0, a video device by its _DOD, routes GSI 29");
+    kernel_test_check(test, routing_test_routes_below((const uint32_t[]){0x000E0000u}, 1u, 0u, 0u, 30u),
+                      "of 0E.0, NFB0, whose _STA does not find \\MISS, scores as a Device without _STA and routes GSI "
+                      "30, past NFA0, whose _STA fails otherwise and refuses it");
     kernel_test_check(test, routing_test_integer("\\CNTS") == 0u,
                       "DSP0, the one child of PXSX that names 01.0, is not scored: its _STA never runs");
-    kernel_test_check(test, routing_test_table.count == 14u && routing_test_unrouted(0u, 0u),
+    kernel_test_check(test, routing_test_table.count == 15u && routing_test_unrouted(0u, 0u),
                       "nothing else is published: none of the Devices scored lower, HIDD, ALLF, BIGD, BADA, NOAD, "
                       "TZHD nor DP09, and no entry of a bridge is the root bus's");
     kernel_test_check(test,
-                      routing_test_table.bridges_below == 21u && routing_test_table.bridges_below_dropped == 1u &&
+                      routing_test_table.bridges_below == 22u && routing_test_table.bridges_below_dropped == 1u &&
                           routing_test_table.depth_peak ==
                               ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_INTERRUPT_ROUTING_MAX_DEPTH,
-                      "21 bridges are published, DEEP and the seven below it among them, eight deep; DP09, the ninth "
+                      "22 bridges are published, DEEP and the seven below it among them, eight deep; DP09, the ninth "
                       "below the root bridge, is dropped");
-    kernel_test_check(test, routing_test_table.addresses_shared == 8u && routing_test_table.children_peak == 26u,
-                      "eight functions are each named by several children, 26 of the root bridge's children name a "
+    kernel_test_check(test, routing_test_table.addresses_shared == 9u && routing_test_table.children_peak == 28u,
+                      "nine functions are each named by several children, 28 of the root bridge's children name a "
                       "function");
-    kernel_test_check(test,
-                      routing_test_counts.statuses[ROUTING_TEST_STATUS(INDEX_OUT_OF_RANGE)] == 1u &&
-                          routing_test_table.tables_failed == 0u,
-                      "BADA's _ADR fails once, counted, and no bridge without a _PRT is read as one that fails");
+    kernel_test_check(
+        test,
+        routing_test_counts.statuses[ROUTING_TEST_STATUS(INDEX_OUT_OF_RANGE)] == 2u &&
+            routing_test_table.tables_failed == 0u,
+        "BADA's _ADR and NFA0's _STA each fail once, counted, and no bridge without a _PRT is read as one that "
+        "fails");
     routing_test_close(test);
 }
 
@@ -473,6 +479,52 @@ KERNEL_TEST(the_bridges_past_the_ones_a_boot_publishes_are_dropped)
                       "64 bridges are published; B040, the 65th, and B100, the 257th child, are dropped");
     kernel_test_check(test, routing_test_table.count == 0u && routing_test_table.addresses_shared == 0u,
                       "their _PRT are empty, and B100 is not compared with B000");
+    routing_test_close(test);
+}
+
+/**
+ * @brief Every root bridge's own _PRT is read before the bridges below any of them, so that the bridges below one never
+ *        crowd another's routes out of the table.
+ */
+KERNEL_TEST(the_root_bridges_routes_come_before_those_of_the_bridges_below_them)
+{
+    if (!routing_test_run(test, routing_roots_first_aml, sizeof(routing_roots_first_aml), ROUTING_TEST_APIC))
+        return;
+    kernel_test_check(test, routing_test_routes(0u, 1u, 3u, 0u, 16u, ROUTING_TEST_LEVEL, ROUTING_TEST_LOW, 0u),
+                      "PCI1, read before the 64 bridges below PCI0, routes device 3 INTA of bus 1 to GSI 16");
+    kernel_test_check(test,
+                      routing_test_table.count ==
+                              ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_INTERRUPT_ROUTING_MAX_ROUTES &&
+                          routing_test_table.entries == 257u && routing_test_table.entries_dropped == 1u &&
+                          routing_test_table.bridges_below == 64u,
+                      "of the 257 entries, the last one the 64th bridge below PCI0 holds is dropped");
+    kernel_test_check(test,
+                      routing_test_routes_below((const uint32_t[]){0x00070006u}, 1u, 0u, 2u, 34u) &&
+                          !routing_test_routes_below((const uint32_t[]){0x00070007u}, 1u, 0u, 3u, 35u),
+                      "BR3E, 07.6, still routes INTC to GSI 34, and BR3F, 07.7, its INTD no more");
+    routing_test_close(test);
+}
+
+/**
+ * @brief The bridges below the root bridges past the first 16 a boot reads are not read, those root bridges counted,
+ *        their own _PRT read.
+ */
+KERNEL_TEST(the_bridges_below_root_bridges_past_the_ones_a_boot_walks_are_not_read)
+{
+    if (!routing_test_run(test, routing_many_roots_aml, sizeof(routing_many_roots_aml), ROUTING_TEST_APIC))
+        return;
+    kernel_test_check(test,
+                      routing_test_table.bridges == 17u && routing_test_table.bridges_unwalked == 1u &&
+                          routing_test_table.bridges_below == 1u && routing_test_table.bridges_below_dropped == 0u,
+                      "of 17 root bridges, RB10, the 17th, is counted, and the one bridge published is RB0F's");
+    kernel_test_check(test,
+                      routing_test_routes(0u, 15u, 1u, 0u, 31u, ROUTING_TEST_LEVEL, ROUTING_TEST_LOW, 0u) &&
+                          routing_test_routes(0u, 16u, 1u, 0u, 32u, ROUTING_TEST_LEVEL, ROUTING_TEST_LOW, 0u),
+                      "RB0F and RB10 route device 1 INTA of their buses to GSI 31 and 32 in their own _PRT");
+    kernel_test_check(test,
+                      routing_test_table.count == 18u && routing_test_table.below[0].bus == 15u &&
+                          routing_test_routes_below((const uint32_t[]){0x001C0000u}, 1u, 0u, 0u, 79u),
+                      "below RB0F, P1C0 routes GSI 79; RB10's P1C0 is not read");
     routing_test_close(test);
 }
 

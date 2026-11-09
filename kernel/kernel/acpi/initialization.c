@@ -272,8 +272,8 @@ static bool initialization_status_invalid(uint64_t status)
  *
  * @return false when its evaluation failed or gave no Integer, String or Buffer, counted.
  */
-static bool initialization_read_status(InitializationLoad_t *load, Initialization_t *initialization, uint32_t device,
-                                       uint64_t *out_status)
+static InitializationStatus_t initialization_read_status(InitializationLoad_t *load, Initialization_t *initialization,
+                                                         uint32_t device, uint64_t *out_status)
 {
     const uint32_t object = initialization_object(load, device, "_STA");
     InitializationValue_t result;
@@ -281,7 +281,7 @@ static bool initialization_read_status(InitializationLoad_t *load, Initializatio
 
     *out_status = INITIALIZATION_NO_STATUS;
     if (object == 0u)
-        return true;
+        return INITIALIZATION_OK;
     ++initialization->status_evaluations;
 
     InitializationStatus_t status =
@@ -296,11 +296,11 @@ static bool initialization_read_status(InitializationLoad_t *load, Initializatio
     {
         ++initialization->status_failed;
         initialization_count_failure(initialization, object, status);
-        return false;
+        return status;
     }
     if (initialization_status_invalid(*out_status))
         ++initialization->status_invalid;
-    return true;
+    return INITIALIZATION_OK;
 }
 
 /**
@@ -325,7 +325,7 @@ static bool initialization_decide_device(InitializationLoad_t *load, Initializat
     uint64_t status = 0u;
 
     initialization_node(load, device)->flags |= INITIALIZATION_WALKED;
-    if (!initialization_read_status(load, initialization, device, &status))
+    if (initialization_read_status(load, initialization, device, &status) != INITIALIZATION_OK)
         return true;
     if ((status & (INITIALIZATION_PRESENT | INITIALIZATION_FUNCTIONING)) == 0u)
     {
@@ -997,6 +997,12 @@ void advanced_configuration_and_power_interface_initialize_namespace(Initializat
 bool advanced_configuration_and_power_interface_initialization_read_status(InitializationLoad_t *load,
                                                                            Initialization_t *initialization,
                                                                            uint32_t device, uint64_t *out_status)
+{
+    return initialization_read_status(load, initialization, device, out_status) == INITIALIZATION_OK;
+}
+
+InitializationStatus_t advanced_configuration_and_power_interface_initialization_evaluate_status(
+    InitializationLoad_t *load, Initialization_t *initialization, uint32_t device, uint64_t *out_status)
 {
     return initialization_read_status(load, initialization, device, out_status);
 }

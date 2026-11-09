@@ -175,6 +175,23 @@ extern bool advanced_configuration_and_power_interface_initialization_read_statu
     AdvancedConfigurationAndPowerInterfaceInitialization_t *initialization, uint32_t device, uint64_t *out_status);
 
 /**
+ * @brief Reads the _STA of a device as advanced_configuration_and_power_interface_initialization_read_status reads
+ *        it, and says why a read failed, as Linux v6.17 tells a _STA whose evaluation does not find a name from
+ *        one that fails otherwise (find_child_checks).
+ *
+ * @param load           The load.
+ * @param initialization The counts the sequence keeps, the _STA evaluations among them.
+ * @param device         The node whose _STA is read.
+ * @param out_status     Receives the status, 0x0F without a _STA.
+ * @return OK when it was read or there is none; otherwise the status its evaluation or conversion failed with,
+ *         counted, NAME_NOT_FOUND among them when it names an object that does not exist.
+ */
+extern AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t
+advanced_configuration_and_power_interface_initialization_evaluate_status(
+    AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
+    AdvancedConfigurationAndPowerInterfaceInitialization_t *initialization, uint32_t device, uint64_t *out_status);
+
+/**
  * @brief Evaluates @p object, data or a method, and converts what it gives into an Integer as an operand is
  *        converted (§5.2); a failure is counted under its status.
  *

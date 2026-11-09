@@ -1061,19 +1061,20 @@ static void harness_print_routing(AdvancedConfigurationAndPowerInterfaceMachineL
 {
     char path[HARNESS_PATH_BYTES];
 
-    printf("aml prt model=%s bridges=%u bridges_absent=%u bridges_failed=%u bridges_unrouted=%u bridges_below=%u "
-           "bridges_below_dropped=%u addresses_shared=%u children_peak=%u depth_peak=%u "
+    printf("aml prt model=%s bridges=%u bridges_absent=%u bridges_failed=%u bridges_unrouted=%u bridges_unwalked=%u "
+           "bridges_below=%u bridges_below_dropped=%u addresses_shared=%u children_peak=%u depth_peak=%u "
            "tables_failed=%u entries=%u entries_malformed=%u "
            "entries_repaired=%u entries_dropped=%u links=%u links_unrouted=%u links_failed=%u links_dropped=%u "
            "routes=%u fold=0x%08X\n",
            advanced_configuration_and_power_interface_interrupt_routing_model_name(harness_routing.model),
            harness_routing.bridges, harness_routing.bridges_absent, harness_routing.bridges_failed,
-           harness_routing.bridges_unrouted, harness_routing.bridges_below, harness_routing.bridges_below_dropped,
-           harness_routing.addresses_shared, harness_routing.children_peak, harness_routing.depth_peak,
-           harness_routing.tables_failed, harness_routing.entries, harness_routing.entries_malformed,
-           harness_routing.entries_repaired, harness_routing.entries_dropped, harness_routing.links,
-           harness_routing.links_unrouted, harness_routing.links_failed, harness_routing.links_dropped,
-           harness_routing.count, advanced_configuration_and_power_interface_interrupt_routing_fold(&harness_routing));
+           harness_routing.bridges_unrouted, harness_routing.bridges_unwalked, harness_routing.bridges_below,
+           harness_routing.bridges_below_dropped, harness_routing.addresses_shared, harness_routing.children_peak,
+           harness_routing.depth_peak, harness_routing.tables_failed, harness_routing.entries,
+           harness_routing.entries_malformed, harness_routing.entries_repaired, harness_routing.entries_dropped,
+           harness_routing.links, harness_routing.links_unrouted, harness_routing.links_failed,
+           harness_routing.links_dropped, harness_routing.count,
+           advanced_configuration_and_power_interface_interrupt_routing_fold(&harness_routing));
     for (uint32_t index = 0u; index < harness_routing.count; ++index)
     {
         const AdvancedConfigurationAndPowerInterfaceInterruptRoute_t *route = &harness_routing.routes[index];

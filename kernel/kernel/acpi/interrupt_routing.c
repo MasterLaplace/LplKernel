@@ -14,6 +14,7 @@
 #define ROUTING_MAX_LINKS      ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_INTERRUPT_ROUTING_MAX_LINKS
 #define ROUTING_MAX_BRIDGES    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_INTERRUPT_ROUTING_MAX_BRIDGES
 #define ROUTING_MAX_DEPTH      ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_INTERRUPT_ROUTING_MAX_DEPTH
+#define ROUTING_MAX_ROOTS      ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_INTERRUPT_ROUTING_MAX_ROOTS
 #define ROUTING_MAX_CHILDREN   ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_INTERRUPT_ROUTING_MAX_CHILDREN
 #define ROUTING_MALFORMED      ROUTING_STATUS(TYPE_MISMATCH) /**< What a result of the wrong shape fails as. */
 #define ROUTING_ENTRY_ELEMENTS 4u      /**< A mapping package: Address, Pin, Source, SourceIndex (ACPI 6.6 §6.2.14). */
@@ -74,6 +75,15 @@ typedef enum RoutingScore {
     ROUTING_SCORE_MIDDLE = 3,   /**< Without _STA, and a video device as Linux tells one (acpi_is_video_device). */
     ROUTING_SCORE_HIGH = 4,     /**< Enabled by its _STA, without a _HID: the walk ends at the first one. */
 } RoutingScore_t;
+
+/**
+ * @brief A root bridge whose _PRT the first pass read, whose bridges below the second pass walks.
+ */
+typedef struct RoutingRoot {
+    uint32_t node;    /**< The root bridge. */
+    uint16_t segment; /**< Its _SEG. */
+    uint8_t bus;      /**< Its _BBN. */
+} RoutingRoot_t;
 
 /**
  * @brief A Device of a bridge whose _ADR names a PCI function.
@@ -628,24 +638,25 @@ static bool routing_has_hardware_identifier(RoutingLoad_t *load, RoutingCounts_t
 
 /**
  * @brief Scores @p device as Linux v6.17 scores one of the Devices of a bridge that name the same PCI function
- *        (find_child_checks, its children checked): refused without children; without _STA, middle for a video
- *        device, low otherwise; refused when its _STA fails or says it is not enabled; low with a _HID, high
- *        without.
+ *        (find_child_checks, its children checked): refused without children; without _STA, or with one whose
+ *        evaluation does not find a name, middle for a video device, low otherwise; refused when its _STA fails
+ *        otherwise or says it is not enabled; low with a _HID, high without.
  */
 static RoutingScore_t routing_score(RoutingLoad_t *load, RoutingCounts_t *counts, uint32_t device)
 {
     uint64_t status = 0u;
+    RoutingStatus_t read = ROUTING_STATUS(NAME_NOT_FOUND);
 
     if (!routing_has_children(load, device))
         return ROUTING_SCORE_REFUSED;
-    if (routing_object(load, device, "_STA") == 0u)
+    if (routing_object(load, device, "_STA") != 0u)
+    {
+        read = advanced_configuration_and_power_interface_initialization_evaluate_status(load, counts, device, &status);
+        advanced_configuration_and_power_interface_initialization_settle(load, counts);
+    }
+    if (read == ROUTING_STATUS(NAME_NOT_FOUND))
         return routing_is_video_device(load, device) ? ROUTING_SCORE_MIDDLE : ROUTING_SCORE_LOW;
-
-    const bool read =
-        advanced_configuration_and_power_interface_initialization_read_status(load, counts, device, &status);
-
-    advanced_configuration_and_power_interface_initialization_settle(load, counts);
-    if (!read || (status & ROUTING_ENABLED) == 0u)
+    if (read != ROUTING_OK || (status & ROUTING_ENABLED) == 0u)
         return ROUTING_SCORE_REFUSED;
     return routing_has_hardware_identifier(load, counts, device) ? ROUTING_SCORE_LOW : ROUTING_SCORE_HIGH;
 }
@@ -873,6 +884,8 @@ void advanced_configuration_and_power_interface_interrupt_routing_publish(Routin
                                                                           RoutingTable_t *out_table)
 {
     RoutingLinks_t links;
+    RoutingRoot_t roots[ROUTING_MAX_ROOTS];
+    uint32_t root_count = 0u;
 
     links.count = 0u;
     memset(out_table, 0, offsetof(RoutingTable_t, routes));
@@ -905,10 +918,16 @@ void advanced_configuration_and_power_interface_interrupt_routing_publish(Routin
             else
                 routing_read_table(load, initialization, out_table, &links, index, (uint16_t) segment, (uint8_t) bus,
                                    0u);
-            routing_read_bridges_below(load, initialization, out_table, &links, index, 0u, (uint16_t) segment,
-                                       (uint8_t) bus, 1u);
+            if (root_count == ROUTING_MAX_ROOTS)
+                ++out_table->bridges_unwalked;
+            else
+                roots[root_count++] =
+                    (RoutingRoot_t){.node = index, .segment = (uint16_t) segment, .bus = (uint8_t) bus};
         }
     }
+    for (uint32_t root = 0u; root < root_count; ++root)
+        routing_read_bridges_below(load, initialization, out_table, &links, roots[root].node, 0u, roots[root].segment,
+                                   roots[root].bus, 1u);
 }
 
 bool advanced_configuration_and_power_interface_interrupt_routing_find(const RoutingTable_t *table, uint16_t segment,

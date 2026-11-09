@@ -689,6 +689,7 @@ void write_advanced_configuration_and_power_interface_interrupt_routing_record(S
     kernel_telemetry_write_unsigned("bridges_absent", table->bridges_absent);
     kernel_telemetry_write_unsigned("bridges_failed", table->bridges_failed);
     kernel_telemetry_write_unsigned("bridges_unrouted", table->bridges_unrouted);
+    kernel_telemetry_write_unsigned("bridges_unwalked", table->bridges_unwalked);
     kernel_telemetry_write_unsigned("bridges_below", table->bridges_below);
     kernel_telemetry_write_unsigned("bridges_below_dropped", table->bridges_below_dropped);
     kernel_telemetry_write_unsigned("addresses_shared", table->addresses_shared);
