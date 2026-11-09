@@ -653,11 +653,9 @@ static RoutingScore_t routing_score(RoutingLoad_t *load, RoutingCounts_t *counts
 /**
  * @brief The Device Linux v6.17 takes among those routing_children holds from @p first on whose _ADR names the same
  *        function, as acpi_find_child_device walks them: the first one alone; among several, each scored once the
- *        walk reaches a second, the first one scored best, the walk ending at the first scored high. Counts an
- *        address several give.
+ *        walk reaches a second, the first one scored best, the walk ending at the first scored high.
  */
-static uint32_t routing_choose(RoutingLoad_t *load, RoutingCounts_t *counts, RoutingTable_t *table, uint32_t first,
-                               uint32_t count)
+static uint32_t routing_choose(RoutingLoad_t *load, RoutingCounts_t *counts, uint32_t first, uint32_t count)
 {
     uint32_t chosen = routing_children[first].node;
     RoutingScore_t best = ROUTING_SCORE_UNSCORED;
@@ -668,7 +666,6 @@ static uint32_t routing_choose(RoutingLoad_t *load, RoutingCounts_t *counts, Rou
             continue;
         if (best == ROUTING_SCORE_UNSCORED)
         {
-            ++table->addresses_shared;
             best = routing_score(load, counts, chosen);
             if (best == ROUTING_SCORE_HIGH)
                 break;
@@ -725,6 +722,43 @@ static bool routing_holds_a_table(const RoutingLoad_t *load, uint32_t device)
 }
 
 /**
+ * @brief Whether a Device child of @p parent holds a _PRT or sits above one that does: only then may a bridge right
+ *        below @p parent route anything.
+ */
+static bool routing_tables_below(const RoutingLoad_t *load, uint32_t parent)
+{
+    for (uint32_t child = routing_node(load, parent)->first_child; child != 0u;
+         child = routing_node(load, child)->next_sibling)
+        if (routing_node(load, child)->type == ROUTING_NODE(DEVICE) && routing_holds_a_table(load, child))
+            return true;
+    return false;
+}
+
+/**
+ * @brief Whether a child routing_children holds after @p index, among the first @p count, names its function.
+ */
+static bool routing_address_shared(uint32_t index, uint32_t count)
+{
+    for (uint32_t later = index + 1u; later < count; ++later)
+        if (routing_children[later].address == routing_children[index].address)
+            return true;
+    return false;
+}
+
+/**
+ * @brief The first child routing_children holds from @p first on, among the first @p count, that names the function
+ *        of the one at @p first and holds a _PRT or sits above one that does; @p count when none does.
+ */
+static uint32_t routing_first_holder(const RoutingLoad_t *load, uint32_t first, uint32_t count)
+{
+    for (uint32_t index = first; index < count; ++index)
+        if (routing_children[index].address == routing_children[first].address &&
+            routing_holds_a_table(load, routing_children[index].node))
+            return index;
+    return count;
+}
+
+/**
  * @brief Publishes the bridges right below @p parent, the root bridge on segment @p segment and bus @p bus when
  *        @p above is 0, bridge @p above below it otherwise, @p depth bridges below the root bridge, then reads each
  *        one's _PRT and the bridges below it, depth first.
@@ -734,7 +768,8 @@ static bool routing_holds_a_table(const RoutingLoad_t *load, uint32_t device)
  *          routing_choose takes; never, right below the root bridge, one whose _ADR names function 0 of device 0 and
  *          that has a _HID. It is published when it holds a _PRT or sits above one that does; one past the bridges a
  *          boot publishes, deeper than ROUTING_MAX_DEPTH, or past the ROUTING_MAX_CHILDREN children compared, is
- *          counted as dropped.
+ *          counted as dropped. No _ADR is read when no Device child holds a _PRT or sits above one that does, and the
+ *          children that name one function are scored only when one of them does: no bridge would be published.
  */
 static void routing_read_bridges_below(RoutingLoad_t *load, RoutingCounts_t *counts, RoutingTable_t *table,
                                        RoutingLinks_t *links, uint32_t parent, uint16_t above, uint16_t segment,
@@ -743,6 +778,8 @@ static void routing_read_bridges_below(RoutingLoad_t *load, RoutingCounts_t *cou
     const uint32_t first = table->bridges_below;
     uint32_t count = 0u;
 
+    if (!routing_tables_below(load, parent))
+        return;
     for (uint32_t child = routing_node(load, parent)->first_child; child != 0u;
          child = routing_node(load, child)->next_sibling)
     {
@@ -762,12 +799,19 @@ static void routing_read_bridges_below(RoutingLoad_t *load, RoutingCounts_t *cou
     {
         if (routing_address_taken(index))
             continue;
+        if (routing_address_shared(index, count))
+            ++table->addresses_shared;
 
-        const uint32_t chosen = routing_choose(load, counts, table, index, count);
+        const uint32_t holder = routing_first_holder(load, index, count);
 
-        if ((above == 0u && routing_children[index].address == 0u &&
-             routing_has_hardware_identifier(load, counts, chosen)) ||
-            !routing_holds_a_table(load, chosen))
+        if (holder == count)
+            continue;
+
+        const uint32_t chosen = routing_choose(load, counts, index, count);
+
+        if ((chosen != routing_children[holder].node && !routing_holds_a_table(load, chosen)) ||
+            (above == 0u && routing_children[index].address == 0u &&
+             routing_has_hardware_identifier(load, counts, chosen)))
             continue;
         if (depth > ROUTING_MAX_DEPTH || table->bridges_below == ROUTING_MAX_BRIDGES)
         {

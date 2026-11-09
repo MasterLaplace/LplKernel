@@ -757,8 +757,11 @@ bridge firmware describes, are published, as Linux v6.17 reads them when a drive
   `_ADR` is 0 and that has such a `_HID` stands for nothing, as Linux ignores it on a root bus. A bridge is published
   when it, or a Device below it, holds a `_PRT`, depth first in declaration order, the bridges right below one
   before those below them: its entries follow those of its root bridge or of the bridge above it, and route the
-  devices of the bus below it. One past the bridges a boot publishes, deeper than a boot goes, or past the children of
-  one bridge a boot compares, is counted (`bridges_below_dropped`), and nothing below it is read (§6.1).
+  devices of the bus below it. The `_ADR` of the children of a root bridge or a bridge are read only when a Device
+  among them holds a `_PRT` or sits above one that does, and the children that name one function are scored only when
+  one of them does: no bridge would be published otherwise. One past the bridges a boot publishes, deeper than a boot
+  goes, or past the children of one bridge a boot compares, is counted (`bridges_below_dropped`), and nothing below it
+  is read (§6.1).
 - **Entries** ([§6.2.14]). A Package of four: an Integer Address whose bits 16 to 31 name the device, its function
   bits ignored as Linux ignores them; an Integer Pin, 0 to 3 for INTA to INTD; a Source; an Integer SourceIndex. An
   entry of another shape, a device past 31 or a pin past 3, which no lookup would match, is left out and counted
