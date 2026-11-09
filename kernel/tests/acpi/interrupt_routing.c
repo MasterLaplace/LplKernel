@@ -488,10 +488,11 @@ KERNEL_TEST(a_function_behind_bridges_takes_the_entry_linux_finds_on_the_way_up)
         {.device = 2u}
     };
     static const RoutingTestHop_t cardbus[] = {
-        {.device = 0x1Cu, .cardbus = true, .pin = 3u}
+        {.device = 0x1Cu, .cardbus = true, .pin = 2u}
     };
     static const RoutingTestHop_t pinless_cardbus[] = {
-        {.device = 0x1Cu, .cardbus = true, .pin = 0u}
+        {.device = 0x1Cu},
+        {.device = 0u, .cardbus = true, .pin = 0u}
     };
     static const RoutingTestHop_t gone_cardbus[] = {
         {.device = 0x1Cu},
@@ -525,17 +526,26 @@ KERNEL_TEST(a_function_behind_bridges_takes_the_entry_linux_finds_on_the_way_up)
                       !advanced_configuration_and_power_interface_interrupt_routing_find(
                           &routing_test_table, 0u, 0u, undescribed, 1u, 0u, 0u, &route),
                       "behind device 5, which the root bridge's _PRT does not name, there is no route");
-    kernel_test_check(test, routing_test_reaches(cardbus, 1u, 2u, 0u, 18u),
-                      "behind a CardBus bridge at 0x1C whose pin is INTC, device 2 INTA takes INTC: GSI 18");
+    kernel_test_check(test, routing_test_reaches(cardbus, 1u, 2u, 0u, 17u),
+                      "behind a CardBus bridge at 0x1C whose pin is INTB, device 2 INTA takes INTB, where a swizzle "
+                      "would give INTC: GSI 17");
     kernel_test_check(test,
                       !advanced_configuration_and_power_interface_interrupt_routing_find(
-                          &routing_test_table, 0u, 0u, pinless_cardbus, 1u, 2u, 0u, &route),
-                      "behind a CardBus bridge without a pin, there is no route");
+                          &routing_test_table, 0u, 0u, pinless_cardbus, 2u, 2u, 0u, &route),
+                      "behind a CardBus bridge without a pin, below RP01, there is no route, where swizzling on would "
+                      "reach device 0x1C");
     kernel_test_check(test,
                       !advanced_configuration_and_power_interface_interrupt_routing_find(
                           &routing_test_table, 0u, 0u, gone_cardbus, 2u, 2u, 0u, &route),
                       "behind a CardBus bridge whose Interrupt Pin reads 0xFF, a reserved value, there is no route, "
                       "where swizzling it on would reach GSI 18 of device 0x1C");
+    kernel_test_check(test,
+                      !advanced_configuration_and_power_interface_interrupt_routing_find(
+                          &routing_test_table, 0u, 1u, downstream, 3u, 0u, 0u, &route) &&
+                          !advanced_configuration_and_power_interface_interrupt_routing_find(
+                              &routing_test_table, 1u, 0u, downstream, 3u, 0u, 0u, &route),
+                      "from bus 1, or from bus 0 of segment 1, which no root bridge stands for, the same bridges lead "
+                      "to no route: DSP2's entry is not taken");
     routing_test_close(test);
 }
 
