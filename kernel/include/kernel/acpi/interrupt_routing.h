@@ -38,6 +38,9 @@
     64u /**< Interrupt links one boot resolves; an entry that names another is counted as dropped (§6.1). */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_INTERRUPT_ROUTING_MAX_BRIDGES                                       \
     64u /**< Bridges below a root bridge one boot publishes; one past them is counted as dropped (§6.1). */
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_INTERRUPT_ROUTING_MAX_ROOTS                                         \
+    16u /**< Root bridges one boot walks the bridges below, once every root bridge's own _PRT is read; one past them   \
+           is counted (§6.1). */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_INTERRUPT_ROUTING_MAX_DEPTH                                         \
     8u /**< Bridges between a root bridge and the deepest one published, itself included (§6.1). */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_INTERRUPT_ROUTING_MAX_CHILDREN                                      \
@@ -104,6 +107,8 @@ typedef struct AdvancedConfigurationAndPowerInterfaceInterruptRoutingTable {
                                      nor functioning, or fails on: their _PRT is not read. */
     uint32_t bridges_failed;    /**< Of those present, the ones whose _SEG or _BBN failed: their _PRT is not read. */
     uint32_t bridges_unrouted;  /**< Of those present, the ones without a _PRT. */
+    uint32_t bridges_unwalked;  /**< Of those present, the ones past the root bridges a boot walks: their _PRT is read,
+                                     the bridges below them are not. */
     uint32_t tables_failed;     /**< _PRT evaluations that failed or gave no Package. */
     uint32_t entries;           /**< Elements of the _PRT packages read. */
     uint32_t entries_malformed; /**< Of those, the ones left out: no Package of four, an Address or a Pin that is no
@@ -119,8 +124,8 @@ typedef struct AdvancedConfigurationAndPowerInterfaceInterruptRoutingTable {
     uint32_t links_failed;      /**< Of those, the ones whose link's _STA, _PRS or _CRS failed, gave no Buffer, or gave
                                      a resource template ACPICA refuses. */
     uint32_t links_dropped;     /**< Of those, the ones whose link came past the ones a boot resolves. */
-    uint32_t bridges_below;     /**< Bridges below a root bridge published: each one whose _PRT is read, and each one
-                                     above such a bridge. */
+    uint32_t bridges_below;     /**< Bridges below a root bridge published: each one that holds a _PRT or has a Device
+                                     below it that does. */
     uint32_t bridges_below_dropped; /**< Bridges below a root bridge left out, the bridges below them not looked at:
                                          one past the ones a boot publishes, one deeper than a boot goes, or a Device
                                          past the ones of its bridge a boot compares. */
@@ -141,15 +146,17 @@ typedef struct AdvancedConfigurationAndPowerInterfaceInterruptRoutingTable {
 
 /**
  * @brief Publishes where each PCI interrupt pin goes (§3.11): evaluates the _PRT of each PCI root bridge _STA keeps
- *        in, in declaration order, then that of each bridge below it, and reads each entry as ACPICA and Linux read
- *        it.
+ *        in, in declaration order, then that of each bridge below them, root bridge after root bridge, and reads
+ *        each entry as ACPICA and Linux read it.
  *
  * @details A bridge below a root bridge is the Device Linux v6.17 takes as the ACPI companion of a PCI-to-PCI bridge
  *          (acpi_pci_find_companion, acpi_find_child_device): a child of the root bridge, or of the bridge above it,
  *          whose _ADR names a PCI function; of several children that name the same one, the first Linux scores
  *          best, by their children, _STA and _HID; never a child of the root bridge whose _ADR names function 0 of
- * device 0 and that has a _HID. Such a Device is published when it holds a _PRT or sits above one that does, depth
- *          first in declaration order, right after its root bridge's routes or the bridge above it.
+ *          device 0 and that has a _HID. Such a Device is published when it holds a _PRT or sits above one that
+ *          does, depth first in declaration order; its routes come after those of every root bridge, so that the
+ *          bridges below one root bridge never crowd out of the table the _PRT of another.
+ *
  *          A Source that is an Integer wires the pin to the interrupt its SourceIndex gives, level-triggered and
  *          active-low, as PCI interrupts are (Linux v6.17 acpi_pci_irq_enable). A Source that names an interrupt
  *          link gives the link's current interrupt, as Linux v6.17 reads it (acpi_pci_link_get_current,

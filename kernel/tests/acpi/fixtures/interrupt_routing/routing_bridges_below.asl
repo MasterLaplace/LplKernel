@@ -6,19 +6,21 @@
  *        (1C.0) routes INTA to GSI 17 and INTD to 18; PXSX (00.0 below it) has no _PRT and sits above DSP0 (01.0),
  *        which routes INTB to 19 and counts its _STA evaluations in CNTS. RP02, 1C.1 by an _ADR method and with a
  *        _HID, routes 20; HIDB, 00.0 with a _HID below it, 21. Of the children that name one function, the one Linux
- *        scores best routes: DUPB, of 1C.2, 22, since DUPA has no child, so that DUPC, whose _STA counts in CNTU,
- *        is not scored; VIDA, a video device by its _DOS whose child
- *        is a PowerResource, of 02.0, 23, past VIDB, enabled with a _HID, and VIDC, not enabled; TZA0, of 06.0, 24,
- *        whose ThermalZone child scores it high, so that TZB0, whose _STA counts in CNTT, is not scored; PRA0, of
- *        07.0, 25, whose child is a Processor; R080, of 08.0, 26, by its _ROM, past L080 and its EisaId _HID; P090,
- *        of 09.0, 27, by its _VPO, _GPD and _SPD; L0A0, of 0A.0, 28, since NA10 to NA30 each lack one of those; D0B0,
- *        of 0B.0, 29, by its _DOD. The others route from GSI 48 on and are not read. HIDD (00.0 with a _HID right
- *        below the root bridge), ALLF (every function of device 3), BIGD (device 32), BADA (whose _ADR fails) and
- *        NOAD (without _ADR) are no bridges; EMPT (04.0) holds no _PRT, and TZHD (0D.0) only one in a ThermalZone.
- *        DEEP (05.0) and the seven below it, each 00.0, lead to DP09, nine bridges below the root bridge.
+ *        scores best routes: DUPB, of 1C.2, 22, since DUPA has no child, so that DUPC, whose _STA counts in CNTU, is
+ *        not scored; VIDA, a video device by its _DOS whose child is a PowerResource, of 02.0, 23, past VIDB, enabled
+ *        with a _HID, and VIDC, not enabled; TZA0, of 06.0, 24, whose ThermalZone child scores it high, so that TZB0,
+ *        whose _STA counts in CNTT, is not scored; PRA0, of 07.0, 25, whose child is a Processor; R080, of 08.0, 26,
+ *        by its _ROM, past L080 and its EisaId _HID; P090, of 09.0, 27, by its _VPO, _GPD and _SPD; L0A0, of 0A.0, 28,
+ *        since NA10 to NA30 each lack one of those; D0B0, of 0B.0, 29, by its _DOD; NFB0, of 0E.0, 30, whose _STA does
+ *        not find \MISS and scores it as if it had none, past NFA0, whose _STA fails otherwise. The others route from
+ *        GSI 48 on and are not read. HIDD (00.0 with a _HID right below the root bridge), ALLF (every function of
+ *        device 3), BIGD (device 32), BADA (whose _ADR fails) and NOAD (without _ADR) are no bridges; EMPT (04.0)
+ *        holds no _PRT, and TZHD (0D.0) only one in a ThermalZone. DEEP (05.0) and the seven below it, each 00.0, lead
+ *        to DP09, nine bridges below the root bridge.
  */
 DefinitionBlock ("", "DSDT", 2, "LPLTST", "MADEUPML", 0)
 {
+    External (\MISS, IntObj)
     Name (BADV, Buffer (0x01) { 0x00 })
     Name (CNTS, Zero)
     Name (CNTT, Zero)
@@ -227,6 +229,20 @@ DefinitionBlock ("", "DSDT", 2, "LPLTST", "MADEUPML", 0)
                 Name (_ADR, 0x000B0000)
                 Method (_DOD, 0, NotSerialized) { Return (Package (0x00) {}) }
                 Name (_PRT, Package (0x01) { Package (0x04) { 0xFFFF, Zero, Zero, 0x1D } })
+                Device (CHLD) { Name (_ADR, Zero) }
+            }
+            Device (NFA0)
+            {
+                Name (_ADR, 0x000E0000)
+                Method (_STA, 0, NotSerialized) { Return (DerefOf (BADV [0x05])) }
+                Name (_PRT, Package (0x01) { Package (0x04) { 0xFFFF, Zero, Zero, 0x42 } })
+                Device (CHLD) { Name (_ADR, Zero) }
+            }
+            Device (NFB0)
+            {
+                Name (_ADR, 0x000E0000)
+                Method (_STA, 0, NotSerialized) { Return (\MISS) }
+                Name (_PRT, Package (0x01) { Package (0x04) { 0xFFFF, Zero, Zero, 0x1E } })
                 Device (CHLD) { Name (_ADR, Zero) }
             }
             Device (HIDD) __EXPECT__(3073)

@@ -26,22 +26,22 @@ its _SEG and _BBN, 0 without one, do not fail. Below it, a bridge is the Device 
 PCI-to-PCI bridge (acpi_pci_find_companion, acpi_find_child_device): a Device child of the root bridge or of the bridge
 above it whose _ADR, an Integer, names a device below 32 and a function below 8; of the children whose _ADR names the
 same one, the first alone, or the first scored best, each scored once a second is met, the walk stopping at the first
-scored high: without children, refused; without _STA, middle for a video device (a _DOD, _DOS or _ROM, or a _VPO, _GPD
-and _SPD), low otherwise; refused when its _STA fails or lacks bit 1; low with a _HID that gives an Integer or a String,
-high without; never, right below the root bridge, one whose _ADR is 0 and that has such a _HID. A bridge is kept when it
-or a Device below it holds a _PRT, up to 8 below the root bridge and 64 in all, its children past the first 256 left
-out; its entries come after its root bridge's or the bridge above it, depth first in declaration order, and each one's
-line names the bridges from the root bridge down, as `/<device>.<function>`. An entry is a Package of four: an Integer
-Address whose bits 16 to 31 name a device below 32, an Integer Pin below 4, a Source and an Integer SourceIndex, the two
-read swapped when the SourceIndex is no Integer, as ACPICA repairs a _PRT, which `-dr` and the helper's names keep
-acpiexec from doing. A Source that is an Integer wires the pin to the SourceIndex, level-triggered and active-low. A
-Source that references a Device names it, and the pin goes to the interrupt it gives as a link, read when the
-SourceIndex is 0: present or functioning by its _STA, whose _HID or _CID names PNP0C0F; its current interrupt the first
-one of the first IRQ or Extended Interrupt descriptor of its _CRS that names one; kept when the first such descriptor of
-its _PRS lists it, 0 never listed, with that descriptor's trigger and polarity; each template read only when ACPICA
-would convert it: each descriptor within its bytes, each interrupt descriptor whole, an End Tag of two bytes closing it.
-Such an entry whose Device gives no interrupt is printed `none`. Any other entry is left out.
-"""
+scored high: without children, refused; without _STA, or with one that fails with AE_NOT_FOUND, middle for a video
+device (a _DOD, _DOS or _ROM, or a _VPO, _GPD and _SPD), low otherwise; refused when its _STA fails otherwise or lacks
+bit 1; low with a _HID that gives an Integer or a String, high without; never, right below the root bridge, one whose
+_ADR is 0 and that has such a _HID. A bridge is kept when it or a Device below it holds a _PRT, below the first 16 root
+bridges read, up to 8 below the root bridge and 64 in all, its children past the first 256 left out; its entries come
+after those of every root bridge, depth first in declaration order, and each one's line names the bridges from the root
+bridge down, as `/<device>.<function>`. An entry is a Package of four: an Integer Address whose bits 16 to 31 name a
+device below 32, an Integer Pin below 4, a Source and an Integer SourceIndex, the two read swapped when the SourceIndex
+is no Integer, as ACPICA repairs a _PRT, which `-dr` and the helper's names keep acpiexec from doing. A Source that is
+an Integer wires the pin to the SourceIndex, level-triggered and active-low. A Source that references a Device names it,
+and the pin goes to the interrupt it gives as a link, read when the SourceIndex is 0: present or functioning by its
+_STA, whose _HID or _CID names PNP0C0F; its current interrupt the first one of the first IRQ or Extended Interrupt
+descriptor of its _CRS that names one; kept when the first such descriptor of its _PRS lists it, 0 never listed, with
+that descriptor's trigger and polarity; each template read only when ACPICA would convert it: each descriptor within its
+bytes, each interrupt descriptor whole, an End Tag of two bytes closing it. Such an entry whose Device gives no
+interrupt is printed `none`. Any other entry is left out."""
 import os
 import re
 import shutil
@@ -62,7 +62,8 @@ NO_STATUS = 0x0F
 ENABLED = 0x02
 DEVICES, PINS, FUNCTIONS = 32, 4, 8
 REFUSED, LOW, MIDDLE, HIGH = 1, 2, 3, 4
-MAX_DEPTH, MAX_BRIDGES, MAX_CHILDREN = 8, 64, 256
+MAX_DEPTH, MAX_BRIDGES, MAX_CHILDREN, MAX_ROOTS = 8, 64, 256, 16
+STATUS = re.compile(r"failed with status (\S+)")
 OWNING = ("Device", "Processor", "Thermal", "Power")
 REFERENCE = re.compile(r"^\s*\[Object Reference\] = (0x[0-9a-f]+) <Node>\s+Name (\S{4}) (\S+)")
 LISTED = re.compile(r"^\s*(\d+)\s+(\S{4})\s+(\S+)\s+(0x[0-9a-f]+)\s+[0-9A-F]{3}")
@@ -100,6 +101,9 @@ def results(output):
             addresses[listed.group(4)] = "\\" + ".".join(path)
         if acpiexec_idle.FAILED.match(line) and command is not None:
             found[command] = None
+            status = STATUS.search(line)
+            if status:
+                found[(command, "status")] = status.group(1)
         if acpiexec_idle.RETURNED.match(line) and command is not None:
             try:
                 found[command], position = read_object(lines, position + 1)
@@ -245,7 +249,7 @@ def score(found, nodes, kids, path):
     """How Linux scores @p path among Devices that name the same function, a bridge's children checked."""
     if not any(nodes[child][0] in OWNING for child in kids.get(path, [])):
         return REFUSED
-    if path + "._STA" not in nodes:
+    if path + "._STA" not in nodes or found.get((path + "._STA", "status")) == "AE_NOT_FOUND":
         video = any(path + name in nodes for name in ("._DOD", "._DOS", "._ROM")) or \
             all(path + name in nodes for name in ("._VPO", "._GPD", "._SPD"))
         return MIDDLE if video else LOW
@@ -314,8 +318,11 @@ def routes(bridges, entries, links):
         for child, name, deeper in below:
             walk(child, segment, bus, name, deeper)
 
-    for path, segment, bus, below in bridges:
-        walk(path, segment, bus, "", below)
+    for path, segment, bus, _ in bridges:
+        lines.extend(table_lines(entries.get(path, []), "%04X:%02X" % (segment & 0xFFFF, bus & 0xFF), links))
+    for _, segment, bus, below in bridges:
+        for child, name, deeper in below:
+            walk(child, segment, bus, name, deeper)
     return lines
 
 
@@ -478,12 +485,15 @@ def self_test_bridges():
                       ("NA10", "Device", {"_VPO": None, "_GPD": None}), ("NA20", "Device", {"_VPO": None, "_SPD": None}),
                       ("NA30", "Device", {"_GPD": None, "_SPD": None})], 0),
         (0x000B0000, [("L0B0", "Device", {"_STA": enabled, "_HID": string}), ("D0B0", "Device", {"_DOD": None})], 1),
+        (0x000E0000, [("NFA0", "Device", {"_STA": None}), ("NFB0", "Device", {"_STA": None})], 1),
     ]
     for address, members, _ in groups:
         for name, kind, objects in members:
             device("\\PCI0." + name, address, _PRT=None, **objects)
             if kind is not None:
                 device("\\PCI0.%s.CHLD" % name, kind=kind)
+    found[("\\PCI0.NFA0._STA", "status")] = "AE_AML_PACKAGE_LIMIT"
+    found[("\\PCI0.NFB0._STA", "status")] = "AE_NOT_FOUND"
     device("\\PCI0.HIDD", 0, _HID=string, _PRT=None)
     device("\\PCI0.ALLF", 0x0003FFFF, _PRT=None)
     device("\\PCI0.BIGD", 0x00200000, _PRT=None)
@@ -521,6 +531,12 @@ def self_test_bridges():
     got = routes([("\\PCI0", 0, 0, tree)], entries, {})
     if got != expected:
         print("self-test: the entries of the bridges below a root bridge read %s, expected %s" % (got, expected))
+        failures += 1
+    entries["\\PCI1"] = [wired[0]]
+    expected.insert(1, "aml route 0000:01:00.A interrupt=16 level low wired")
+    got = routes([("\\PCI0", 0, 0, tree), ("\\PCI1", 0, 1, [])], entries, {})
+    if got != expected:
+        print("self-test: a second root bridge's entries read %s, expected %s before the bridges'" % (got, expected))
         failures += 1
     return failures
 
@@ -577,7 +593,8 @@ def main():
             segment, bus = number(found, nodes, path, "_SEG"), number(found, nodes, path, "_BBN")
             if segment is None or bus is None:
                 continue
-            bridges.append((path, segment, bus, bridges_below(found, nodes, kids, path, published)))
+            bridges.append((path, segment, bus, bridges_below(found, nodes, kids, path, published)
+                            if len(bridges) < MAX_ROOTS else []))
         read, stack = [], [(path, below) for path, _, _, below in reversed(bridges)]
         while stack:
             path, below = stack.pop()

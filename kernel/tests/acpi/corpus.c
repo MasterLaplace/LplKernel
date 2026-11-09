@@ -349,6 +349,7 @@ static void corpus_initialize(KernelTest_t *test)
     kernel_test_measure(test, "prt_bridges_absent", routing.bridges_absent);
     kernel_test_measure(test, "prt_bridges_failed", routing.bridges_failed);
     kernel_test_measure(test, "prt_bridges_unrouted", routing.bridges_unrouted);
+    kernel_test_measure(test, "prt_bridges_unwalked", routing.bridges_unwalked);
     kernel_test_measure(test, "prt_bridges_below", routing.bridges_below);
     kernel_test_measure(test, "prt_bridges_below_dropped", routing.bridges_below_dropped);
     kernel_test_measure(test, "prt_addresses_shared", routing.addresses_shared);

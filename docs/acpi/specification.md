@@ -742,7 +742,10 @@ bridge firmware describes, are published, as Linux v6.17 reads them when a drive
   (`acpi_bus_attach`); one that fails keeps it out, as Linux attaches no device whose `_STA` fails. Its segment is its
   `_SEG` and its bus its `_BBN`, 0 without one, as a PCI_Config region reads them (§3.6); one that fails keeps the
   bridge out, as Linux refuses such a root bridge (`acpi_pci_root_add`). A bridge kept out by `_STA`
-  (`bridges_absent`), by `_SEG` or `_BBN` (`bridges_failed`), or without a `_PRT` (`bridges_unrouted`) is counted.
+  (`bridges_absent`), by `_SEG` or `_BBN` (`bridges_failed`), or without a `_PRT` (`bridges_unrouted`) is counted. Every
+  root bridge's `_PRT` is read before the bridges below any of them, so that the bridges below one never crowd another's
+  entries out of the table; the bridges below a root bridge past the 16 a boot walks are not read, and it is counted
+  (`bridges_unwalked`, §6.1).
 - **Bridges below a root bridge.** Linux reads the `_PRT` of the device object it gives the bridge above a function's
   bus (`acpi_pci_irq_find_prt_entry`): for a PCI-to-PCI bridge, the child of its parent bus's object whose `_ADR`
   equals its device in bits 16 to 31 and its function in bits 0 to 15 (`acpi_pci_find_companion`,
@@ -751,17 +754,19 @@ bridge firmware describes, are published, as Linux v6.17 reads them when a drive
   whose `_ADR` fails is counted under its status. Of the children that name the same function (`addresses_shared`),
   the first stands alone; among several, Linux scores each once it meets a second, in declaration order, and takes
   the first scored best, stopping at the first scored high: refused without a Device, Processor, ThermalZone or
-  PowerResource child; without `_STA`, middle for a video device, one with a `_DOD`, a `_DOS` or a `_ROM`, or with a
-  `_VPO`, a `_GPD` and a `_SPD` (`acpi_is_video_device`), low otherwise; refused when its `_STA` fails or lacks bit 1,
-  enabled; low with a `_HID` that gives an Integer or a String, high without. Right below the root bridge, one whose
-  `_ADR` is 0 and that has such a `_HID` stands for nothing, as Linux ignores it on a root bus. A bridge is published
-  when it, or a Device below it, holds a `_PRT`, depth first in declaration order, the bridges right below one
-  before those below them: its entries follow those of its root bridge or of the bridge above it, and route the
-  devices of the bus below it. The `_ADR` of the children of a root bridge or a bridge are read only when a Device
-  among them holds a `_PRT` or sits above one that does, and the children that name one function are scored only when
-  one of them does: no bridge would be published otherwise. One past the bridges a boot publishes, deeper than a boot
-  goes, or past the children of one bridge a boot compares, is counted (`bridges_below_dropped`), and nothing below it
-  is read (§6.1).
+  PowerResource child; without `_STA`, or with one whose evaluation does not find a name, as Linux reads `AE_NOT_FOUND`,
+  middle for a video device, one with a `_DOD`, a `_DOS` or a `_ROM`, or with a `_VPO`, a `_GPD` and a `_SPD`
+  (`acpi_is_video_device`), low otherwise; refused when its `_STA` fails otherwise or lacks bit 1, enabled; low with a
+  `_HID` that gives an Integer or a String, high without. Right below the root bridge, one whose `_ADR` is 0 and that
+  has such a `_HID` stands for nothing, as Linux ignores it on a root bus. A bridge is published when it, or a Device
+  below it, holds a `_PRT`, depth first in declaration order, the bridges right below one before those below them: its
+  entries follow those of every root bridge and of the bridges published before it, and route the devices of the bus
+  below it. The `_ADR` of the children of a root bridge or a bridge are read only when a Device among them holds a
+  `_PRT` or sits above one that does, and the children that name one function are scored only when one of them does: no
+  bridge would be published otherwise. One past the bridges a boot publishes, deeper than a boot goes, or past the
+  children of one bridge a boot compares, is counted (`bridges_below_dropped`), and nothing below it is read (§6.1). The
+  namespace is the one §3.6 loads, which keeps the objects of a table whose load fails where ACPICA deletes them: a
+  bridge such a table declares is read where Linux reads none.
 - **Entries** ([§6.2.14]). A Package of four: an Integer Address whose bits 16 to 31 name the device, its function
   bits ignored as Linux ignores them; an Integer Pin, 0 to 3 for INTA to INTD; a Source; an Integer SourceIndex. An
   entry of another shape, a device past 31 or a pin past 3, which no lookup would match, is left out and counted
@@ -1157,6 +1162,7 @@ that reaches it. The corpus runs report the peaks.
 | Notify ring | 64 entries; an overflow is dropped and counted |
 | States one CPU slot publishes | 7, as Linux, whose table of `ACPI_PROCESSOR_MAX_POWER` (8) keeps its first entry for C0; the states after them are counted, not read |
 | Entries of PCI interrupt routes one boot publishes | 256; the entries after them are counted, not read |
+| Root bridges whose bridges below one boot walks | 16 (`bridges_unwalked`); the `_PRT` of one more is read, the bridges below it are not |
 | Bridges below a root bridge one boot publishes | 64; one more is counted as dropped, and nothing below it is read |
 | Bridges between a root bridge and the deepest one published | 8 (`depth_peak`); a deeper one is counted as dropped |
 | Children of one bridge whose `_ADR` names a PCI function, compared to choose its bridges | 256, one for each function of a bus (`children_peak`); one more is counted as dropped |
