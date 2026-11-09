@@ -173,6 +173,7 @@ extern const PeripheralComponentInterconnectDevice_t *peripheral_component_inter
  * @brief Finds the bridge whose secondary bus is @p bus, as the last scan found it: the first function of header layout
  *        1 or 2 whose Secondary Bus Number register names @p bus, whether or not the table of functions had room for
  *        it.
+ *
  * @param bus        A bus number.
  * @param out_bridge Receives the bridge, its identity and classification read from its configuration space.
  * @return false when no bridge leads to @p bus: a root bus, bus 0 among them.

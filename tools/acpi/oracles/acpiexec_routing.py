@@ -41,7 +41,8 @@ _STA, whose _HID or _CID names PNP0C0F; its current interrupt the first one of t
 descriptor of its _CRS that names one; kept when the first such descriptor of its _PRS lists it, 0 never listed, with
 that descriptor's trigger and polarity; each template read only when ACPICA would convert it: each descriptor within its
 bytes, each interrupt descriptor whole, an End Tag of two bytes closing it. Such an entry whose Device gives no
-interrupt is printed `none`. Any other entry is left out."""
+interrupt is printed `none`, and one whose Source is neither an Integer nor a reference to a Device `none malformed`, as
+the kernel publishes it without an interrupt so that a lookup stops on it. Any other entry is left out."""
 import os
 import re
 import shutil
@@ -342,13 +343,16 @@ def table_lines(entries, where, links):
             continue
         if source[0] == "integer":
             route = (index[1], True, True, "wired")
-        elif source[0] == "reference" and source[2] == "Device" and source[1] in links:
+        elif source[0] == "reference" and source[2] == "Device":
+            if source[1] not in links:
+                continue
             read = links[source[1]][1] if index[1] == 0 else None
             if read is None:
                 lines.append("aml route %s:%02X.%c none %s" % (where, device, "ABCD"[pin], links[source[1]][0]))
                 continue
             route = read + (links[source[1]][0],)
         else:
+            lines.append("aml route %s:%02X.%c none malformed" % (where, device, "ABCD"[pin]))
             continue
         lines.append("aml route %s:%02X.%c interrupt=%u %s %s %s" % (
             where, device, "ABCD"[pin], route[0], "level" if route[1] else "edge", "low" if route[2] else "high",
@@ -434,13 +438,17 @@ def self_test():
         ("package", [("integer", 0x0001FFFF), ("integer", 0), ("integer", 0), first]),
         ("package", [("integer", 0x0002FFFF), ("integer", 0), second, ("integer", 0)]),
         ("package", [("integer", 0x0003FFFF), ("integer", 1), ("integer", 0), ("integer", 20)]),
+        ("package", [("integer", 0x0004FFFF), ("integer", 2), ("string", "LNKA"), ("integer", 0)]),
+        ("package", [("integer", 0x0005FFFF), ("integer", 3), ("reference", "0x3", "Integer"), ("integer", 0)]),
     ]}
     links = {"0x1": ("\\LNKA", (11, True, True)), "0x2": ("\\LNKB", None)}
     expected = ["aml route 0000:00:01.A interrupt=11 level low \\LNKA", "aml route 0000:00:02.A none \\LNKB",
-                "aml route 0000:00:03.B interrupt=20 level low wired"]
+                "aml route 0000:00:03.B interrupt=20 level low wired", "aml route 0000:00:04.C none malformed",
+                "aml route 0000:00:05.D none malformed"]
     got = routes([("\\PCI0", 0, 0, [])], entries, links)
     if got != expected:
-        print("self-test: a swapped entry, a link that gives none and a wired pin read %s, expected %s"
+        print("self-test: a swapped entry, a link that gives none, a wired pin and two unusable Sources read %s, "
+              "expected %s"
               % (got, expected))
         failures += 1
     failures += self_test_bridges()

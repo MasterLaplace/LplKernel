@@ -1081,6 +1081,8 @@ static void harness_print_routing(AdvancedConfigurationAndPowerInterfaceMachineL
 
         if (route->link == 0u)
             memcpy(path, "wired", sizeof("wired"));
+        else if (route->link == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_INTERRUPT_ROUTING_UNUSABLE_SOURCE)
+            memcpy(path, "malformed", sizeof("malformed"));
         else if (advanced_configuration_and_power_interface_machine_language_namespace_path(&load->space, route->link,
                                                                                             path, sizeof(path)) == 0u)
             memcpy(path, "too_deep", sizeof("too_deep"));

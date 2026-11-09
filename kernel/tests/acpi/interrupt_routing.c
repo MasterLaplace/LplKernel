@@ -310,20 +310,33 @@ KERNEL_TEST(a_link_past_the_ones_a_boot_resolves_is_dropped)
 }
 
 /**
- * @brief An entry that is no Package of four Integers and a Source, or names a device past 31 or a pin past 3, is left
- *        out and counted; the entry beside them is published, from a _PRT method.
+ * @brief An entry whose shape, Address or Pin no lookup could match is left out; one whose Source no lookup can use is
+ *        published without an interrupt, so that a lookup stops on it as Linux's does; both are counted.
  */
-KERNEL_TEST(a_malformed_entry_is_left_out_and_counted)
+KERNEL_TEST(a_malformed_entry_is_left_out_or_stops_the_lookup_and_is_counted)
 {
+    RoutingTestRoute_t route = {0};
+    bool stopped = true;
+
     if (!routing_test_run(test, routing_malformed_entries_aml, sizeof(routing_malformed_entries_aml),
                           ROUTING_TEST_APIC))
         return;
     kernel_test_check(test, routing_test_table.entries == 8u && routing_test_table.entries_malformed == 7u,
                       "seven of the eight entries are malformed");
     kernel_test_check(test,
-                      routing_test_table.count == 1u &&
+                      routing_test_table.count == 4u &&
                           routing_test_routes(0u, 0u, 1u, 0u, 16u, ROUTING_TEST_LEVEL, ROUTING_TEST_LOW, 0u),
-                      "the eighth routes device 1 INTA to GSI 16");
+                      "the first routes device 1 INTA to GSI 16, and three more are published");
+    for (uint8_t device = 5u; device <= 7u; ++device)
+        stopped = stopped &&
+                  !advanced_configuration_and_power_interface_interrupt_routing_find(&routing_test_table, 0u, 0u, NULL,
+                                                                                     0u, device, 0u, &route) &&
+                  route.device == device && route.interrupt == ROUTING_TEST_NONE &&
+                  route.link == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_INTERRUPT_ROUTING_UNUSABLE_SOURCE;
+    kernel_test_check(test, stopped,
+                      "the String Source of device 5, the Source of device 6 that names an Integer, and the String "
+                      "that device 7's SourceIndex, read swapped, leaves as its Source are published without an "
+                      "interrupt");
     kernel_test_check(test, routing_test_table.links == 0u, "no malformed entry is read as a link");
     routing_test_close(test);
 }
@@ -499,6 +512,9 @@ KERNEL_TEST(a_function_behind_bridges_takes_the_entry_linux_finds_on_the_way_up)
     static const RoutingTestHop_t cardbus[] = {
         {.device = 0x1Cu, .cardbus = true, .pin = 2u}
     };
+    static const RoutingTestHop_t last_pin_cardbus[] = {
+        {.device = 0x1Cu, .cardbus = true, .pin = 4u}
+    };
     static const RoutingTestHop_t pinless_cardbus[] = {
         {.device = 0x1Cu},
         {.device = 0u, .cardbus = true, .pin = 0u}
@@ -507,7 +523,7 @@ KERNEL_TEST(a_function_behind_bridges_takes_the_entry_linux_finds_on_the_way_up)
         {.device = 0x1Cu},
         {.device = 0u, .cardbus = true, .pin = 0xFFu}
     };
-    RoutingTestRoute_t route;
+    RoutingTestRoute_t route = {0};
 
     if (!routing_test_run(test, routing_swizzle_aml, sizeof(routing_swizzle_aml), ROUTING_TEST_APIC))
         return;
@@ -538,6 +554,8 @@ KERNEL_TEST(a_function_behind_bridges_takes_the_entry_linux_finds_on_the_way_up)
     kernel_test_check(test, routing_test_reaches(cardbus, 1u, 2u, 0u, 17u),
                       "behind a CardBus bridge at 0x1C whose pin is INTB, device 2 INTA takes INTB, where a swizzle "
                       "would give INTC: GSI 17");
+    kernel_test_check(test, routing_test_reaches(last_pin_cardbus, 1u, 2u, 0u, 19u),
+                      "behind a CardBus bridge at 0x1C whose pin is INTD, the last, device 2 INTA takes INTD: GSI 19");
     kernel_test_check(test,
                       !advanced_configuration_and_power_interface_interrupt_routing_find(
                           &routing_test_table, 0u, 0u, pinless_cardbus, 2u, 2u, 0u, &route),
@@ -568,6 +586,63 @@ KERNEL_TEST(a_function_behind_bridges_takes_the_entry_linux_finds_on_the_way_up)
                       "from bus 1, and from segment 1, behind the bridges that lead to DSP2 on bus 0, the pin swizzles "
                       "up to INTC of RQ01 and RS01, which name INTA alone, and to PCI1 and PCI2, which have no _PRT: "
                       "there is no route, DSP2's entry and PCI0's not taken");
+    routing_test_close(test);
+}
+
+/**
+ * @brief Where the table left out entries of a bridge's _PRT, or a bridge, a lookup that would swizzle past them finds
+ *        no route rather than the one a _PRT above gives: the _PRT left out might have named the pin.
+ */
+KERNEL_TEST(a_lookup_stops_where_the_table_left_out_what_it_needs)
+{
+    static const RoutingTestHop_t last[] = {
+        {.device = 7u, .function = 7u}
+    };
+    static const RoutingTestHop_t before_last[] = {
+        {.device = 7u, .function = 6u}
+    };
+    static const RoutingTestHop_t unpublished[] = {{.device = 5u}};
+    RoutingTestRoute_t route = {0};
+
+    if (!routing_test_run(test, routing_dropped_aml, sizeof(routing_dropped_aml), ROUTING_TEST_APIC))
+        return;
+    kernel_test_check(test,
+                      routing_test_table.entries_dropped == 3u && routing_test_table.bridges_below == 64u &&
+                          routing_test_table.bridges_below_dropped == 1u,
+                      "the last three entries of BR3F and P050, the 65th bridge, are left out");
+    kernel_test_check(test,
+                      routing_test_reaches(last, 1u, 0u, 0u, 32u) &&
+                          !advanced_configuration_and_power_interface_interrupt_routing_find(
+                              &routing_test_table, 0u, 0u, last, 1u, 0u, 3u, &route),
+                      "behind BR3F, device 0 INTA takes BR3F's entry, GSI 32, and INTD, whose entry is left out, finds "
+                      "no route, where swizzling it would reach GSI 16 of device 7 INTD");
+    kernel_test_check(test, routing_test_reaches(before_last, 1u, 1u, 2u, 16u),
+                      "behind BR3E, whose entries are all read, device 1 INTC swizzles to device 7 INTD: GSI 16");
+    kernel_test_check(test,
+                      !advanced_configuration_and_power_interface_interrupt_routing_find(
+                          &routing_test_table, 0u, 1u, unpublished, 1u, 0u, 0u, &route),
+                      "behind 05.0 of bus 1, where P050 is left out, there is no route, where swizzling would reach "
+                      "GSI 18");
+    routing_test_close(test);
+}
+
+/**
+ * @brief A lookup through a bridge below the deepest one a boot publishes finds no route, while one through the
+ *        deepest still swizzles.
+ */
+KERNEL_TEST(a_lookup_stops_below_the_deepest_bridge_published)
+{
+    static const RoutingTestHop_t nine[] = {{.device = 5u}, {0}, {0}, {0}, {0}, {0}, {0}, {0}, {0}};
+
+    if (!routing_test_run(test, routing_too_deep_aml, sizeof(routing_too_deep_aml), ROUTING_TEST_APIC))
+        return;
+    kernel_test_check(test,
+                      routing_test_table.bridges_below == 8u && routing_test_table.bridges_below_dropped == 1u &&
+                          routing_test_reaches(nine, 8u, 0u, 0u, 16u),
+                      "behind DP08, the eighth and deepest bridge published, device 0 INTA swizzles up to device 5 "
+                      "INTA: GSI 16");
+    kernel_test_check(test, !routing_test_reaches(nine, 9u, 0u, 0u, 16u),
+                      "behind DP09, the ninth, left out, there is no route, where swizzling would reach GSI 16");
     routing_test_close(test);
 }
 
