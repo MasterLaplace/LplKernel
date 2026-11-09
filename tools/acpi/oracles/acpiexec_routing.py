@@ -442,62 +442,87 @@ def self_test():
 
 
 def self_test_bridges():
-    """Checks the bridges taken below a made-up root bridge, and the lines their entries print; returns the count of
-    cases that differ."""
-    def device(path, address=None, **objects):
-        made = {path: ("Device", "")}
+    """Checks the bridges taken below a made-up root bridge, the one scored best of the Devices that name one function,
+    and the lines their entries print; returns the count of cases that differ."""
+    nodes, found, failures = {}, {}, 0
+
+    def device(path, address=None, kind="Device", **objects):
+        nodes[path] = (kind, "")
         if address is not None:
-            made[path + "._ADR"] = ("Integer", "")
+            nodes[path + "._ADR"] = ("Integer", "")
             found[path + "._ADR"] = ("integer", address)
         for name, value in objects.items():
-            made[path + "." + name] = ("Integer", "")
+            nodes[path + "." + name] = ("Integer", "")
             if value is not None:
                 found[path + "." + name] = value
-        nodes.update(made)
 
-    nodes, found, failures = {}, {}, 0
+    enabled, string, eisa = ("integer", 0x0F), ("string", "LPLT0001"), ("integer", 0x020CD041)
     device("\\PCI0", _PRT=None)
     device("\\PCI0.RP01", 0x001C0000, _PRT=None)
-    device("\\PCI0.RP01.PXSX", 0, _PRT=None)
-    device("\\PCI0.DUPA", 0x001C0001, _PRT=None)
-    device("\\PCI0.DUPB", 0x001C0001, _STA=("integer", 0x0F), _PRT=None)
-    device("\\PCI0.DUPB.CHLD")
-    device("\\PCI0.HIDD", 0, _HID=("integer", 0x0A0CD041), _PRT=None)
-    device("\\PCI0.ALLF", 0x001DFFFF, _PRT=None)
-    device("\\PCI0.EMPT", 0x001E0000)
-    for index, (status, extra) in enumerate([(None, "_DOS"), (("integer", 0x0F), "_HID"), (("integer", 0x0D), None)]):
-        path = "\\PCI0.SCO%u" % index
-        device(path, 0x00030000)
-        device(path + ".CHLD")
-        if status is not None:
-            device(path, 0x00030000, _STA=status)
-        if extra is not None:
-            device(path, 0x00030000, **{extra: ("string", "LPLT0001") if extra == "_HID" else None})
+    device("\\PCI0.RP01.PXSX", 0)
+    device("\\PCI0.RP01.PXSX.DSP0", 0x00010000, _PRT=None)
+    device("\\PCI0.RP02", 0x001C0001, _HID=string, _PRT=None)
+    device("\\PCI0.RP02.HIDB", 0, _HID=string, _PRT=None)
+    groups = [
+        (0x001C0002, [("DUPA", None, {"_STA": enabled}), ("DUPB", "Device", {"_STA": enabled})], 1),
+        (0x00020000, [("VIDB", "Device", {"_STA": enabled, "_HID": string}), ("VIDA", "Power", {"_DOS": None}),
+                      ("VIDC", "Device", {"_STA": ("integer", 0x0D)})], 1),
+        (0x00060000, [("TZA0", "Thermal", {"_STA": enabled}), ("TZB0", "Device", {"_STA": enabled, "_HID": string})],
+         0),
+        (0x00070000, [("PRA0", "Processor", {"_STA": enabled}), ("PRB0", "Device", {"_STA": enabled,
+                                                                                    "_HID": string})], 0),
+        (0x00080000, [("L080", "Device", {"_STA": enabled, "_HID": eisa}), ("R080", "Device", {"_ROM": None})], 1),
+        (0x00090000, [("L090", "Device", {"_STA": enabled, "_HID": string}),
+                      ("P090", "Device", {"_VPO": None, "_GPD": None, "_SPD": None})], 1),
+        (0x000A0000, [("L0A0", "Device", {"_STA": enabled, "_HID": string}),
+                      ("NA10", "Device", {"_VPO": None, "_GPD": None}), ("NA20", "Device", {"_VPO": None, "_SPD": None}),
+                      ("NA30", "Device", {"_GPD": None, "_SPD": None})], 0),
+        (0x000B0000, [("L0B0", "Device", {"_STA": enabled, "_HID": string}), ("D0B0", "Device", {"_DOD": None})], 1),
+    ]
+    for address, members, _ in groups:
+        for name, kind, objects in members:
+            device("\\PCI0." + name, address, _PRT=None, **objects)
+            if kind is not None:
+                device("\\PCI0.%s.CHLD" % name, kind=kind)
+    device("\\PCI0.HIDD", 0, _HID=string, _PRT=None)
+    device("\\PCI0.ALLF", 0x0003FFFF, _PRT=None)
+    device("\\PCI0.BIGD", 0x00200000, _PRT=None)
+    device("\\PCI0.EMPT", 0x00040000)
+    device("\\PCI0.TZHD", 0x000D0000)
+    device("\\PCI0.TZHD.TZ01", kind="Thermal", _PRT=None)
+    path = "\\PCI0.DEEP"
+    device(path, 0x00050000)
+    for level in range(2, 10):
+        path += ".DP%02u" % level
+        device(path, 0, **({"_PRT": None} if level == 9 else {}))
     kids = children_of(nodes)
-    got = choose(found, nodes, kids, ["\\PCI0.SCO%u" % index for index in range(3)])
-    if got != "\\PCI0.SCO0":
-        print("self-test: a video device without _STA, one with a _HID and one not enabled choose %s, expected "
-              "\\PCI0.SCO0" % got)
-        failures += 1
     tree = bridges_below(found, nodes, kids, "\\PCI0", [0])
-    expected = [("\\PCI0.RP01", "/1C.0", [("\\PCI0.RP01.PXSX", "/1C.0/00.0", [])]), ("\\PCI0.DUPB", "/1C.1", [])]
+    chain = [("\\PCI0.DEEP", "/05.0")]
+    for level in range(2, 9):
+        chain.append((chain[-1][0] + ".DP%02u" % level, chain[-1][1] + "/00.0"))
+    deep = []
+    for child, label in reversed(chain):
+        deep = [(child, label, deep)]
+    expected = [("\\PCI0.RP01", "/1C.0", [("\\PCI0.RP01.PXSX", "/1C.0/00.0",
+                                             [("\\PCI0.RP01.PXSX.DSP0", "/1C.0/00.0/01.0", [])])]),
+                ("\\PCI0.RP02", "/1C.1", [("\\PCI0.RP02.HIDB", "/1C.1/00.0", [])])]
+    expected += [("\\PCI0." + members[chosen][0], "/%02X.%X" % (address >> 16, address & 0xFFFF), [])
+                 for address, members, chosen in groups]
+    expected += deep
     if tree != expected:
         print("self-test: the bridges below a made-up root bridge read %s, expected %s" % (tree, expected))
         failures += 1
     wired = [("package", [("integer", 0x0000FFFF), ("integer", pin), ("integer", 0), ("integer", 16 + pin)])
              for pin in range(3)]
-    entries = {"\\PCI0": [wired[0]], "\\PCI0.RP01": [wired[1]], "\\PCI0.RP01.PXSX": [wired[2]],
-               "\\PCI0.DUPB": [wired[0]]}
+    entries = {"\\PCI0": [wired[0]], "\\PCI0.RP01": [wired[1]], "\\PCI0.RP01.PXSX.DSP0": [wired[2]]}
     expected = ["aml route 0000:00:00.A interrupt=16 level low wired",
                 "aml route 0000:00/1C.0:00.B interrupt=17 level low wired",
-                "aml route 0000:00/1C.0/00.0:00.C interrupt=18 level low wired",
-                "aml route 0000:00/1C.1:00.A interrupt=16 level low wired"]
+                "aml route 0000:00/1C.0/00.0/01.0:00.C interrupt=18 level low wired"]
     got = routes([("\\PCI0", 0, 0, tree)], entries, {})
     if got != expected:
         print("self-test: the entries of the bridges below a root bridge read %s, expected %s" % (got, expected))
         failures += 1
     return failures
-
 
 def main():
     if sys.argv[1:] == ["--self-test"]:

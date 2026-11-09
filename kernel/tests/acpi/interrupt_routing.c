@@ -415,8 +415,10 @@ KERNEL_TEST(the_bridges_below_a_root_bridge_are_the_companions_linux_takes)
     kernel_test_check(test, routing_test_table.addresses_shared == 8u && routing_test_table.children_peak == 25u,
                       "eight functions are each named by several children, 25 of the root bridge's children name a "
                       "function");
-    kernel_test_check(test, routing_test_counts.statuses[ROUTING_TEST_STATUS(INDEX_OUT_OF_RANGE)] == 1u,
-                      "BADA's _ADR fails once, counted");
+    kernel_test_check(test,
+                      routing_test_counts.statuses[ROUTING_TEST_STATUS(INDEX_OUT_OF_RANGE)] == 1u &&
+                          routing_test_table.tables_failed == 0u,
+                      "BADA's _ADR fails once, counted, and no bridge without a _PRT is read as one that fails");
     routing_test_close(test);
 }
 
