@@ -34,7 +34,7 @@
  * guests' timers, which follows the mean by an eighth of each error, skips such spikes outright
  * (`adjust_lapic_timer_advance` in `arch/x86/kvm/lapic.c`).
  *
- * The estimate counts in 32 bits, which i686 computes in a third of the instructions 64 bits take: a
+ * The estimate counts in 32 bits, in which i686 learns a wake-up in half the instructions 64 bits take: a
  * latency counts at most @ref KERNEL_WAKE_LATENCY_LONGEST_CYCLES, far past any a lead could serve, and
  * then no term overflows. It is pure and counts in cycles of whatever clock its samples come from, so a
  * test drives it without waiting; a zeroed estimate has learned nothing, and its lead is zero until one is
