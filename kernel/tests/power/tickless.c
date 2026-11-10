@@ -371,7 +371,11 @@ KERNEL_TEST(with_the_tick_running_a_sleep_serves_the_plan_at_the_next_interrupt)
  *        just before the halt, which with the tick stopped would leave nothing to wake the core.
  *
  * @details From 0 to 16 µs away, a quarter of a microsecond further each time, so that under a hypervisor, whose
- *          arming exits cost microseconds, some pass during the arming, and the rest just after it.
+ *          arming exits cost microseconds, some pass during the arming, and the rest just after it. The defect this
+ *          guards hangs the boot rather than failing the test, against the rule of this file: with the tick stopped
+ *          nothing else interrupts the core, and the one other timer, the RTC's periodic interrupt, is off on every
+ *          profile and reaches the core through the 8259, whose masks no interface lets a test save and give back.
+ *          The run's bound turns the hang into a failure.
  */
 KERNEL_TEST(a_deadline_closer_than_its_arming_ends_the_sleep)
 {

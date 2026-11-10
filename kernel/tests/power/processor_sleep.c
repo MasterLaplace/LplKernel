@@ -13,6 +13,13 @@ KERNEL_TEST_SUITE(processor_sleep, KERNEL_TEST_STAGE_BOOTED);
 /** Sleeps entered with a self-interrupt already pending, interrupts masked. */
 #define PROCESSOR_SLEEP_TEST_TRIALS 16u
 
+/** @name The encodings the sleeps rely on (Intel SDM vol. 2)
+ *  @{ */
+#define PROCESSOR_SLEEP_TEST_STI           0xFBu /**< STI. */
+#define PROCESSOR_SLEEP_TEST_HLT           0xF4u /**< HLT. */
+#define PROCESSOR_SLEEP_TEST_ROUTINE_BYTES 16u   /**< How far into a routine its STI is looked for. */
+/** @} */
+
 /** EFLAGS.IF, bit 9: maskable interrupts are taken. */
 #define PROCESSOR_SLEEP_TEST_INTERRUPT_FLAG (1u << 9u)
 
@@ -108,13 +115,21 @@ static bool processor_sleep_test_already_over(void *context)
 }
 
 /**
- * @brief Gives this processor a device vector for the test's handler, or says why it cannot.
- * @param test       The test, skipped or failed when it cannot.
- * @param out_vector Receives the vector.
- * @return true when the vector can be sent to this processor.
+ * @brief Gives this processor a device vector for the test's handler, and the length a sleep must stay under, or says
+ *        why it cannot.
+ * @param test             The test, skipped or failed when it cannot.
+ * @param out_vector       Receives the vector.
+ * @param out_quarter_tick Receives a quarter of the tick's period, in cycles.
+ * @return true when the vector can be sent to this processor and a sleep's length judged.
  */
-static bool processor_sleep_test_take_a_vector(KernelTest_t *test, uint8_t *out_vector)
+static bool processor_sleep_test_take_a_vector(KernelTest_t *test, uint8_t *out_vector, uint64_t *out_quarter_tick)
 {
+    *out_quarter_tick = processor_sleep_test_quarter_tick_cycles();
+    if (*out_quarter_tick == 0u)
+    {
+        kernel_test_skip(test, "the counter's rate is not calibrated, so the length of a sleep cannot be judged");
+        return false;
+    }
     if (!advanced_pic_ipi_is_ready())
     {
         kernel_test_skip(test, "the local APIC sends no interprocessor interrupt");
@@ -122,6 +137,27 @@ static bool processor_sleep_test_take_a_vector(KernelTest_t *test, uint8_t *out_
     }
     return kernel_test_check(test, device_interrupt_allocate(processor_sleep_test_handler, NULL, out_vector),
                              "a device vector is free");
+}
+
+/**
+ * @brief Whether @p routine holds STI immediately followed by @p after, within its first bytes.
+ * @param routine     The routine's first byte.
+ * @param after       The instruction expected right after STI.
+ * @param after_bytes Its length.
+ * @return true when an STI is found and @p after follows it with nothing between.
+ */
+static bool processor_sleep_test_sti_then(const uint8_t *routine, const uint8_t *after, uint32_t after_bytes)
+{
+    for (uint32_t offset = 0u; offset < PROCESSOR_SLEEP_TEST_ROUTINE_BYTES; ++offset)
+    {
+        if (routine[offset] != PROCESSOR_SLEEP_TEST_STI)
+            continue;
+        for (uint32_t index = 0u; index < after_bytes; ++index)
+            if (routine[offset + 1u + index] != after[index])
+                return false;
+        return true;
+    }
+    return false;
 }
 
 /**
@@ -246,7 +282,8 @@ KERNEL_TEST(sleep_until_a_write)
 KERNEL_TEST(an_interrupt_pending_when_the_sleep_begins_ends_it)
 {
     uint8_t vector = 0u;
-    if (!processor_sleep_test_take_a_vector(test, &vector))
+    uint64_t quarter_tick = 0u;
+    if (!processor_sleep_test_take_a_vector(test, &vector, &quarter_tick))
         return;
 
     uint32_t cycles[PROCESSOR_SLEEP_TEST_TRIALS];
@@ -272,44 +309,64 @@ KERNEL_TEST(an_interrupt_pending_when_the_sleep_begins_ends_it)
     const uint32_t credited = kernel_wakeup_accounting_get_vector_count(vector) - credited_before;
     device_interrupt_release(vector);
 
-    const uint64_t quarter_tick = processor_sleep_test_quarter_tick_cycles();
     const uint32_t median = processor_sleep_test_median(cycles, PROCESSOR_SLEEP_TEST_TRIALS);
     kernel_test_check(test, sent, "each trial sends this processor the vector, interrupts masked");
     kernel_test_check(test, handled_inside, "each sleep ends on it and handles it before returning");
     kernel_test_check(test, credited == PROCESSOR_SLEEP_TEST_TRIALS, "each wake-up is credited to it");
     kernel_test_check(test, masked_after, "and gives interrupts back masked, as it found them");
-    kernel_test_check(test, quarter_tick == 0u || median < quarter_tick,
+    kernel_test_check(test, median < quarter_tick,
                       "a sleep lasts less than a quarter of a tick: none waits for the next one");
     kernel_test_measure(test, "median_cycles", median);
+    kernel_test_measure(test, "monitor", kernel_processor_sleep_has_monitor() ? 1u : 0u);
 }
 
 /**
  * @brief A watched sleep entered with interrupts masked and an interrupt pending whose handler writes the word sleeps,
- *        since the word had not moved when it was read, and wakes with the write done; it gives interrupts back
- *        masked.
+ *        since the word had not moved when it was read, and wakes with the write done, without waiting for the tick;
+ *        it gives interrupts back masked.
  */
 KERNEL_TEST(a_write_pending_when_the_watched_sleep_begins_ends_it)
 {
     static volatile uint32_t word = 0u;
     uint8_t vector = 0u;
-    if (!processor_sleep_test_take_a_vector(test, &vector))
+    uint64_t quarter_tick = 0u;
+    if (!processor_sleep_test_take_a_vector(test, &vector, &quarter_tick))
         return;
 
-    word = 0u;
+    uint32_t cycles[PROCESSOR_SLEEP_TEST_TRIALS];
+    bool sent = true;
+    bool slept = true;
+    bool written = true;
+    bool masked_after = true;
+    ProcessorSleepMode_t mode = PROCESSOR_SLEEP_NONE;
+
     processor_sleep_test_written = &word;
-    const uint32_t flags = asmutils_save_flags_and_disable_interrupts();
-    const bool sent = advanced_pic_ipi_send_fixed(0u, vector, ADVANCED_PIC_IPI_SHORT_SELF) != 0u;
-    const ProcessorSleepMode_t slept = processor_sleep_until_write(&word, 0u);
-    const uint32_t seen = word;
-    const bool masked_after = processor_sleep_test_interrupts_masked();
-    asmutils_restore_flags(flags);
+    for (uint32_t trial = 0u; trial < PROCESSOR_SLEEP_TEST_TRIALS; ++trial)
+    {
+        const uint32_t expected = word;
+        const uint32_t flags = asmutils_save_flags_and_disable_interrupts();
+        sent = sent && advanced_pic_ipi_send_fixed(0u, vector, ADVANCED_PIC_IPI_SHORT_SELF) != 0u;
+        const uint64_t before = asmutils_read_timestamp_counter();
+        mode = processor_sleep_until_write(&word, expected);
+        const uint64_t spent = asmutils_read_timestamp_counter() - before;
+        slept = slept && mode != PROCESSOR_SLEEP_NONE;
+        written = written && word == expected + 1u;
+        masked_after = masked_after && processor_sleep_test_interrupts_masked();
+        asmutils_restore_flags(flags);
+        cycles[trial] = spent > 0xFFFFFFFFull ? 0xFFFFFFFFu : (uint32_t) spent;
+    }
     processor_sleep_test_written = NULL;
     device_interrupt_release(vector);
 
-    kernel_test_check(test, sent, "this processor sends itself the vector, interrupts masked");
-    kernel_test_check(test, slept != PROCESSOR_SLEEP_NONE, "the word had not moved when it was read, so it sleeps");
-    kernel_test_check(test, seen == 1u, "and wakes with the handler's write done");
+    const uint32_t median = processor_sleep_test_median(cycles, PROCESSOR_SLEEP_TEST_TRIALS);
+    kernel_test_check(test, sent, "each trial sends this processor the vector, interrupts masked");
+    kernel_test_check(test, slept, "the word had not moved when it was read, so each trial sleeps");
+    kernel_test_check(test, written, "and wakes with the handler's write done");
     kernel_test_check(test, masked_after, "and gives interrupts back masked, as it found them");
+    kernel_test_check(test, median < quarter_tick,
+                      "a sleep lasts less than a quarter of a tick: none waits for the next one");
+    kernel_test_measure(test, "median_cycles", median);
+    kernel_test_measure(test, "mode", (uint32_t) mode);
 }
 
 /**
@@ -323,7 +380,8 @@ KERNEL_TEST(a_write_pending_when_the_watched_sleep_begins_ends_it)
 KERNEL_TEST(an_interrupt_raised_while_the_condition_is_read_ends_the_sleep)
 {
     ProcessorSleepTestRaise_t raise = {0u, true};
-    if (!processor_sleep_test_take_a_vector(test, &raise.vector))
+    uint64_t quarter_tick = 0u;
+    if (!processor_sleep_test_take_a_vector(test, &raise.vector, &quarter_tick))
         return;
 
     uint32_t cycles[PROCESSOR_SLEEP_TEST_TRIALS];
@@ -349,15 +407,39 @@ KERNEL_TEST(an_interrupt_raised_while_the_condition_is_read_ends_the_sleep)
     const uint32_t sleeps_before = kernel_processor_sleep_count();
     const bool over = processor_sleep_unless(processor_sleep_test_already_over, NULL);
     const uint32_t sleeps_after = kernel_processor_sleep_count();
+    const bool enabled_after_over = !processor_sleep_test_interrupts_masked();
 
-    const uint64_t quarter_tick = processor_sleep_test_quarter_tick_cycles();
     const uint32_t median = processor_sleep_test_median(cycles, PROCESSOR_SLEEP_TEST_TRIALS);
     kernel_test_check(test, raise.sent && went_on, "each condition sends the vector, and says the wait goes on");
     kernel_test_check(test, handled_inside && credited == PROCESSOR_SLEEP_TEST_TRIALS,
                       "each sleep ends on it, handles it before returning, and is credited to it");
     kernel_test_check(test, enabled_after, "and gives interrupts back enabled, as it found them");
-    kernel_test_check(test, quarter_tick == 0u || median < quarter_tick,
+    kernel_test_check(test, median < quarter_tick,
                       "a sleep lasts less than a quarter of a tick: none waits for the next one");
-    kernel_test_check(test, over && sleeps_after == sleeps_before, "a wait already over enters no sleep");
+    kernel_test_check(test, over && sleeps_after == sleeps_before && enabled_after_over,
+                      "a wait already over enters no sleep, and gives interrupts back enabled");
     kernel_test_measure(test, "median_cycles", median);
+}
+
+/**
+ * @brief Each sleep routine holds its STI immediately before its HLT or MWAIT: the STI's inhibition covers only the
+ *        next instruction (Intel SDM vol. 3A, §7.8.1), so anything between the two would reopen the window.
+ *
+ * @details The MWAIT path cannot be woken here: under QEMU the kernel never takes it, since KVM hides MONITOR and TCG
+ *          gives CPUID.05H no line size. The encoding is what this test can still check of it.
+ */
+KERNEL_TEST(each_sleep_enables_interrupts_right_before_it_halts_or_waits)
+{
+    static const uint8_t halt[] = {PROCESSOR_SLEEP_TEST_HLT};
+    static const uint8_t monitor_wait[] = {0x0Fu, 0x01u, 0xC9u};
+
+    kernel_test_check(test,
+                      processor_sleep_test_sti_then((const uint8_t *) (uintptr_t) asmutils_enable_interrupts_and_halt,
+                                                    halt, sizeof(halt)),
+                      "STI is right before HLT");
+    kernel_test_check(
+        test,
+        processor_sleep_test_sti_then((const uint8_t *) (uintptr_t) asmutils_enable_interrupts_and_monitor_wait,
+                                      monitor_wait, sizeof(monitor_wait)),
+        "STI is right before MWAIT");
 }
