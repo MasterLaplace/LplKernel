@@ -186,6 +186,10 @@ uint32_t kernel_processor_sleep_clamped_count(void);
  * correct, just less precise: a halted core still wakes on the timer interrupt, it
  * simply cannot be woken by a device's DMA alone.
  *
+ * @details Interrupts are masked from before the re-read to the sleep, which enables them in the same step (STI then
+ *          HLT or MWAIT): an interrupt whose handler writes @p watched after the re-read ends the sleep instead of
+ *          being handled just before it. The interrupt flag is given back as it was found.
+ *
  * @param watched  Address to watch; typically a driver's write index.
  * @param expected Value that means "nothing new yet".
  * @return How the processor was put to sleep, if at all.
@@ -201,8 +205,34 @@ ProcessorSleepMode_t processor_sleep_until_write(const volatile uint32_t *watche
  * halts in C1 and is counted as a halt. MWAIT may also exit for implementation-defined
  * reasons with no interrupt at all, and such a wake is counted as unattributed rather
  * than credited to a source that did not cause it.
+ *
+ * @details It may be entered with interrupts masked, and that is how a caller that arms a wake-up and then sleeps on
+ *          it loses none: an interrupt that became pending since the caller masked them, its own timer's included,
+ *          ends the sleep and is handled before the call returns, since the sleep enables interrupts in the same step
+ *          (STI then HLT or MWAIT, Intel SDM vol. 3A, §7.8.1). The interrupt flag is given back as it was found.
  */
 void processor_sleep_until_interrupt(void);
+
+/**
+ * @brief Whether what a sleeper waits for has happened; called with interrupts masked.
+ * @param context What the sleeper gave @ref processor_sleep_unless.
+ * @return true when the wait is over.
+ */
+typedef bool (*ProcessorSleepCondition_t)(void *context);
+
+/**
+ * @brief Sleeps until the next interrupt unless @p done says the wait is over, asked with interrupts masked.
+ *
+ * For a loop that waits on what an interrupt handler changes, a tick count or a flag: the handler that changes it
+ * after @p done read it ends the sleep instead of running just before it, which would leave the sleep waiting for the
+ * interrupt after, a tick too late, or with the tick stopped forever. The sleep is
+ * @ref processor_sleep_until_interrupt's, so it is counted and attributed as one.
+ *
+ * @param done    Asked once, with interrupts masked; not NULL.
+ * @param context What @p done receives.
+ * @return What @p done said: true when no sleep was entered.
+ */
+bool processor_sleep_unless(ProcessorSleepCondition_t done, void *context);
 
 /**
  * @brief Times the processor was put to sleep.

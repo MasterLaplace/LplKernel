@@ -132,6 +132,18 @@ extern void asmutils_pause(void);
 extern void asmutils_halt(void);
 
 /**
+ * @brief Enables interrupts and halts, in one step that no interrupt can split (STI then HLT).
+ *
+ * @details With IF clear, STI keeps maskable interrupts inhibited on the boundary after it, until the next instruction
+ *          has run (Intel SDM vol. 3A, 325384-093US, §7.8.1): an interrupt that became pending while they were masked
+ *          is therefore taken once HLT has begun, and ends the halt instead of being handled just before it. The
+ *          caller masks interrupts, checks what it waits for, then calls this; it returns with interrupts enabled,
+ *          the interrupt that ended the halt handled. Linux halts the same way (native_safe_halt,
+ *          arch/x86/include/asm/irqflags.h).
+ */
+extern void asmutils_enable_interrupts_and_halt(void);
+
+/**
  * @brief Execute a CPU no-operation instruction.
  *
  * @details
@@ -289,7 +301,7 @@ extern uint32_t asmutils_read_timestamp_counter_low(void);
  * wake-up comes from a device's DMA rather than from an interrupt: no IRQ is needed and
  * no interrupt latency is paid.
  *
- * Pairs with @ref asmutils_monitor_wait. Between the two, the caller must re-check
+ * Pairs with @ref asmutils_enable_interrupts_and_monitor_wait. Between the two, the caller must re-check
  * the condition it is waiting on: if the write happened in that window the monitor
  * is already discarded, and the MWAIT would sleep for a wake-up that has been and
  * gone. That check is not optional and is the whole discipline of the pair.
@@ -301,13 +313,17 @@ extern uint32_t asmutils_read_timestamp_counter_low(void);
 extern void asmutils_monitor(const void *address, uint32_t extensions, uint32_t hints);
 
 /**
- * @brief Sleeps until the armed cache line is written.
+ * @brief Enables interrupts and sleeps until the armed cache line is written or an interrupt arrives, in one step that
+ *        no interrupt can split (STI then MWAIT).
+ *
+ * @details As for @ref asmutils_enable_interrupts_and_halt: the STI's inhibition lasts until MWAIT has run, so an
+ *          interrupt pending since the caller masked them ends the wait and is handled before this returns, with
+ *          interrupts enabled. Linux waits the same way (__sti_mwait, arch/x86/include/asm/mwait.h).
  *
  * @param hints      Target C-state, encoded per Intel SDM Vol. 3B.
- * @param extensions Bit 0 makes an unmasked interrupt a break event as well, which is what
- *                   keeps a sleeping core answerable to a timer it also armed.
+ * @param extensions Bit 0 makes an interrupt a break event even while masked, which only CPUID.05H:ECX bit 1 allows.
  */
-extern void asmutils_monitor_wait(uint32_t hints, uint32_t extensions);
+extern void asmutils_enable_interrupts_and_monitor_wait(uint32_t hints, uint32_t extensions);
 
 /**
  * @brief Writes back the cache line containing @p address if it is modified, and evicts it from every cache of the

@@ -99,6 +99,13 @@ asmutils_halt:
     hlt
     ret
 
+.globl asmutils_enable_interrupts_and_halt
+.type asmutils_enable_interrupts_and_halt, @function
+asmutils_enable_interrupts_and_halt:
+    sti
+    hlt
+    ret
+
 .globl asmutils_no_operation
 .type asmutils_no_operation, @function
 asmutils_no_operation:
@@ -245,13 +252,14 @@ asmutils_monitor:
     popl %ebp
     ret
 
-.globl asmutils_monitor_wait
-.type asmutils_monitor_wait, @function
-asmutils_monitor_wait:
+.globl asmutils_enable_interrupts_and_monitor_wait
+.type asmutils_enable_interrupts_and_monitor_wait, @function
+asmutils_enable_interrupts_and_monitor_wait:
     pushl %ebp
     movl %esp, %ebp
     movl 8(%ebp), %eax
     movl 12(%ebp), %ecx
+    sti
     mwait
     popl %ebp
     ret

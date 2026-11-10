@@ -135,7 +135,10 @@ uint32_t kernel_tickless_microseconds_from_cycles(uint64_t cycles);
  *          is served without sleeping, and one further than @ref KERNEL_TICKLESS_MAX_SLEEP_MICROSECONDS is
  *          cut to it. The timer is armed at the wake-up's own cycle: in TSC-deadline mode that cycle is the
  *          deadline, so the interrupt never comes before it; in count mode a count stands for it, through
- *          the calibration's ratio.
+ *          the calibration's ratio. Interrupts are masked from the arming to the sleep, which enables them
+ *          in the same step: a deadline that passes while it is armed, closer than the arming takes, ends the
+ *          sleep instead of being handled just before it, which with the tick stopped would leave nothing to
+ *          wake the core.
  *
  * @note Without permission the tick is still running, so the sleep simply takes the
  *       interrupts it delivers and reports no time slept. Honest and unremarkable — and
