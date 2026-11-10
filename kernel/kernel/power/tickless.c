@@ -5,6 +5,7 @@
 #include <kernel/cpu/irq.h>
 #include <kernel/lib/asmutils.h>
 #include <kernel/power/processor_sleep.h>
+#include <kernel/power/wake_latency.h>
 
 #define TICKLESS_MICROSECONDS_PER_SECOND 1000000u
 
@@ -15,6 +16,7 @@ static uint32_t tickless_microseconds_short_of_a_tick = 0u;
 static uint32_t tickless_early_wakes = 0u;
 static uint64_t tickless_slept_microseconds = 0u;
 static uint64_t tickless_longest_sleep_cycles = 0u;
+static KernelWakeLatency_t tickless_wake_latency = {0};
 
 /** The reconciler's pass while the tick is stopped: the plan it is a duty of, its number, its period. */
 typedef struct {
@@ -111,6 +113,8 @@ bool kernel_tickless_enable(bool no_world_instantiated, KernelWakePlan_t *plan)
     (void) kernel_wake_planner_arm(plan, duty, asmutils_read_timestamp_counter() + tickless_reconciler_pass.period,
                                    KERNEL_WAKE_PLANNER_NEVER);
 
+    kernel_wake_latency_assume(&tickless_wake_latency,
+                               kernel_tickless_cycles_from_microseconds(KERNEL_TICKLESS_FIRST_LEAD_MICROSECONDS));
     tickless_nominal_hz = tick_hz;
     tickless_microseconds_short_of_a_tick = 0u;
     tickless_longest_sleep_cycles = kernel_tickless_cycles_from_microseconds(KERNEL_TICKLESS_MAX_SLEEP_MICROSECONDS);
@@ -156,7 +160,7 @@ uint32_t kernel_tickless_sleep_on(KernelWakePlan_t *plan)
         return 0u;
 
     const uint64_t before = asmutils_read_timestamp_counter();
-    const uint64_t planned = kernel_wake_planner_next_wake(plan);
+    const uint64_t planned = kernel_wake_planner_next_wake(plan, kernel_wake_latency_lead(&tickless_wake_latency));
     if (planned <= before)
     {
         (void) kernel_wake_planner_serve(plan, before);
@@ -164,8 +168,9 @@ uint32_t kernel_tickless_sleep_on(KernelWakePlan_t *plan)
     }
 
     const uint64_t longest = before + tickless_longest_sleep_cycles;
+    const uint64_t armed = planned < longest ? planned : longest;
     const uint32_t flags = asmutils_save_flags_and_disable_interrupts();
-    if (!advanced_pic_timer_backend_arm_at_cycle(planned < longest ? planned : longest))
+    if (!advanced_pic_timer_backend_arm_at_cycle(armed))
     {
         asmutils_restore_flags(flags);
         return tickless_sleep_until_any_interrupt(plan);
@@ -177,6 +182,8 @@ uint32_t kernel_tickless_sleep_on(KernelWakePlan_t *plan)
     asmutils_restore_flags(flags);
     if (woken_early)
         ++tickless_early_wakes;
+    else
+        kernel_wake_latency_learn(&tickless_wake_latency, after > armed ? after - armed : 0u);
 
     const uint32_t elapsed = tickless_microseconds_from_cycles(
         after - before, advanced_pic_timer_backend_get_calibrated_timestamp_counter_frequency_hz());
@@ -190,6 +197,8 @@ uint32_t kernel_tickless_sleep_on(KernelWakePlan_t *plan)
 uint32_t kernel_tickless_ticks_avoided(void) { return tickless_ticks_avoided; }
 
 uint32_t kernel_tickless_early_wakes(void) { return tickless_early_wakes; }
+
+uint64_t kernel_tickless_wake_lead_cycles(void) { return kernel_wake_latency_lead(&tickless_wake_latency); }
 
 uint64_t kernel_tickless_slept_microseconds(void) { return tickless_slept_microseconds; }
 

@@ -57,6 +57,22 @@ static uint32_t wake_planner_most_urgent(const KernelWakePlan_t *plan, uint32_t 
 }
 
 /**
+ * @brief When to arm a wake-up that comes @p lead cycles late so that it serves a slot by its latest: that latest
+ *        less the lead, never before the slot's earliest.
+ * @param plan The plan.
+ * @param slot An armed slot whose latest is a cycle.
+ * @param lead The lead.
+ * @return That cycle.
+ */
+static uint64_t wake_planner_arming(const KernelWakePlan_t *plan, uint32_t slot, uint64_t lead)
+{
+    const uint64_t latest = plan->latest[slot];
+    const uint64_t earliest = plan->earliest[slot];
+
+    return latest - earliest <= lead ? earliest : latest - lead;
+}
+
+/**
  * @brief Counts a duty run @p overshoot cycles past its latest, and keeps the worst such overshoot.
  * @param plan      The plan.
  * @param overshoot Cycles past the latest; never zero here.
@@ -79,6 +95,7 @@ void kernel_wake_planner_initialize(KernelWakePlan_t *plan)
     }
     plan->declared = 0u;
     plan->armed = 0u;
+    plan->waking = 0u;
     plan->wakes = 0u;
     plan->wasted_wakes = 0u;
     plan->batched_wakes = 0u;
@@ -119,18 +136,23 @@ bool kernel_wake_planner_arm(KernelWakePlan_t *plan, uint32_t duty, uint64_t ear
     plan->earliest[duty - 1u] = earliest;
     plan->latest[duty - 1u] = latest;
     plan->armed |= bit;
+    if (latest == KERNEL_WAKE_PLANNER_NEVER)
+        plan->waking &= ~bit;
+    else
+        plan->waking |= bit;
     return true;
 }
 
-uint64_t kernel_wake_planner_next_wake(const KernelWakePlan_t *plan)
+uint64_t kernel_wake_planner_next_wake(const KernelWakePlan_t *plan, uint64_t lead)
 {
     uint64_t next = KERNEL_WAKE_PLANNER_NEVER;
 
-    for (uint32_t armed = plan->armed; armed != 0u; armed &= armed - 1u)
+    for (uint32_t waking = plan->armed & plan->waking; waking != 0u; waking &= waking - 1u)
     {
-        const uint32_t slot = (uint32_t) __builtin_ctz(armed);
-        if (plan->latest[slot] < next)
-            next = plan->latest[slot];
+        const uint32_t slot = (uint32_t) __builtin_ctz(waking);
+        const uint64_t arming = wake_planner_arming(plan, slot, lead);
+        if (arming < next)
+            next = arming;
     }
     return next;
 }

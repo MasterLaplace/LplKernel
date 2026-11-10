@@ -21,7 +21,9 @@
  * schedule of wake-ups covers the same windows with fewer: the first wake-up cannot come later
  * without missing a window, and coming earlier covers no more. Any wake-up a device causes serves
  * the open windows the same way, so a duty whose window holds a device's interrupt never costs a
- * wake-up of its own.
+ * wake-up of its own. A timer's wake-up comes after the cycle it was armed for, so the plan arms it
+ * a lead early, and a lead the wake-up takes exactly brings it to that same latest, for a window at
+ * least a lead wide.
  *
  * A duty whose latest is @ref KERNEL_WAKE_PLANNER_NEVER never wakes the core: it runs at the first
  * wake-up after its earliest, whatever caused it, which is what a check that only reads what running
@@ -80,11 +82,12 @@ typedef struct {
     void *contexts[KERNEL_WAKE_PLANNER_DUTIES];                 /**< What it runs with. */
     uint32_t declared;                                          /**< One bit per declared duty, bit 0 for duty 1. */
     uint32_t armed;                                             /**< One bit per duty whose window is set. */
-    uint32_t wakes;                                             /**< Wake-ups served. */
-    uint32_t wasted_wakes;                                      /**< Wake-ups that found no window open. */
-    uint32_t batched_wakes;                                     /**< Wake-ups that served two duties or more. */
-    uint32_t services;                                          /**< Duties run. */
-    uint32_t late_services;                                     /**< Duties run after their latest. */
+    uint32_t waking;       /**< One bit per duty whose last window has a latest, so wakes the core; read under armed. */
+    uint32_t wakes;        /**< Wake-ups served. */
+    uint32_t wasted_wakes; /**< Wake-ups that found no window open. */
+    uint32_t batched_wakes;    /**< Wake-ups that served two duties or more. */
+    uint32_t services;         /**< Duties run. */
+    uint32_t late_services;    /**< Duties run after their latest. */
     uint64_t latest_overshoot; /**< The most cycles a duty ran past its latest: a wake-up's latency, at least. */
 } __attribute__((aligned(64))) KernelWakePlan_t;
 
@@ -130,12 +133,25 @@ void kernel_wake_planner_withdraw(KernelWakePlan_t *plan, uint32_t duty);
 bool kernel_wake_planner_arm(KernelWakePlan_t *plan, uint32_t duty, uint64_t earliest, uint64_t latest);
 
 /**
- * @brief When the core must wake at the latest: the earliest latest of the armed duties.
+ * @brief When to arm the core's wake-up, so that one coming @p lead cycles after it serves the most urgent duty
+ *        by its latest: for each armed duty, its latest less the lead, never before its earliest, and the earliest
+ *        of those.
+ *
+ * @details With no lead, that is the earliest latest, the greedy cover. A lead the wake-up takes exactly brings each
+ *          wake-up to the latest of the duty that sets it, when that window is at least a lead wide, and else to its
+ *          earliest plus the lead, so it takes no more wake-ups, and serves a window at least a lead wide by its
+ *          latest. A window narrower than the lead is armed at its earliest rather than before it:
+ *          a timer that never fires early then finds it open, however short the latency turns out, and it is late by
+ *          less than without the lead. In count mode, whose timer may fire a little before its cycle, such a window can
+ *          cost one wake-up more, as a window of one cycle already does there. The duty that sets the wake-up is not
+ * always the one with the earliest latest: a wide window whose latest comes just after a narrow one's is armed earlier,
+ * where arming at the narrow one's earliest would serve both late.
  *
  * @param plan The plan.
+ * @param lead Cycles the wake-up is expected to come after its arming; 0 for the earliest latest.
  * @return That cycle; @ref KERNEL_WAKE_PLANNER_NEVER when no armed duty needs a wake-up of its own.
  */
-uint64_t kernel_wake_planner_next_wake(const KernelWakePlan_t *plan);
+uint64_t kernel_wake_planner_next_wake(const KernelWakePlan_t *plan, uint64_t lead);
 
 /**
  * @brief Serves a wake-up: runs, once each, every armed duty whose window has opened by @p now, the one
