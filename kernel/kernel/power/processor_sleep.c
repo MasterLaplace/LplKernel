@@ -120,7 +120,7 @@ typedef struct {
  * @param context The ProcessorSleepWatch_t.
  * @return true once it differs from the value expected.
  */
-static bool processor_sleep_watched_moved(void *context)
+__attribute__((always_inline)) static inline bool processor_sleep_watched_moved(void *context)
 {
     const ProcessorSleepWatch_t *const watch = (const ProcessorSleepWatch_t *) context;
 
@@ -132,8 +132,8 @@ static bool processor_sleep_watched_moved(void *context)
  *        then enters MWAIT or HLT in the step that enables interrupts, and gives the interrupt flag back as found.
  *
  * @details The one place every sleep of this module is entered, so that the masking around the last check is written,
- *          and tested, once. A wait on the idle line that returns while still armed is counted unattributed, since
- *          nothing writes that line; one on another line, a write.
+ *          and tested, once; inlined, so that each caller pays only for the parts it uses. A wait on the idle line that
+ * returns while still armed is counted unattributed, since nothing writes that line; one on another line, a write.
  *
  * @param line    The line MONITOR watches: the idle line when only an interrupt should end the wait.
  * @param done    Asked once, after the monitor is armed; NULL never says the wait is over.
@@ -141,8 +141,8 @@ static bool processor_sleep_watched_moved(void *context)
  * @param hint    MWAIT's hint.
  * @return How the processor was put to sleep, PROCESSOR_SLEEP_NONE when @p done said the wait was over.
  */
-static ProcessorSleepMode_t processor_sleep_masked(const volatile void *line, ProcessorSleepCondition_t done,
-                                                   void *context, uint32_t hint)
+__attribute__((always_inline)) static inline ProcessorSleepMode_t
+processor_sleep_masked(const volatile void *line, ProcessorSleepCondition_t done, void *context, uint32_t hint)
 {
     const uint32_t flags = asmutils_save_flags_and_disable_interrupts();
     const uint64_t before = asmutils_read_timestamp_counter();
