@@ -97,8 +97,9 @@ typedef enum {
 void kernel_processor_sleep_initialize(void);
 
 /**
- * @brief Starts the counts of sleeps, halts, skips and time asleep afresh, keeping what was detected and the hint
- *        granted: a session that slept to set itself up counts only what its loop does.
+ * @brief Starts the counts of sleeps, halts and skips, the time asleep and awake, and the wake-ups attributed to each
+ *        vector (@ref kernel_wakeup_accounting_reset) afresh, keeping what was detected and the hint granted: a
+ *        session that slept to set itself up counts only what its loop does.
  */
 void kernel_processor_sleep_begin_accounting(void);
 

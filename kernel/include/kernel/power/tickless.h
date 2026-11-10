@@ -64,7 +64,8 @@ extern "C" {
 #define KERNEL_TICKLESS_MAX_SLEEP_MICROSECONDS 1000000u
 
 #define KERNEL_TICKLESS_PROBES                   4u  /**< Sleeps the first stop of the tick probes a depth with. */
-#define KERNEL_TICKLESS_FIRST_PROBE_MICROSECONDS 16u /**< The first probe's length; each next one is four times it. */
+#define KERNEL_TICKLESS_FIRST_PROBE_MICROSECONDS 16u /**< The first probe's length. */
+#define KERNEL_TICKLESS_PROBE_GROWTH             4u  /**< How many times longer each probe is than the one before. */
 
 /**
  * @brief Stops the periodic tick, whichever timer owns it, permits sleeping without it, and hands
@@ -80,10 +81,13 @@ extern "C" {
  *          each period of the tick in force.
  *
  *          The first session of a boot at a depth probes it before returning: @ref KERNEL_TICKLESS_PROBES
- *          sleeps on the timer, from @ref KERNEL_TICKLESS_FIRST_PROBE_MICROSECONDS each four times longer,
- *          teach the depth its lead, so that no duty's first wake-up is armed on a guess. The probe's sleeps
- *          are the processor's, counted as any; a session that counts only its loop starts its accounting
- *          after this call (@ref kernel_processor_sleep_begin_accounting).
+ *          sleeps on the timer, from @ref KERNEL_TICKLESS_FIRST_PROBE_MICROSECONDS each
+ *          @ref KERNEL_TICKLESS_PROBE_GROWTH times longer than the one before, teach the depth its lead, so that no
+ *          duty's first wake-up is armed on a guess once the timer has ended one probe; a probe the timer ended
+ *          none of is tried again at the next stop. The probe serves no duty, so a window armed before this call
+ *          waits for it, a couple of milliseconds at most. The probe's sleeps are the processor's, counted as any;
+ *          a session that counts only its loop starts its accounting after this call
+ *          (@ref kernel_processor_sleep_begin_accounting).
  *
  * @param no_world_instantiated Caller's declaration that no authoritative simulation
  *                              is running. False refuses: stopping the tick under a
@@ -145,8 +149,7 @@ uint32_t kernel_tickless_microseconds_from_cycles(uint64_t cycles);
  *          less than without the lead, and a window of one cycle late by the whole latency, which the plan's
  *          worst overshoot measures. Only a sleep the timer ended teaches the lead; one another interrupt cut
  *          short does not. Each depth has its own lead: the first stop of the tick in a boot probes the depth
- *          sleeps enter, before any duty sleeps (@ref kernel_tickless_enable), and a depth the session did not
- *          probe starts from the lead of the one it did.
+ *          sleeps enter, before any duty sleeps (@ref kernel_tickless_enable).
  *          A wake-up already due is served without sleeping, and one further than
  *          @ref KERNEL_TICKLESS_MAX_SLEEP_MICROSECONDS is cut to it. In TSC-deadline mode the armed cycle is
  *          the deadline, so the interrupt never comes before it; in count mode a count stands for it, through
@@ -188,13 +191,14 @@ uint32_t kernel_tickless_early_wakes(void);
 /**
  * @brief How many cycles before a window's latest a sleep at the current depth arms its wake-up: what the timer's
  *        wake-ups at that depth taught, the probe's first, over every session of this boot.
- * @return The lead; 0 before a session probed the depth.
+ * @return The lead: 0 before the depth's first probe, half the longest probe's length while the timer has ended
+ *         neither a probe nor a sleep at that depth, then what those wake-ups taught.
  */
 uint64_t kernel_tickless_wake_lead_cycles(void);
 
 /**
  * @brief How many of the timer's wake-ups taught the current depth's lead, the probe's included.
- * @return The count; 0 before a session probed the depth.
+ * @return The count; 0 until a probe or a sleep at that depth has been ended by the timer.
  */
 uint32_t kernel_tickless_wake_samples(void);
 

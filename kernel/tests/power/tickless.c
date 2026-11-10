@@ -159,9 +159,9 @@ KERNEL_TEST(stopping_the_tick_needs_a_plan_with_room_for_its_duty)
 
 /**
  * @brief The first stop of the tick in a boot probes the depth sleeps enter, before any duty sleeps: the lead is
- *        measured, from KERNEL_TICKLESS_PROBES sleeps at most, which last at least the probes' lengths; a later stop
- *        at the same depth probes it no more. Placed before every other test that stops the tick, so that on a boot
- *        that runs this file first, its stop is the one that probes.
+ *        measured, from KERNEL_TICKLESS_PROBES sleeps at most, which, when none was cut short, last at least the
+ *        probes' lengths; a later stop at the same depth probes it no more. Placed before every other test that stops
+ * the tick, so that on a boot that runs this file first, its stop is the one that probes.
  */
 KERNEL_TEST(the_first_stop_of_the_tick_probes_the_depth_sleeps_enter)
 {
@@ -183,12 +183,13 @@ KERNEL_TEST(the_first_stop_of_the_tick_probes_the_depth_sleeps_enter)
 
     uint64_t lengths = 0u;
     for (uint32_t index = 0u, length = KERNEL_TICKLESS_FIRST_PROBE_MICROSECONDS; index < KERNEL_TICKLESS_PROBES;
-         ++index, length *= 4u)
+         ++index, length *= KERNEL_TICKLESS_PROBE_GROWTH)
         lengths += kernel_tickless_cycles_from_microseconds(length);
 
     kernel_test_check(test, stopped && again, "the tick stops, twice");
     kernel_test_check(test,
-                      unprobed != 0u || (probed >= 1u && probed <= KERNEL_TICKLESS_PROBES && probe >= lengths &&
+                      unprobed != 0u || (probed >= 1u && probed <= KERNEL_TICKLESS_PROBES &&
+                                         (probed < KERNEL_TICKLESS_PROBES || probe >= lengths) &&
                                          slept == kernel_tickless_microseconds_from_cycles(probe)),
                       "a depth no session probed is probed by the first stop, its sleeps as long as the probes and "
                       "counted as time with the tick stopped");

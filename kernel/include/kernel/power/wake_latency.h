@@ -84,6 +84,18 @@ typedef struct {
 void kernel_wake_latency_learn(KernelWakeLatency_t *estimate, uint64_t latency);
 
 /**
+ * @brief Learns the latencies of sleeps given from the shortest sleep to the longest, the longest first, so that the
+ *        first sets the lead to four times the latency of the sleep most like a duty's, and the shorter ones, which
+ *        a hypervisor may poll back faster, cannot hold it to twice theirs.
+ *
+ * @param estimate  The core's estimate.
+ * @param latencies The latencies, in cycles, of sleeps in increasing length.
+ * @param count     How many.
+ */
+void kernel_wake_latency_learn_from_the_longest(KernelWakeLatency_t *estimate, const uint64_t *latencies,
+                                                uint32_t count);
+
+/**
  * @brief Sets the lead an estimate gives before it has learned any wake-up; once it has, does nothing.
  *
  * @details The first wake-up learned replaces it, counted at most as twice it, so that a first wake-up the

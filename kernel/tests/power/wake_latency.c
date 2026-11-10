@@ -185,3 +185,26 @@ KERNEL_TEST(a_full_count_of_wake_ups_keeps_learning)
         test, wake_latency_test_near(kernel_wake_latency_lead(&estimate), 2150u) && estimate.samples == UINT32_MAX,
         "the count stays full and the lead goes on falling");
 }
+
+/**
+ * @brief Latencies of sleeps of increasing length, the short ones polled back at once, are learned from the longest
+ *        sleep: 1, 1, 100 and 1000 cycles give a lead of about 4865, where learned from the shortest, each held to
+ *        twice the lead the ones before taught, they give about 38.
+ */
+KERNEL_TEST(sleeps_of_increasing_length_are_learned_from_the_longest)
+{
+    static const uint64_t by_length[4] = {1u, 1u, 100u, 1000u};
+    KernelWakeLatency_t longest_first = {0};
+    KernelWakeLatency_t shortest_first = {0};
+
+    kernel_wake_latency_learn_from_the_longest(&longest_first, by_length, 4u);
+    for (uint32_t index = 0u; index < 4u; ++index)
+        kernel_wake_latency_learn(&shortest_first, by_length[index]);
+
+    kernel_test_check(test, wake_latency_test_near(kernel_wake_latency_lead(&longest_first), 4865u),
+                      "the longest sleep's latency sets the lead");
+    kernel_test_check(test, kernel_wake_latency_lead(&shortest_first) < 100u,
+                      "the control: from the shortest, the lead never reaches the long sleeps' latency");
+    kernel_test_check(test, longest_first.samples == 4u, "each is learned once");
+    kernel_test_measure(test, "lead_cycles", (uint32_t) kernel_wake_latency_lead(&longest_first));
+}
