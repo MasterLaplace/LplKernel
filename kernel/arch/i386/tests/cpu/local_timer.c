@@ -281,3 +281,29 @@ KERNEL_TEST(disarming_with_nothing_armed_leaves_the_tick_running)
     kernel_test_check(test, !disarmed, "nothing was armed, so nothing is disarmed");
     kernel_test_check(test, local_timer_test_tick_runs(), "and the tick runs on");
 }
+
+/**
+ * @brief An arming after the timer was stopped writes the timer's entry again: the stop left it masked, and the
+ *        deadline arms in its mode all the same.
+ */
+KERNEL_TEST(an_arming_after_a_stop_writes_the_entry_again)
+{
+    if (!local_timer_test_can_stop_the_tick(test))
+        return;
+
+    const bool offered = local_timer_test_offers_deadlines();
+    LocalTimerTestArming_t first;
+    LocalTimerTestArming_t again;
+
+    interrupt_request_suspend_periodic_tick();
+    local_timer_test_arm_far_and_disarm(offered, &first);
+    advanced_pic_timer_backend_disable();
+    local_timer_test_arm_far_and_disarm(offered, &again);
+    interrupt_request_resume_periodic_tick();
+
+    kernel_test_check(test,
+                      local_timer_test_armed_in_its_mode(offered, &first) &&
+                          local_timer_test_armed_in_its_mode(offered, &again),
+                      "the arming after the stop is in its mode, as the one before it");
+    kernel_test_check(test, local_timer_test_tick_runs(), "and the tick, given back, runs");
+}
