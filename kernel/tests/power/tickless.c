@@ -30,6 +30,13 @@ KERNEL_TEST_SUITE(tickless, KERNEL_TEST_STAGE_BOOTED);
 #define TICKLESS_TEST_DEADLINE_MICROSECONDS 2000u /**< How far each is from the sleep before it. */
 /** @} */
 
+/** @name Deadlines closer than arming the timer takes, the window of #300
+ *  @{ */
+#define TICKLESS_TEST_CLOSE_DEADLINES        64u  /**< How many. */
+#define TICKLESS_TEST_CLOSEST_NANOSECONDS    0u   /**< The first one's distance from the sleep before it. */
+#define TICKLESS_TEST_CLOSE_STEP_NANOSECONDS 250u /**< How much further each next one is. */
+/** @} */
+
 /** The vector of the tick and of the one-shot, IRQ0 remapped: the dispatcher credits it with the wake-ups it ends. */
 #define TICKLESS_TEST_TIMER_VECTOR 32u
 
@@ -357,4 +364,38 @@ KERNEL_TEST(with_the_tick_running_a_sleep_serves_the_plan_at_the_next_interrupt)
                       "the wake-up serves the plan once");
     kernel_test_check(test, slept == 0u, "and counts no time slept");
     kernel_test_measure(test, "ticks", interrupt_request_get_tick_count() - tick);
+}
+
+/**
+ * @brief Deadlines closer than arming the timer takes, which pass while it is armed, end their sleep: none is handled
+ *        just before the halt, which with the tick stopped would leave nothing to wake the core.
+ *
+ * @details From 0 to 16 µs away, a quarter of a microsecond further each time, so that under a hypervisor, whose
+ *          arming exits cost microseconds, some pass during the arming, and the rest just after it.
+ */
+KERNEL_TEST(a_deadline_closer_than_its_arming_ends_the_sleep)
+{
+    if (!tickless_test_can_stop_the_tick(test))
+        return;
+
+    const uint32_t duty = tickless_test_begin();
+    const bool stopped = kernel_tickless_enable(true, &tickless_test_plan);
+    const uint64_t hertz = advanced_pic_timer_backend_get_calibrated_timestamp_counter_frequency_hz();
+
+    for (uint32_t index = 0u; index < TICKLESS_TEST_CLOSE_DEADLINES; ++index)
+    {
+        const uint32_t runs = tickless_test_runs;
+        const uint64_t nanoseconds =
+            TICKLESS_TEST_CLOSEST_NANOSECONDS + (uint64_t) index * TICKLESS_TEST_CLOSE_STEP_NANOSECONDS;
+        const uint64_t deadline = asmutils_read_timestamp_counter() + (nanoseconds * hertz) / 1000000000ull;
+        (void) kernel_wake_planner_arm(&tickless_test_plan, duty, deadline, deadline);
+        for (uint32_t sleeps = 0u; tickless_test_runs == runs && sleeps < TICKLESS_TEST_SLEEPS; ++sleeps)
+            (void) kernel_tickless_sleep_on(&tickless_test_plan);
+    }
+    kernel_tickless_disable();
+
+    kernel_test_check(test, stopped, "the tick stops");
+    kernel_test_check(test, tickless_test_runs == TICKLESS_TEST_CLOSE_DEADLINES,
+                      "every deadline is served, however close it was");
+    kernel_test_check(test, tickless_test_tick_runs(), "and the tick runs again");
 }
