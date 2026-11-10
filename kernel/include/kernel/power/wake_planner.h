@@ -81,11 +81,12 @@ typedef struct {
     void *contexts[KERNEL_WAKE_PLANNER_DUTIES];                 /**< What it runs with. */
     uint32_t declared;                                          /**< One bit per declared duty, bit 0 for duty 1. */
     uint32_t armed;                                             /**< One bit per duty whose window is set. */
-    uint32_t wakes;                                             /**< Wake-ups served. */
-    uint32_t wasted_wakes;                                      /**< Wake-ups that found no window open. */
-    uint32_t batched_wakes;                                     /**< Wake-ups that served two duties or more. */
-    uint32_t services;                                          /**< Duties run. */
-    uint32_t late_services;                                     /**< Duties run after their latest. */
+    uint32_t waking;       /**< One bit per duty whose last window has a latest, so wakes the core; read under armed. */
+    uint32_t wakes;        /**< Wake-ups served. */
+    uint32_t wasted_wakes; /**< Wake-ups that found no window open. */
+    uint32_t batched_wakes;    /**< Wake-ups that served two duties or more. */
+    uint32_t services;         /**< Duties run. */
+    uint32_t late_services;    /**< Duties run after their latest. */
     uint64_t latest_overshoot; /**< The most cycles a duty ran past its latest: a wake-up's latency, at least. */
 } __attribute__((aligned(64))) KernelWakePlan_t;
 

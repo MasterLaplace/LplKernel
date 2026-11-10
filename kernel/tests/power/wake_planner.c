@@ -447,16 +447,26 @@ KERNEL_TEST(with_a_lead_the_most_urgent_arming_wins_over_the_earliest_latest)
 }
 
 /**
- * @brief A duty that never wakes the core is not brought forward by a lead: its latest is not a cycle.
+ * @brief A duty that never wakes the core is not brought forward by a lead: its latest is not a cycle. A duty whose
+ *        window had a latest, armed again without one, stops waking the core too.
  */
 KERNEL_TEST(a_lead_never_brings_forward_a_duty_that_never_wakes_the_core)
 {
-    kernel_test_check(test, wake_planner_test_begin(1u), "a duty is declared");
-    (void) kernel_wake_planner_arm(&wake_planner_test_plan, wake_planner_test_duties[0].number, 0u,
-                                   KERNEL_WAKE_PLANNER_NEVER);
-
+    kernel_test_check(test, wake_planner_test_begin(2u), "two duties are declared");
+    const uint32_t rider = wake_planner_test_duties[0].number;
+    const uint32_t turned = wake_planner_test_duties[1].number;
+    (void) kernel_wake_planner_arm(&wake_planner_test_plan, rider, 0u, KERNEL_WAKE_PLANNER_NEVER);
     kernel_test_check(test, kernel_wake_planner_next_wake(&wake_planner_test_plan, 1000u) == KERNEL_WAKE_PLANNER_NEVER,
                       "with a lead, it still rides the other wake-ups");
+
+    (void) kernel_wake_planner_arm(&wake_planner_test_plan, turned, 0u, 10u);
+    const uint64_t with_a_latest = kernel_wake_planner_next_wake(&wake_planner_test_plan, 0u);
+    (void) kernel_wake_planner_arm(&wake_planner_test_plan, turned, 0u, KERNEL_WAKE_PLANNER_NEVER);
+    kernel_test_check(test,
+                      with_a_latest == 10u &&
+                          kernel_wake_planner_next_wake(&wake_planner_test_plan, 0u) == KERNEL_WAKE_PLANNER_NEVER &&
+                          kernel_wake_planner_next_wake(&wake_planner_test_plan, 1000u) == KERNEL_WAKE_PLANNER_NEVER,
+                      "and a duty armed again without a latest no longer wakes the core");
 }
 
 /**

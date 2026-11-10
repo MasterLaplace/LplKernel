@@ -63,6 +63,7 @@ extern "C" {
 typedef struct {
     uint64_t smoothed_eighths;   /**< The smoothed latency, in eighths of a cycle. */
     uint64_t deviation_quarters; /**< Its smoothed mean deviation, in quarters of a cycle. */
+    uint64_t lead;               /**< The lead the two give, set at each wake-up learned, read at every sleep. */
     uint32_t samples;            /**< Wake-ups learned from. */
 } KernelWakeLatency_t;
 
@@ -86,7 +87,7 @@ void kernel_wake_latency_learn(KernelWakeLatency_t *estimate, uint64_t latency);
  * @param estimate The core's estimate.
  * @return That lead; 0 before any wake-up was learned from.
  */
-uint64_t kernel_wake_latency_lead(const KernelWakeLatency_t *estimate);
+static inline uint64_t kernel_wake_latency_lead(const KernelWakeLatency_t *estimate) { return estimate->lead; }
 
 #ifdef __cplusplus
 }
