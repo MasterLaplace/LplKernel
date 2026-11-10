@@ -97,6 +97,12 @@ typedef enum {
 void kernel_processor_sleep_initialize(void);
 
 /**
+ * @brief Starts the counts of sleeps, halts, skips and time asleep afresh, keeping what was detected and the hint
+ *        granted: a session that slept to set itself up counts only what its loop does.
+ */
+void kernel_processor_sleep_begin_accounting(void);
+
+/**
  * @brief Does this processor implement the monitor/wait pair?
  * @return true when CPUID advertises it.
  */
@@ -184,6 +190,12 @@ bool kernel_processor_sleep_request_hint(uint32_t hint);
  * @return The hint index.
  */
 uint32_t kernel_processor_sleep_active_hint(void);
+
+/**
+ * @brief The depth a sleep until an interrupt enters: the active hint where MWAIT is used, C1 where the core halts.
+ * @return That hint index.
+ */
+uint32_t kernel_processor_sleep_depth(void);
 
 /**
  * @brief Times a requested depth was lowered to what the processor enumerates.

@@ -63,7 +63,8 @@ extern "C" {
  */
 #define KERNEL_TICKLESS_MAX_SLEEP_MICROSECONDS 1000000u
 
-#define KERNEL_TICKLESS_FIRST_LEAD_MICROSECONDS 1000u /**< The lead before the timer's first wake-up of the boot. */
+#define KERNEL_TICKLESS_PROBES                   4u  /**< Sleeps the first stop of the tick probes a depth with. */
+#define KERNEL_TICKLESS_FIRST_PROBE_MICROSECONDS 16u /**< The first probe's length; each next one is four times it. */
 
 /**
  * @brief Stops the periodic tick, whichever timer owns it, permits sleeping without it, and hands
@@ -77,6 +78,12 @@ extern "C" {
  *          stopped tick would stop it in silence. The pass becomes a duty of @p plan that never wakes
  *          the core: it only reads what running code changed, so it rides the first wake-up after
  *          each period of the tick in force.
+ *
+ *          The first session of a boot at a depth probes it before returning: @ref KERNEL_TICKLESS_PROBES
+ *          sleeps on the timer, from @ref KERNEL_TICKLESS_FIRST_PROBE_MICROSECONDS each four times longer,
+ *          teach the depth its lead, so that no duty's first wake-up is armed on a guess. The probe's sleeps
+ *          are the processor's, counted as any; a session that counts only its loop starts its accounting
+ *          after this call (@ref kernel_processor_sleep_begin_accounting).
  *
  * @param no_world_instantiated Caller's declaration that no authoritative simulation
  *                              is running. False refuses: stopping the tick under a
@@ -137,11 +144,9 @@ uint32_t kernel_tickless_microseconds_from_cycles(uint64_t cycles);
  *          of the window it serves: a window at least that wide is served by its latest, a narrower one late by
  *          less than without the lead, and a window of one cycle late by the whole latency, which the plan's
  *          worst overshoot measures. Only a sleep the timer ended teaches the lead; one another interrupt cut
- *          short does not. Before the timer has ended any sleep of the boot, the lead is
- *          @ref KERNEL_TICKLESS_FIRST_LEAD_MICROSECONDS, the order of the worst wake-ups seen under a
- *          hypervisor, as RFC 6298 (2.1) assumes a second before its first round trip: too long, it costs that
- *          first wake-up a margin inside its window, where none would serve it late; its first sample counts at
- *          most as twice it.
+ *          short does not. Each depth has its own lead: the first stop of the tick in a boot probes the depth
+ *          sleeps enter, before any duty sleeps (@ref kernel_tickless_enable), and a depth the session did not
+ *          probe starts from the lead of the one it did.
  *          A wake-up already due is served without sleeping, and one further than
  *          @ref KERNEL_TICKLESS_MAX_SLEEP_MICROSECONDS is cut to it. In TSC-deadline mode the armed cycle is
  *          the deadline, so the interrupt never comes before it; in count mode a count stands for it, through
@@ -181,12 +186,31 @@ uint32_t kernel_tickless_ticks_avoided(void);
 uint32_t kernel_tickless_early_wakes(void);
 
 /**
- * @brief How many cycles before a window's latest a sleep arms its wake-up: what the timer's wake-ups taught,
- *        over every session of this boot, of how late they come.
- * @return The lead: 0 before the first session, @ref KERNEL_TICKLESS_FIRST_LEAD_MICROSECONDS in cycles until the
- *         timer ends a sleep, then what its wake-ups taught.
+ * @brief How many cycles before a window's latest a sleep at the current depth arms its wake-up: what the timer's
+ *        wake-ups at that depth taught, the probe's first, over every session of this boot.
+ * @return The lead; 0 before a session probed the depth.
  */
 uint64_t kernel_tickless_wake_lead_cycles(void);
+
+/**
+ * @brief How many of the timer's wake-ups taught the current depth's lead, the probe's included.
+ * @return The count; 0 before a session probed the depth.
+ */
+uint32_t kernel_tickless_wake_samples(void);
+
+/**
+ * @brief How long the last probe took, from its first sleep to the end of its last.
+ * @return Cycles of the timestamp counter; 0 before any probe.
+ */
+uint64_t kernel_tickless_probe_cycles(void);
+
+/**
+ * @brief The nanoseconds @p cycles of the timestamp counter last, rounded down, whole seconds first so that the
+ *        product never overflows.
+ * @param cycles A duration on the timestamp counter.
+ * @return The nanoseconds; 0 without a calibrated counter.
+ */
+uint64_t kernel_tickless_nanoseconds_from_cycles(uint64_t cycles);
 
 /**
  * @brief Total time spent with the tick stopped, in microseconds.

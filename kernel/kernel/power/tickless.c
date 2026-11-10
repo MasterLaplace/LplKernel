@@ -8,6 +8,7 @@
 #include <kernel/power/wake_latency.h>
 
 #define TICKLESS_MICROSECONDS_PER_SECOND 1000000u
+#define TICKLESS_NANOSECONDS_PER_SECOND  1000000000ull
 
 static bool tickless_permitted = false;
 static uint32_t tickless_nominal_hz = 0u;
@@ -16,7 +17,16 @@ static uint32_t tickless_microseconds_short_of_a_tick = 0u;
 static uint32_t tickless_early_wakes = 0u;
 static uint64_t tickless_slept_microseconds = 0u;
 static uint64_t tickless_longest_sleep_cycles = 0u;
-static KernelWakeLatency_t tickless_wake_latency = {0};
+static KernelWakeLatency_t tickless_wake_latency[PROCESSOR_SLEEP_HINT_MAX + 1u] = {{0}};
+static uint32_t tickless_probed_depth = PROCESSOR_SLEEP_HINT_C1;
+static uint64_t tickless_probe_cycles = 0u;
+
+/** How a sleep armed on the local timer ended. */
+typedef enum {
+    TICKLESS_WAKE_UNARMED = 0, /**< The timer could not be armed: nothing slept. */
+    TICKLESS_WAKE_TIMER = 1,   /**< The timer ended it. */
+    TICKLESS_WAKE_EARLY = 2,   /**< Another interrupt did, the timer still armed. */
+} TicklessWake_t;
 
 /** The reconciler's pass while the tick is stopped: the plan it is a duty of, its number, its period. */
 typedef struct {
@@ -80,6 +90,72 @@ static void tickless_count_ticks_avoided(uint32_t slept)
 }
 
 /**
+ * @brief Arms the local timer at @p armed and sleeps until an interrupt, interrupts masked from the arming to the
+ *        sleep, which enables them in the same step: a deadline that passes while it is armed ends the sleep.
+ * @param armed     The cycle the timer fires at.
+ * @param out_after Receives the cycle the core woke at, when it slept.
+ * @return How the sleep ended.
+ */
+static TicklessWake_t tickless_sleep_until(uint64_t armed, uint64_t *out_after)
+{
+    const uint32_t flags = asmutils_save_flags_and_disable_interrupts();
+    if (!advanced_pic_timer_backend_arm_at_cycle(armed))
+    {
+        asmutils_restore_flags(flags);
+        return TICKLESS_WAKE_UNARMED;
+    }
+
+    processor_sleep_until_interrupt();
+    const uint64_t after = asmutils_read_timestamp_counter();
+    const bool woken_early = advanced_pic_timer_backend_disarm(after) != 0u;
+    asmutils_restore_flags(flags);
+    *out_after = after;
+    return woken_early ? TICKLESS_WAKE_EARLY : TICKLESS_WAKE_TIMER;
+}
+
+/**
+ * @brief The estimate of the depth the next sleep enters; one the session never probed starts from the lead of the
+ *        depth it did.
+ * @return That estimate.
+ */
+static KernelWakeLatency_t *tickless_latency_of_the_depth(void)
+{
+    KernelWakeLatency_t *const latency = &tickless_wake_latency[kernel_processor_sleep_depth()];
+
+    kernel_wake_latency_assume(latency, kernel_wake_latency_lead(&tickless_wake_latency[tickless_probed_depth]));
+    return latency;
+}
+
+/**
+ * @brief Probes @p depth's wake latency: KERNEL_TICKLESS_PROBES sleeps on the timer, the first
+ *        KERNEL_TICKLESS_FIRST_PROBE_MICROSECONDS long and each next one four times longer, so that a hypervisor's
+ *        halt-polling window and a package state that engages late are both crossed; those the timer ended teach the
+ *        depth's estimate, from the shortest latency up, and their time with the tick stopped is counted.
+ * @param depth The depth sleeps enter, which a probe sleep enters too.
+ */
+static void tickless_probe(uint32_t depth)
+{
+    uint64_t latencies[KERNEL_TICKLESS_PROBES];
+    uint32_t taught = 0u;
+    uint64_t length = kernel_tickless_cycles_from_microseconds(KERNEL_TICKLESS_FIRST_PROBE_MICROSECONDS);
+    const uint64_t began = asmutils_read_timestamp_counter();
+
+    for (uint32_t probe = 0u; probe < KERNEL_TICKLESS_PROBES; ++probe, length *= 4u)
+    {
+        const uint64_t armed = asmutils_read_timestamp_counter() + length;
+        uint64_t after = armed;
+        if (tickless_sleep_until(armed, &after) == TICKLESS_WAKE_TIMER)
+            latencies[taught++] = after > armed ? after - armed : 0u;
+    }
+    kernel_wake_latency_learn_ascending(&tickless_wake_latency[depth], latencies, taught);
+    tickless_probe_cycles = asmutils_read_timestamp_counter() - began;
+    const uint32_t probed = tickless_microseconds_from_cycles(
+        tickless_probe_cycles, advanced_pic_timer_backend_get_calibrated_timestamp_counter_frequency_hz());
+    tickless_slept_microseconds += probed;
+    tickless_count_ticks_avoided(probed);
+}
+
+/**
  * @brief Sleeps until any interrupt, the tick's when it runs, then serves @p plan at the wake-up.
  * @param plan The plan.
  * @return 0: no time is counted slept without the one-shot timer.
@@ -113,12 +189,13 @@ bool kernel_tickless_enable(bool no_world_instantiated, KernelWakePlan_t *plan)
     (void) kernel_wake_planner_arm(plan, duty, asmutils_read_timestamp_counter() + tickless_reconciler_pass.period,
                                    KERNEL_WAKE_PLANNER_NEVER);
 
-    kernel_wake_latency_assume(&tickless_wake_latency,
-                               kernel_tickless_cycles_from_microseconds(KERNEL_TICKLESS_FIRST_LEAD_MICROSECONDS));
     tickless_nominal_hz = tick_hz;
     tickless_microseconds_short_of_a_tick = 0u;
     tickless_longest_sleep_cycles = kernel_tickless_cycles_from_microseconds(KERNEL_TICKLESS_MAX_SLEEP_MICROSECONDS);
     interrupt_request_suspend_periodic_tick();
+    tickless_probed_depth = kernel_processor_sleep_depth();
+    if (tickless_wake_latency[tickless_probed_depth].samples == 0u)
+        tickless_probe(tickless_probed_depth);
     tickless_permitted = true;
     return true;
 }
@@ -159,8 +236,9 @@ uint32_t kernel_tickless_sleep_on(KernelWakePlan_t *plan)
     if (plan != tickless_reconciler_pass.plan)
         return 0u;
 
+    KernelWakeLatency_t *const latency = tickless_latency_of_the_depth();
     const uint64_t before = asmutils_read_timestamp_counter();
-    const uint64_t planned = kernel_wake_planner_next_wake(plan, kernel_wake_latency_lead(&tickless_wake_latency));
+    const uint64_t planned = kernel_wake_planner_next_wake(plan, kernel_wake_latency_lead(latency));
     if (planned <= before)
     {
         (void) kernel_wake_planner_serve(plan, before);
@@ -169,21 +247,14 @@ uint32_t kernel_tickless_sleep_on(KernelWakePlan_t *plan)
 
     const uint64_t longest = before + tickless_longest_sleep_cycles;
     const uint64_t armed = planned < longest ? planned : longest;
-    const uint32_t flags = asmutils_save_flags_and_disable_interrupts();
-    if (!advanced_pic_timer_backend_arm_at_cycle(armed))
-    {
-        asmutils_restore_flags(flags);
+    uint64_t after = armed;
+    const TicklessWake_t wake = tickless_sleep_until(armed, &after);
+    if (wake == TICKLESS_WAKE_UNARMED)
         return tickless_sleep_until_any_interrupt(plan);
-    }
-
-    processor_sleep_until_interrupt();
-    const uint64_t after = asmutils_read_timestamp_counter();
-    const bool woken_early = advanced_pic_timer_backend_disarm(after) != 0u;
-    asmutils_restore_flags(flags);
-    if (woken_early)
+    if (wake == TICKLESS_WAKE_EARLY)
         ++tickless_early_wakes;
     else
-        kernel_wake_latency_learn(&tickless_wake_latency, after > armed ? after - armed : 0u);
+        kernel_wake_latency_learn(latency, after > armed ? after - armed : 0u);
 
     const uint32_t elapsed = tickless_microseconds_from_cycles(
         after - before, advanced_pic_timer_backend_get_calibrated_timestamp_counter_frequency_hz());
@@ -198,7 +269,23 @@ uint32_t kernel_tickless_ticks_avoided(void) { return tickless_ticks_avoided; }
 
 uint32_t kernel_tickless_early_wakes(void) { return tickless_early_wakes; }
 
-uint64_t kernel_tickless_wake_lead_cycles(void) { return kernel_wake_latency_lead(&tickless_wake_latency); }
+uint64_t kernel_tickless_wake_lead_cycles(void)
+{
+    return kernel_wake_latency_lead(&tickless_wake_latency[kernel_processor_sleep_depth()]);
+}
+
+uint32_t kernel_tickless_wake_samples(void) { return tickless_wake_latency[kernel_processor_sleep_depth()].samples; }
+
+uint64_t kernel_tickless_probe_cycles(void) { return tickless_probe_cycles; }
+
+uint64_t kernel_tickless_nanoseconds_from_cycles(uint64_t cycles)
+{
+    const uint64_t hertz = advanced_pic_timer_backend_get_calibrated_timestamp_counter_frequency_hz();
+
+    return hertz != 0u ? (cycles / hertz) * TICKLESS_NANOSECONDS_PER_SECOND +
+                             ((cycles % hertz) * TICKLESS_NANOSECONDS_PER_SECOND) / hertz :
+                         0u;
+}
 
 uint64_t kernel_tickless_slept_microseconds(void) { return tickless_slept_microseconds; }
 
