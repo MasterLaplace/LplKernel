@@ -11,6 +11,7 @@ KERNEL_TEST_SUITE(wake_planner, KERNEL_TEST_STAGE_BOOTED);
 
 #define WAKE_PLANNER_TEST_SPAN   1000u /**< Cycles over which a drawn window opens. */
 #define WAKE_PLANNER_TEST_LENGTH 300u  /**< The longest window drawn, in cycles. */
+#define WAKE_PLANNER_TEST_LEAD   100u  /**< The lead the drawn windows are slept on with, a third of the longest. */
 
 /** What a test duty leaves behind each time it runs. */
 typedef struct {
@@ -142,22 +143,45 @@ static uint32_t wake_planner_test_fewest_wakes(const uint64_t *earliest, const u
 }
 
 /**
- * @brief Runs a plan the way a core sleeps on it: wakes at its next wake-up until none is needed, or until
- *        it has woken once more than it has duties, which no plan of drawn windows needs.
+ * @brief Runs a plan the way a core sleeps on it: arms its next wake-up for @p lead, wakes that lead after the
+ *        arming, until none is needed, or until it has woken once more than it has duties, which no plan of drawn
+ *        windows needs.
+ * @param lead Cycles each wake-up comes after its arming, the lead the plan arms for.
  * @return The wake-ups taken; more than KERNEL_WAKE_PLANNER_DUTIES when the plan never stopped asking.
  */
-static uint32_t wake_planner_test_sleep_through(void)
+static uint32_t wake_planner_test_sleep_through(uint64_t lead)
 {
     uint32_t wakes = 0u;
 
-    for (uint64_t next = kernel_wake_planner_next_wake(&wake_planner_test_plan);
+    for (uint64_t next = kernel_wake_planner_next_wake(&wake_planner_test_plan, lead);
          next != KERNEL_WAKE_PLANNER_NEVER && wakes <= KERNEL_WAKE_PLANNER_DUTIES;
-         next = kernel_wake_planner_next_wake(&wake_planner_test_plan))
+         next = kernel_wake_planner_next_wake(&wake_planner_test_plan, lead))
     {
-        (void) kernel_wake_planner_serve(&wake_planner_test_plan, next);
+        (void) kernel_wake_planner_serve(&wake_planner_test_plan, next + lead);
         ++wakes;
     }
     return wakes;
+}
+
+/**
+ * @brief Draws a set of windows and arms them, each in the duty of its index.
+ * @param earliest Receives each window's earliest cycle.
+ * @param latest   Receives each window's latest cycle.
+ * @return The windows drawn, from 1 to KERNEL_WAKE_PLANNER_DUTIES.
+ */
+static uint32_t wake_planner_test_draw_windows(uint64_t *earliest, uint64_t *latest)
+{
+    const uint32_t count = 1u + wake_planner_test_draw() % KERNEL_WAKE_PLANNER_DUTIES;
+
+    (void) wake_planner_test_begin(count);
+    for (uint32_t window = 0u; window < count; ++window)
+    {
+        earliest[window] = wake_planner_test_draw() % WAKE_PLANNER_TEST_SPAN;
+        latest[window] = earliest[window] + wake_planner_test_draw() % (WAKE_PLANNER_TEST_LENGTH + 1u);
+        (void) kernel_wake_planner_arm(&wake_planner_test_plan, wake_planner_test_duties[window].number,
+                                       earliest[window], latest[window]);
+    }
+    return count;
 }
 
 /**
@@ -167,7 +191,7 @@ KERNEL_TEST(a_plan_with_no_window_never_wakes_the_core)
 {
     (void) wake_planner_test_begin(0u);
 
-    kernel_test_check(test, kernel_wake_planner_next_wake(&wake_planner_test_plan) == KERNEL_WAKE_PLANNER_NEVER,
+    kernel_test_check(test, kernel_wake_planner_next_wake(&wake_planner_test_plan, 0u) == KERNEL_WAKE_PLANNER_NEVER,
                       "an empty plan never wakes the core");
     kernel_test_check(test,
                       kernel_wake_planner_serve(&wake_planner_test_plan, 0u) == 0u &&
@@ -193,7 +217,7 @@ KERNEL_TEST(the_core_wakes_at_the_earliest_latest_and_serves_every_open_window_t
                           kernel_wake_planner_arm(&wake_planner_test_plan, later, 200u, 300u) &&
                           kernel_wake_planner_arm(&wake_planner_test_plan, rider, 0u, KERNEL_WAKE_PLANNER_NEVER),
                       "the four windows are armed");
-    kernel_test_check(test, kernel_wake_planner_next_wake(&wake_planner_test_plan) == 60u,
+    kernel_test_check(test, kernel_wake_planner_next_wake(&wake_planner_test_plan, 0u) == 60u,
                       "the core wakes at the earliest latest");
 
     const uint32_t served = kernel_wake_planner_serve(&wake_planner_test_plan, 60u);
@@ -205,7 +229,7 @@ KERNEL_TEST(the_core_wakes_at_the_earliest_latest_and_serves_every_open_window_t
                       wake_planner_test_plan.batched_wakes == 1u && wake_planner_test_plan.services == 3u &&
                           wake_planner_test_plan.late_services == 0u && wake_planner_test_plan.wasted_wakes == 0u,
                       "one batched wake-up, three services, none late");
-    kernel_test_check(test, kernel_wake_planner_next_wake(&wake_planner_test_plan) == 300u,
+    kernel_test_check(test, kernel_wake_planner_next_wake(&wake_planner_test_plan, 0u) == 300u,
                       "the window that had not opened keeps its own wake-up");
     kernel_test_measure(test, "served", served);
 }
@@ -228,7 +252,7 @@ KERNEL_TEST(a_window_armed_while_serving_opens_at_the_next_wake)
                       kernel_wake_planner_serve(&wake_planner_test_plan, 5u) == 1u && wake_planner_test_log.count == 1u,
                       "the duty runs once at the wake-up although it rearmed an open window");
     kernel_test_check(test,
-                      kernel_wake_planner_next_wake(&wake_planner_test_plan) == 5u &&
+                      kernel_wake_planner_next_wake(&wake_planner_test_plan, 0u) == 5u &&
                           kernel_wake_planner_serve(&wake_planner_test_plan, 5u) == 1u &&
                           wake_planner_test_log.count == 2u,
                       "the rearmed window is served at the next wake-up");
@@ -295,7 +319,7 @@ KERNEL_TEST(a_duty_that_never_wakes_the_core_rides_the_next_wake)
     const uint32_t rider = wake_planner_test_duties[0].number;
 
     (void) kernel_wake_planner_arm(&wake_planner_test_plan, rider, 5u, KERNEL_WAKE_PLANNER_NEVER);
-    kernel_test_check(test, kernel_wake_planner_next_wake(&wake_planner_test_plan) == KERNEL_WAKE_PLANNER_NEVER,
+    kernel_test_check(test, kernel_wake_planner_next_wake(&wake_planner_test_plan, 0u) == KERNEL_WAKE_PLANNER_NEVER,
                       "it asks for no wake-up");
     kernel_test_check(test, kernel_wake_planner_serve(&wake_planner_test_plan, 4u) == 0u,
                       "a wake-up before its earliest leaves it");
@@ -334,7 +358,7 @@ KERNEL_TEST(what_cannot_be_planned_is_refused)
     (void) kernel_wake_planner_arm(&wake_planner_test_plan, first, 0u, 10u);
     kernel_wake_planner_withdraw(&wake_planner_test_plan, first);
     kernel_test_check(test,
-                      kernel_wake_planner_next_wake(&wake_planner_test_plan) == KERNEL_WAKE_PLANNER_NEVER &&
+                      kernel_wake_planner_next_wake(&wake_planner_test_plan, 0u) == KERNEL_WAKE_PLANNER_NEVER &&
                           !kernel_wake_planner_arm(&wake_planner_test_plan, first, 0u, 10u),
                       "a withdrawn duty no longer wakes the core and can no longer be armed");
     kernel_test_check(test,
@@ -359,18 +383,8 @@ KERNEL_TEST(no_schedule_serves_the_same_windows_with_fewer_wakes)
     wake_planner_test_random_state = 0x2971D0C5u;
     for (uint32_t draw = 0u; draw < WAKE_PLANNER_TEST_DRAWS; ++draw)
     {
-        const uint32_t count = 1u + wake_planner_test_draw() % KERNEL_WAKE_PLANNER_DUTIES;
-
-        (void) wake_planner_test_begin(count);
-        for (uint32_t window = 0u; window < count; ++window)
-        {
-            earliest[window] = wake_planner_test_draw() % WAKE_PLANNER_TEST_SPAN;
-            latest[window] = earliest[window] + wake_planner_test_draw() % (WAKE_PLANNER_TEST_LENGTH + 1u);
-            (void) kernel_wake_planner_arm(&wake_planner_test_plan, wake_planner_test_duties[window].number,
-                                           earliest[window], latest[window]);
-        }
-
-        const uint32_t wakes = wake_planner_test_sleep_through();
+        const uint32_t count = wake_planner_test_draw_windows(earliest, latest);
+        const uint32_t wakes = wake_planner_test_sleep_through(0u);
         wakes_taken += wakes;
         if (wakes != wake_planner_test_fewest_wakes(earliest, latest, count))
             ++more;
@@ -389,4 +403,104 @@ KERNEL_TEST(no_schedule_serves_the_same_windows_with_fewer_wakes)
     kernel_test_check(test, more == 0u, "no draw takes more wake-ups than the fewest any schedule needs");
     kernel_test_measure(test, "draws", WAKE_PLANNER_TEST_DRAWS);
     kernel_test_measure(test, "wakes", wakes_taken);
+}
+
+/**
+ * @brief A lead arms the wake-up that much before the latest, but never before the earliest, and never below cycle 0.
+ */
+KERNEL_TEST(a_lead_arms_the_wake_up_before_the_latest_but_never_before_the_earliest)
+{
+    kernel_test_check(test, wake_planner_test_begin(1u), "a duty is declared");
+    const uint32_t duty = wake_planner_test_duties[0].number;
+    (void) kernel_wake_planner_arm(&wake_planner_test_plan, duty, 100u, 1000u);
+
+    kernel_test_check(test,
+                      kernel_wake_planner_next_wake(&wake_planner_test_plan, 0u) == 1000u &&
+                          kernel_wake_planner_next_wake(&wake_planner_test_plan, 300u) == 700u &&
+                          kernel_wake_planner_next_wake(&wake_planner_test_plan, 900u) == 100u,
+                      "a lead the window holds arms that much before its latest");
+    kernel_test_check(test,
+                      kernel_wake_planner_next_wake(&wake_planner_test_plan, 950u) == 100u &&
+                          kernel_wake_planner_next_wake(&wake_planner_test_plan, 5000u) == 100u,
+                      "a lead wider than the window, or than the latest itself, arms at the earliest");
+}
+
+/**
+ * @brief The wake-up a lead arms is the earliest over every duty, not the one of the duty with the earliest latest:
+ *        a wide window closing at 200 and a narrow one at [190, 195], with a lead of 50, are armed at 150 and both
+ *        served at 200, the narrow one late by 5, where arming at the narrow one's earliest would serve both late.
+ */
+KERNEL_TEST(with_a_lead_the_most_urgent_arming_wins_over_the_earliest_latest)
+{
+    kernel_test_check(test, wake_planner_test_begin(2u), "two duties are declared");
+    const uint32_t wide = wake_planner_test_duties[0].number;
+    const uint32_t narrow = wake_planner_test_duties[1].number;
+    (void) kernel_wake_planner_arm(&wake_planner_test_plan, wide, 100u, 200u);
+    (void) kernel_wake_planner_arm(&wake_planner_test_plan, narrow, 190u, 195u);
+
+    kernel_test_check(test, kernel_wake_planner_next_wake(&wake_planner_test_plan, 50u) == 150u,
+                      "the wide window's arming comes first");
+    kernel_test_check(test,
+                      kernel_wake_planner_serve(&wake_planner_test_plan, 200u) == 2u &&
+                          wake_planner_test_plan.late_services == 1u && wake_planner_test_plan.latest_overshoot == 5u,
+                      "a lead after it, both are served, only the window narrower than the lead late");
+}
+
+/**
+ * @brief A duty that never wakes the core is not brought forward by a lead: its latest is not a cycle.
+ */
+KERNEL_TEST(a_lead_never_brings_forward_a_duty_that_never_wakes_the_core)
+{
+    kernel_test_check(test, wake_planner_test_begin(1u), "a duty is declared");
+    (void) kernel_wake_planner_arm(&wake_planner_test_plan, wake_planner_test_duties[0].number, 0u,
+                                   KERNEL_WAKE_PLANNER_NEVER);
+
+    kernel_test_check(test, kernel_wake_planner_next_wake(&wake_planner_test_plan, 1000u) == KERNEL_WAKE_PLANNER_NEVER,
+                      "with a lead, it still rides the other wake-ups");
+}
+
+/**
+ * @brief Over the same drawn windows, sleeping with wake-ups that come exactly a lead after their arming takes no
+ *        more wake-ups than the fewest any schedule needs without one, serves every window once and never before it
+ *        opens, by its latest when it is at least a lead wide, and else by its earliest plus the lead.
+ */
+KERNEL_TEST(a_lead_the_wake_ups_take_exactly_costs_no_wake_up)
+{
+    static uint64_t earliest[KERNEL_WAKE_PLANNER_DUTIES];
+    static uint64_t latest[KERNEL_WAKE_PLANNER_DUTIES];
+    uint32_t outside = 0u;
+    uint32_t more = 0u;
+    uint32_t late_narrow = 0u;
+    uint32_t wakes_taken = 0u;
+
+    wake_planner_test_random_state = 0x2971D0C5u;
+    for (uint32_t draw = 0u; draw < WAKE_PLANNER_TEST_DRAWS; ++draw)
+    {
+        const uint32_t count = wake_planner_test_draw_windows(earliest, latest);
+        const uint32_t wakes = wake_planner_test_sleep_through(WAKE_PLANNER_TEST_LEAD);
+        wakes_taken += wakes;
+        if (wakes > wake_planner_test_fewest_wakes(earliest, latest, count))
+            ++more;
+        if (wake_planner_test_log.count != count)
+            ++outside;
+        for (uint32_t run = 0u; run < wake_planner_test_log.count && run < WAKE_PLANNER_TEST_LOG; ++run)
+        {
+            const uint32_t window = wake_planner_test_log.duties[run] - 1u;
+            const uint64_t instant = wake_planner_test_log.instants[run];
+            const bool wide = latest[window] - earliest[window] >= WAKE_PLANNER_TEST_LEAD;
+            const uint64_t by = wide ? latest[window] : earliest[window] + WAKE_PLANNER_TEST_LEAD;
+            if (instant < earliest[window] || instant > by)
+                ++outside;
+            if (!wide && instant > latest[window])
+                ++late_narrow;
+        }
+    }
+
+    kernel_test_check(test, outside == 0u,
+                      "every window is served once, from its earliest, by its latest when a lead wide");
+    kernel_test_check(test, more == 0u, "no draw takes more wake-ups than the fewest without a lead");
+    kernel_test_check(test, late_narrow > 0u,
+                      "the control: windows narrower than the lead are among them, and some are served late");
+    kernel_test_measure(test, "wakes", wakes_taken);
+    kernel_test_measure(test, "late_narrow", late_narrow);
 }

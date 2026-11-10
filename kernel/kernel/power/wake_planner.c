@@ -57,6 +57,26 @@ static uint32_t wake_planner_most_urgent(const KernelWakePlan_t *plan, uint32_t 
 }
 
 /**
+ * @brief When to arm a wake-up that comes @p lead cycles late so that it serves a slot by its latest: that latest
+ *        less the lead, never before the slot's earliest.
+ * @param plan The plan.
+ * @param slot An armed slot.
+ * @param lead The lead.
+ * @return That cycle; @ref KERNEL_WAKE_PLANNER_NEVER for a slot that never wakes the core.
+ */
+static uint64_t wake_planner_arming(const KernelWakePlan_t *plan, uint32_t slot, uint64_t lead)
+{
+    const uint64_t latest = plan->latest[slot];
+    const uint64_t earliest = plan->earliest[slot];
+
+    if (latest == KERNEL_WAKE_PLANNER_NEVER)
+        return KERNEL_WAKE_PLANNER_NEVER;
+    if (latest - earliest <= lead)
+        return earliest;
+    return latest - lead;
+}
+
+/**
  * @brief Counts a duty run @p overshoot cycles past its latest, and keeps the worst such overshoot.
  * @param plan      The plan.
  * @param overshoot Cycles past the latest; never zero here.
@@ -122,15 +142,16 @@ bool kernel_wake_planner_arm(KernelWakePlan_t *plan, uint32_t duty, uint64_t ear
     return true;
 }
 
-uint64_t kernel_wake_planner_next_wake(const KernelWakePlan_t *plan)
+uint64_t kernel_wake_planner_next_wake(const KernelWakePlan_t *plan, uint64_t lead)
 {
     uint64_t next = KERNEL_WAKE_PLANNER_NEVER;
 
     for (uint32_t armed = plan->armed; armed != 0u; armed &= armed - 1u)
     {
         const uint32_t slot = (uint32_t) __builtin_ctz(armed);
-        if (plan->latest[slot] < next)
-            next = plan->latest[slot];
+        const uint64_t arming = wake_planner_arming(plan, slot, lead);
+        if (arming < next)
+            next = arming;
     }
     return next;
 }

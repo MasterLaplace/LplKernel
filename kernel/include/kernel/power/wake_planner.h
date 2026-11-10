@@ -130,12 +130,23 @@ void kernel_wake_planner_withdraw(KernelWakePlan_t *plan, uint32_t duty);
 bool kernel_wake_planner_arm(KernelWakePlan_t *plan, uint32_t duty, uint64_t earliest, uint64_t latest);
 
 /**
- * @brief When the core must wake at the latest: the earliest latest of the armed duties.
+ * @brief When to arm the core's wake-up, so that one coming @p lead cycles after it serves the most urgent duty
+ *        by its latest: for each armed duty, its latest less the lead, never before its earliest, and the earliest
+ *        of those.
+ *
+ * @details With no lead, that is the earliest latest, the greedy cover. A lead the wake-up takes exactly brings each
+ *          wake-up to the latest of the duty that sets it, so it takes no more wake-ups, and serves a window at least
+ *          a lead wide by its latest. A window narrower than the lead is armed at its earliest rather than before it:
+ *          a timer that never fires early then finds it open, however short the latency turns out, and it is late by
+ *          less than without the lead. The duty that sets the wake-up is not always the one with the earliest
+ *          latest: a wide window whose latest comes just after a narrow one's is armed earlier, where arming at the
+ *          narrow one's earliest would serve both late.
  *
  * @param plan The plan.
+ * @param lead Cycles the wake-up is expected to come after its arming; 0 for the earliest latest.
  * @return That cycle; @ref KERNEL_WAKE_PLANNER_NEVER when no armed duty needs a wake-up of its own.
  */
-uint64_t kernel_wake_planner_next_wake(const KernelWakePlan_t *plan);
+uint64_t kernel_wake_planner_next_wake(const KernelWakePlan_t *plan, uint64_t lead);
 
 /**
  * @brief Serves a wake-up: runs, once each, every armed duty whose window has opened by @p now, the one
