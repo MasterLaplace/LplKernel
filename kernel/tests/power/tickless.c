@@ -219,7 +219,9 @@ KERNEL_TEST(the_reconciler_pass_goes_on_with_the_tick_stopped)
 /**
  * @brief A sleep on a plan, with the tick stopped, serves its duty once its window has opened, at the cycle the
  *        core woke: a lead before its latest, and when the latency passed the lead, the plan's overshoot holds how
- *        late.
+ *        late. The time counted asleep is at least the time from the first sleep to the window's earliest, each sleep
+ *        rounding down a microsecond at most: the lead can bring the wake-up as early as that earliest, and the test's
+ *        own arming, before the sleep, is not slept.
  */
 KERNEL_TEST(a_sleep_on_the_plan_serves_its_duty_when_its_window_is_due)
 {
@@ -235,6 +237,7 @@ KERNEL_TEST(a_sleep_on_the_plan_serves_its_duty_when_its_window_is_due)
 
     uint32_t sleeps = 0u;
     uint32_t slept = 0u;
+    const uint64_t asleep = asmutils_read_timestamp_counter();
     while (tickless_test_runs == 0u && sleeps < TICKLESS_TEST_SLEEPS)
     {
         slept += kernel_tickless_sleep_on(&tickless_test_plan);
@@ -253,11 +256,13 @@ KERNEL_TEST(a_sleep_on_the_plan_serves_its_duty_when_its_window_is_due)
                               tickless_test_plan.latest_overshoot == tickless_test_instant - latest :
                           tickless_test_plan.late_services == 0u && tickless_test_plan.latest_overshoot == 0u,
                       "late exactly by how far past its latest it ran");
-    kernel_test_check(test,
-                      slept >= TICKLESS_TEST_WINDOW_OPENS_MICROSECONDS &&
-                          slept <= TICKLESS_TEST_WINDOW_OPENS_MICROSECONDS + TICKLESS_TEST_WINDOW_MICROSECONDS +
-                                       TICKLESS_TEST_LATENESS_MICROSECONDS,
-                      "and the microseconds it counts asleep are the window's");
+    const uint32_t shortest = kernel_tickless_microseconds_from_cycles(earliest > asleep ? earliest - asleep : 0u);
+    kernel_test_check(
+        test,
+        slept + sleeps >= shortest && slept <= TICKLESS_TEST_WINDOW_OPENS_MICROSECONDS +
+                                                   TICKLESS_TEST_WINDOW_MICROSECONDS +
+                                                   TICKLESS_TEST_LATENESS_MICROSECONDS,
+        "and the microseconds it counts asleep are the window's, from the sleep to its earliest at least");
     kernel_test_check(test, tickless_test_tick_runs(), "and the tick runs again");
     kernel_test_measure(test, "sleeps", sleeps);
     kernel_test_measure(test, "slept_us", slept);
