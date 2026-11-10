@@ -9,11 +9,8 @@ KERNEL_TEST_SUITE(wake_latency, KERNEL_TEST_STAGE_BOOTED);
 #define WAKE_LATENCY_TEST_ROUNDING_SHARE  1024u /**< Or this fraction of the value, the steps' floors adding up. */
 /** @} */
 
-/** The latency of the steady wake-ups the tests start from, in cycles. */
-#define WAKE_LATENCY_TEST_STEADY 800u
-
-/** Steady wake-ups learned before a test changes the latency. */
-#define WAKE_LATENCY_TEST_STEADY_WAKES 4u
+#define WAKE_LATENCY_TEST_STEADY       800u /**< The latency of the steady wake-ups the tests start from, in cycles. */
+#define WAKE_LATENCY_TEST_STEADY_WAKES 4u   /**< Steady wake-ups learned before a test changes the latency. */
 
 /**
  * @brief Whether @p lead stands within the integers' rounding of @p exact, RFC 6298's value in exact fractions.
@@ -131,21 +128,60 @@ KERNEL_TEST(a_lead_of_zero_takes_the_next_latency_in_full)
 }
 
 /**
- * @brief A lead assumed before any wake-up is the one given, the first wake-up learned replaces it as if nothing had
- *        been assumed, and one assumed after it changes nothing.
+ * @brief A lead assumed before any wake-up is the one given, and the first wake-up learned replaces it, counted at most
+ *        as twice it: 800 cycles after 5000 assumed set the lead to 3200, four times them, but after 300 assumed they
+ *        count as 600, and set it to 2400. A lead assumed after a wake-up changes nothing.
  */
-KERNEL_TEST(an_assumed_lead_holds_until_the_first_wake_up_and_no_longer)
+KERNEL_TEST(an_assumed_lead_holds_until_the_first_wake_up_which_it_bounds)
+{
+    KernelWakeLatency_t roomy = {0};
+    KernelWakeLatency_t tight = {0};
+
+    kernel_wake_latency_assume(&roomy, 5000u);
+    kernel_wake_latency_assume(&tight, 300u);
+    const uint64_t assumed = kernel_wake_latency_lead(&roomy);
+    kernel_wake_latency_learn(&roomy, WAKE_LATENCY_TEST_STEADY);
+    kernel_wake_latency_learn(&tight, WAKE_LATENCY_TEST_STEADY);
+    const uint64_t learned = kernel_wake_latency_lead(&roomy);
+    kernel_wake_latency_assume(&roomy, 5000u);
+
+    kernel_test_check(test, assumed == 5000u, "before any wake-up, the lead is the one assumed");
+    kernel_test_check(
+        test, wake_latency_test_near(learned, 3200u) && wake_latency_test_near(kernel_wake_latency_lead(&tight), 2400u),
+        "the first wake-up replaces it, counted at most as twice it");
+    kernel_test_check(test, kernel_wake_latency_lead(&roomy) == learned, "and an assumption after it is ignored");
+}
+
+/**
+ * @brief A latency past KERNEL_WAKE_LATENCY_LONGEST_CYCLES counts as that many cycles, so that no term wraps: a first
+ *        one sets the lead to four times it, and a second to 3.25 times it, its deviation falling by a quarter.
+ */
+KERNEL_TEST(a_latency_past_the_longest_counts_as_the_longest)
 {
     KernelWakeLatency_t estimate = {0};
 
-    kernel_wake_latency_assume(&estimate, 5000u);
-    const uint64_t assumed = kernel_wake_latency_lead(&estimate);
-    kernel_wake_latency_learn(&estimate, WAKE_LATENCY_TEST_STEADY);
-    const uint64_t learned = kernel_wake_latency_lead(&estimate);
-    kernel_wake_latency_assume(&estimate, 5000u);
+    kernel_wake_latency_learn(&estimate, UINT64_MAX);
+    const uint64_t first = kernel_wake_latency_lead(&estimate);
+    kernel_wake_latency_learn(&estimate, UINT64_MAX);
 
-    kernel_test_check(test, assumed == 5000u, "before any wake-up, the lead is the one assumed");
-    kernel_test_check(test, wake_latency_test_near(learned, 3200u),
-                      "the first wake-up sets it as if nothing had been assumed: four times its latency");
-    kernel_test_check(test, kernel_wake_latency_lead(&estimate) == learned, "and an assumption after it is ignored");
+    kernel_test_check(test, first == 4ull * KERNEL_WAKE_LATENCY_LONGEST_CYCLES, "the first counts as the longest");
+    kernel_test_check(test, kernel_wake_latency_lead(&estimate) == 13ull * (KERNEL_WAKE_LATENCY_LONGEST_CYCLES / 4u),
+                      "and so does the second, with nothing wrapped");
+}
+
+/**
+ * @brief An estimate that has counted as many wake-ups as its counter holds keeps learning as before rather than
+ *        start over: from the state of one 800-cycle wake-up, two more give 2150 cycles, not the 3200 of a first.
+ */
+KERNEL_TEST(a_full_count_of_wake_ups_keeps_learning)
+{
+    KernelWakeLatency_t estimate = {0};
+
+    kernel_wake_latency_learn(&estimate, WAKE_LATENCY_TEST_STEADY);
+    estimate.samples = UINT32_MAX;
+    wake_latency_test_learn(&estimate, WAKE_LATENCY_TEST_STEADY, 2u);
+
+    kernel_test_check(
+        test, wake_latency_test_near(kernel_wake_latency_lead(&estimate), 2150u) && estimate.samples == UINT32_MAX,
+        "the count stays full and the lead goes on falling");
 }

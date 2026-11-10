@@ -218,7 +218,8 @@ KERNEL_TEST(the_reconciler_pass_goes_on_with_the_tick_stopped)
 
 /**
  * @brief A sleep on a plan, with the tick stopped, serves its duty once its window has opened, at the cycle the
- *        core woke: on its deadline, by the interrupt's latency after it, which the plan's overshoot holds.
+ *        core woke: a lead before its latest, and when the latency passed the lead, the plan's overshoot holds how
+ *        late.
  */
 KERNEL_TEST(a_sleep_on_the_plan_serves_its_duty_when_its_window_is_due)
 {
@@ -481,6 +482,8 @@ KERNEL_TEST(a_lead_learned_from_the_wake_ups_serves_wide_windows_by_their_latest
     uint32_t timer_wide = 0u;
     uint64_t margin_sum = 0u;
     uint64_t lead_sum = 0u;
+    uint64_t lead_least = UINT64_MAX;
+    uint64_t lead_most = 0u;
     uint64_t overshoot_wide = 0u;
 
     for (uint32_t round = 0u; round < TICKLESS_TEST_LED_ROUNDS; ++round)
@@ -490,7 +493,10 @@ KERNEL_TEST(a_lead_learned_from_the_wake_ups_serves_wide_windows_by_their_latest
         late_narrow += tickless_test_instant > narrow ? 1u : 0u;
 
         const uint32_t timer_before = kernel_wakeup_accounting_get_vector_count(TICKLESS_TEST_TIMER_VECTOR);
-        lead_sum += kernel_tickless_wake_lead_cycles();
+        const uint64_t lead_armed = kernel_tickless_wake_lead_cycles();
+        lead_sum += lead_armed;
+        lead_least = lead_armed < lead_least ? lead_armed : lead_least;
+        lead_most = lead_armed > lead_most ? lead_armed : lead_most;
         const uint64_t armed = asmutils_read_timestamp_counter();
         served += tickless_test_serve_window(duty, armed + opens, armed + closes) ? 1u : 0u;
         timer_wide += kernel_wakeup_accounting_get_vector_count(TICKLESS_TEST_TIMER_VECTOR) - timer_before;
@@ -515,6 +521,8 @@ KERNEL_TEST(a_lead_learned_from_the_wake_ups_serves_wide_windows_by_their_latest
                       "the wide windows are served by their latest, but for a held wake-up now and then");
     kernel_test_check(test, timer_wide <= TICKLESS_TEST_LED_ROUNDS,
                       "and each took at most one wake-up of the timer, as without the lead");
+    kernel_test_check(test, lead_least != lead_most,
+                      "the control: the timer's wake-ups move the lead from round to round");
     kernel_test_check(test, lead_sum / TICKLESS_TEST_LED_ROUNDS < closes,
                       "the lead is taught by the timer's lateness, not by the sleeps, and stays shorter than them");
     kernel_test_check(test, tickless_test_tick_runs(), "and the tick runs again");
@@ -553,8 +561,10 @@ KERNEL_TEST(a_sleep_another_interrupt_ends_teaches_the_lead_nothing)
     const bool stopped = kernel_tickless_enable(true, &tickless_test_plan);
     const uint64_t opens = kernel_tickless_cycles_from_microseconds(TICKLESS_TEST_LED_OPENS_MICROSECONDS);
     const uint64_t closes = kernel_tickless_cycles_from_microseconds(TICKLESS_TEST_LED_CLOSES_MICROSECONDS);
+    const uint64_t lead_cold = kernel_tickless_wake_lead_cycles();
     const uint64_t taught = asmutils_read_timestamp_counter();
-    const bool warmed = tickless_test_serve_window(duty, taught + opens, taught + closes);
+    const bool warmed = tickless_test_serve_window(duty, taught + opens, taught + closes) &&
+                        tickless_test_serve_window(duty, tickless_test_instant + opens, tickless_test_instant + closes);
 
     const uint64_t lead_before = kernel_tickless_wake_lead_cycles();
     const uint32_t early_before = kernel_tickless_early_wakes();
@@ -569,7 +579,8 @@ KERNEL_TEST(a_sleep_another_interrupt_ends_teaches_the_lead_nothing)
     kernel_tickless_disable();
     device_interrupt_release(vector);
 
-    kernel_test_check(test, stopped && warmed, "the tick stops, and a window served by the timer teaches a lead");
+    kernel_test_check(test, stopped && warmed && lead_before != lead_cold,
+                      "the control: the tick stops, and a window the timer serves moves the lead");
     kernel_test_check(test, sent && early == 1u, "the interrupt ends the next sleep before its deadline");
     kernel_test_check(test, lead_before != 0u && lead_after == lead_before, "and that sleep leaves the lead as it was");
     kernel_test_check(test, tickless_test_tick_runs(), "and the tick runs again");

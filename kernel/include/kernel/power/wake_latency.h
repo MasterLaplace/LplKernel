@@ -28,13 +28,17 @@
  * Two changes suit wake-ups. A latency has a long tail, so the lead takes six mean deviations rather than
  * RFC 6298's four. And a host that holds a virtual processor for milliseconds produces a wake-up no lead
  * could have served, which in the plain estimator would push every following wake-up milliseconds early
- * for a dozen wake-ups more: here a sample counts at most as twice the lead it is compared with, so that
- * one such wake-up moves the lead a bounded step, and a lasting change still multiplies the lead at every
- * wake-up until it is caught. KVM's own advance for its guests' timers, which follows the mean by an eighth
- * of each error, skips such spikes outright (`adjust_lapic_timer_advance` in `arch/x86/kvm/lapic.c`).
+ * for a dozen wake-ups more: here a sample counts at most as twice the lead it is compared with, the first
+ * one against the lead assumed before it, so that one such wake-up moves the lead a bounded step, and a
+ * lasting change still multiplies the lead at every wake-up until it is caught. KVM's own advance for its
+ * guests' timers, which follows the mean by an eighth of each error, skips such spikes outright
+ * (`adjust_lapic_timer_advance` in `arch/x86/kvm/lapic.c`).
  *
- * The estimate is pure and counts in cycles of whatever clock its samples come from, so a test drives it
- * without waiting; a zeroed estimate has learned nothing, and its lead is zero until one is assumed.
+ * The estimate counts in 32 bits, which i686 computes in a third of the instructions 64 bits take: a
+ * latency counts at most @ref KERNEL_WAKE_LATENCY_LONGEST_CYCLES, far past any a lead could serve, and
+ * then no term overflows. It is pure and counts in cycles of whatever clock its samples come from, so a
+ * test drives it without waiting; a zeroed estimate has learned nothing, and its lead is zero until one is
+ * assumed.
  *
  * @author @MasterLaplace
  * @version 0.0.0
@@ -50,30 +54,29 @@
 extern "C" {
 #endif
 
-/** Mean deviations the lead adds to the smoothed latency: RFC 6298 takes four, a wake-up's tail wants more. */
-#define KERNEL_WAKE_LATENCY_DEVIATIONS 6u
-
-/** The most a sample counts for, in leads: a wake-up held far past every lead moves the lead a bounded step. */
-#define KERNEL_WAKE_LATENCY_CLIP_IN_LEADS 2u
+#define KERNEL_WAKE_LATENCY_DEVIATIONS     6u          /**< Mean deviations the lead adds: RFC 6298 takes four. */
+#define KERNEL_WAKE_LATENCY_CLIP_IN_LEADS  2u          /**< The most a sample counts for, in leads. */
+#define KERNEL_WAKE_LATENCY_LONGEST_CYCLES (1u << 27u) /**< The most a latency counts for: 45 ms at 3 GHz. */
 
 /**
  * @struct KernelWakeLatency_t
  * @brief What one core's wake-ups taught of their latency, in cycles; zeroed, nothing.
  */
 typedef struct {
-    uint64_t smoothed_eighths;   /**< The smoothed latency, in eighths of a cycle. */
-    uint64_t deviation_quarters; /**< Its smoothed mean deviation, in quarters of a cycle. */
-    uint64_t lead;               /**< The lead the two give, set at each wake-up learned, read at every sleep. */
-    uint32_t samples;            /**< Wake-ups learned from. */
+    uint32_t smoothed_eighths;   /**< The smoothed latency, in eighths of a cycle. */
+    uint32_t deviation_quarters; /**< Its smoothed mean deviation, in quarters of a cycle. */
+    uint32_t lead;               /**< The lead, assumed, or given by the two at each wake-up learned. */
+    uint32_t samples;            /**< Wake-ups learned from, up to UINT32_MAX. */
 } KernelWakeLatency_t;
 
 /**
  * @brief Learns one wake-up's latency: how many cycles after its deadline the code after the sleep ran.
  *
- * @details The first sample sets the smoothed latency to itself and its deviation to half of it, as RFC 6298
- *          (2.2) does; each next one, counted at most as @ref KERNEL_WAKE_LATENCY_CLIP_IN_LEADS times the
- *          lead, moves the deviation a quarter of the way to its distance from the smoothed latency, then the
- *          smoothed latency an eighth of the way to it, in that order (2.3).
+ * @details The latency counts at most as @ref KERNEL_WAKE_LATENCY_LONGEST_CYCLES and, once there is a lead,
+ *          assumed or learned, at most as @ref KERNEL_WAKE_LATENCY_CLIP_IN_LEADS times it. The first sample
+ *          sets the smoothed latency to itself and its deviation to half of it, as RFC 6298 (2.2) does; each
+ *          next one moves the deviation a quarter of the way to its distance from the smoothed latency, then
+ *          the smoothed latency an eighth of the way to it, in that order (2.3).
  *
  * @param estimate The core's estimate.
  * @param latency  The cycles from the deadline to the wake-up; 0 when the timer fired at or before it.
@@ -83,10 +86,11 @@ void kernel_wake_latency_learn(KernelWakeLatency_t *estimate, uint64_t latency);
 /**
  * @brief Sets the lead an estimate gives before it has learned any wake-up; once it has, does nothing.
  *
- * @details The first wake-up learned replaces it, and is learned in full, as if nothing had been assumed.
+ * @details The first wake-up learned replaces it, counted at most as twice it, so that a first wake-up the
+ *          host held does not set the lead from milliseconds.
  *
  * @param estimate The core's estimate.
- * @param lead     The lead to assume, in cycles.
+ * @param lead     The lead to assume, in cycles; counted at most as @ref KERNEL_WAKE_LATENCY_LONGEST_CYCLES.
  */
 void kernel_wake_latency_assume(KernelWakeLatency_t *estimate, uint64_t lead);
 

@@ -63,14 +63,7 @@ extern "C" {
  */
 #define KERNEL_TICKLESS_MAX_SLEEP_MICROSECONDS 1000000u
 
-/**
- * @brief The lead a sleep arms its wake-up with before the timer has ended any sleep of the boot, in microseconds.
- *
- * A millisecond, the order of the worst wake-ups seen under a hypervisor, as RFC 6298 (2.1) assumes a second before
- * its first round trip: a lead too long costs the first timer wake-up of the boot a margin inside its window, a lead
- * of zero would serve it late. The first wake-up the timer ends replaces it with what it measured.
- */
-#define KERNEL_TICKLESS_FIRST_LEAD_MICROSECONDS 1000u
+#define KERNEL_TICKLESS_FIRST_LEAD_MICROSECONDS 1000u /**< The lead before the timer's first wake-up of the boot. */
 
 /**
  * @brief Stops the periodic tick, whichever timer owns it, permits sleeping without it, and hands
@@ -145,7 +138,10 @@ uint32_t kernel_tickless_microseconds_from_cycles(uint64_t cycles);
  *          less than without the lead, and a window of one cycle late by the whole latency, which the plan's
  *          worst overshoot measures. Only a sleep the timer ended teaches the lead; one another interrupt cut
  *          short does not. Before the timer has ended any sleep of the boot, the lead is
- *          @ref KERNEL_TICKLESS_FIRST_LEAD_MICROSECONDS.
+ *          @ref KERNEL_TICKLESS_FIRST_LEAD_MICROSECONDS, the order of the worst wake-ups seen under a
+ *          hypervisor, as RFC 6298 (2.1) assumes a second before its first round trip: too long, it costs that
+ *          first wake-up a margin inside its window, where none would serve it late; its first sample counts at
+ *          most as twice it.
  *          A wake-up already due is served without sleeping, and one further than
  *          @ref KERNEL_TICKLESS_MAX_SLEEP_MICROSECONDS is cut to it. In TSC-deadline mode the armed cycle is
  *          the deadline, so the interrupt never comes before it; in count mode a count stands for it, through
@@ -187,7 +183,8 @@ uint32_t kernel_tickless_early_wakes(void);
 /**
  * @brief How many cycles before a window's latest a sleep arms its wake-up: what the timer's wake-ups taught,
  *        over every session of this boot, of how late they come.
- * @return The lead; 0 before the timer ended any sleep.
+ * @return The lead: 0 before the first session, @ref KERNEL_TICKLESS_FIRST_LEAD_MICROSECONDS in cycles until the
+ *         timer ends a sleep, then what its wake-ups taught.
  */
 uint64_t kernel_tickless_wake_lead_cycles(void);
 
