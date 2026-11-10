@@ -290,8 +290,6 @@ void kernel_console_run_interactive_loop(Serial_t *com1)
                 continue;
             }
         }
-
-        asmutils_halt();
     }
 #endif
 }
