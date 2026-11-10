@@ -13,6 +13,13 @@
 #include <string.h>
 
 #define INTERRUPT_CONTROLLERS_TEST_TICKS 8u /**< Ticks the contract waits for. */
+#define INTERRUPT_CONTROLLERS_TEST_REFERENCE_MICROSECONDS                                                              \
+    10000u /**< How long the timestamp counter is counted against the power management timer. */
+/**
+ * How far the timestamp counter's calibrated rate may stray from the one counted against the power management
+ * timer, as one part in this: the calibration's eight PIT ticks are as late as a loaded host delivers them (#655).
+ */
+#define INTERRUPT_CONTROLLERS_TEST_RATE_PARTS 4u
 #define INTERRUPT_CONTROLLERS_TEST_DEADLINE_PERIODS                                                                    \
     12u /**< The deadline's length in tick periods: more than eight, since it counts the same tick. */
 #define INTERRUPT_CONTROLLERS_TEST_HIGHEST_NAMEABLE_PROCESSOR                                                          \
@@ -618,6 +625,29 @@ KERNEL_TEST(local_timer_owns_the_tick)
                       "and its period is one tick");
     kernel_test_measure(test, "local_timer_hz", local_timer_hz);
     interrupt_controllers_check_the_tick_contract(test);
+
+    const uint64_t calibrated = advanced_pic_timer_backend_get_calibrated_timestamp_counter_frequency_hz();
+    kernel_test_check(test, calibrated != 0u, "the timestamp counter's rate was measured on the same ticks");
+    const uint64_t first_cycle = asmutils_read_timestamp_counter();
+    const uint32_t waited = advanced_configuration_and_power_interface_power_management_timer_machine_stall(
+        INTERRUPT_CONTROLLERS_TEST_REFERENCE_MICROSECONDS);
+    const uint64_t cycles = asmutils_read_timestamp_counter() - first_cycle;
+    if (waited == 0u)
+    {
+        kernel_test_note(test, "no usable power management timer to count the timestamp counter against");
+        return;
+    }
+
+    const uint64_t counted = (cycles * 1000000u) / waited;
+    kernel_test_check(test,
+                      calibrated * INTERRUPT_CONTROLLERS_TEST_RATE_PARTS <=
+                              counted * (INTERRUPT_CONTROLLERS_TEST_RATE_PARTS + 1u) &&
+                          counted * INTERRUPT_CONTROLLERS_TEST_RATE_PARTS <=
+                              calibrated * (INTERRUPT_CONTROLLERS_TEST_RATE_PARTS + 1u),
+                      "and is, within a quarter, the rate it runs at against the power management timer, "
+                      "which no interrupt drives");
+    kernel_test_measure(test, "timestamp_counter_kilohertz", (uint32_t) (calibrated / 1000u));
+    kernel_test_measure(test, "counted_kilohertz", (uint32_t) (counted / 1000u));
 }
 
 /**
@@ -633,8 +663,10 @@ KERNEL_TEST(the_pit_keeps_the_tick_when_the_local_timer_is_declined)
         return;
     }
 
-    kernel_test_check(test, advanced_pic_timer_backend_get_calibrated_timer_frequency_hz() == 0u,
-                      "the local timer was not calibrated");
+    kernel_test_check(test,
+                      advanced_pic_timer_backend_get_calibrated_timer_frequency_hz() == 0u &&
+                          advanced_pic_timer_backend_get_calibrated_timestamp_counter_frequency_hz() == 0u,
+                      "neither the local timer nor the timestamp counter was calibrated");
     kernel_test_check(test, !interrupt_request_is_timer_owner_apic(), "the PIT owns the tick");
     kernel_test_check(test, !advanced_pic_timer_backend_is_periodic_mode_enabled(), "the local timer does not tick");
     interrupt_controllers_check_the_tick_contract(test);
