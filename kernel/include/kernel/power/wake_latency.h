@@ -34,7 +34,7 @@
  * of each error, skips such spikes outright (`adjust_lapic_timer_advance` in `arch/x86/kvm/lapic.c`).
  *
  * The estimate is pure and counts in cycles of whatever clock its samples come from, so a test drives it
- * without waiting; a zeroed estimate has learned nothing, and its lead is zero.
+ * without waiting; a zeroed estimate has learned nothing, and its lead is zero until one is assumed.
  *
  * @author @MasterLaplace
  * @version 0.0.0
@@ -81,11 +81,21 @@ typedef struct {
 void kernel_wake_latency_learn(KernelWakeLatency_t *estimate, uint64_t latency);
 
 /**
+ * @brief Sets the lead an estimate gives before it has learned any wake-up; once it has, does nothing.
+ *
+ * @details The first wake-up learned replaces it, and is learned in full, as if nothing had been assumed.
+ *
+ * @param estimate The core's estimate.
+ * @param lead     The lead to assume, in cycles.
+ */
+void kernel_wake_latency_assume(KernelWakeLatency_t *estimate, uint64_t lead);
+
+/**
  * @brief How many cycles before a window's latest to arm its wake-up: the smoothed latency plus
  *        @ref KERNEL_WAKE_LATENCY_DEVIATIONS mean deviations.
  *
  * @param estimate The core's estimate.
- * @return That lead; 0 before any wake-up was learned from.
+ * @return That lead; before any wake-up was learned from, the one assumed, or 0.
  */
 static inline uint64_t kernel_wake_latency_lead(const KernelWakeLatency_t *estimate) { return estimate->lead; }
 

@@ -129,3 +129,23 @@ KERNEL_TEST(a_lead_of_zero_takes_the_next_latency_in_full)
     kernel_test_check(test, wake_latency_test_near(kernel_wake_latency_lead(&estimate), 1300u),
                       "and the next real latency counts in full");
 }
+
+/**
+ * @brief A lead assumed before any wake-up is the one given, the first wake-up learned replaces it as if nothing had
+ *        been assumed, and one assumed after it changes nothing.
+ */
+KERNEL_TEST(an_assumed_lead_holds_until_the_first_wake_up_and_no_longer)
+{
+    KernelWakeLatency_t estimate = {0};
+
+    kernel_wake_latency_assume(&estimate, 5000u);
+    const uint64_t assumed = kernel_wake_latency_lead(&estimate);
+    kernel_wake_latency_learn(&estimate, WAKE_LATENCY_TEST_STEADY);
+    const uint64_t learned = kernel_wake_latency_lead(&estimate);
+    kernel_wake_latency_assume(&estimate, 5000u);
+
+    kernel_test_check(test, assumed == 5000u, "before any wake-up, the lead is the one assumed");
+    kernel_test_check(test, wake_latency_test_near(learned, 3200u),
+                      "the first wake-up sets it as if nothing had been assumed: four times its latency");
+    kernel_test_check(test, kernel_wake_latency_lead(&estimate) == learned, "and an assumption after it is ignored");
+}

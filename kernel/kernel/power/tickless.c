@@ -113,6 +113,8 @@ bool kernel_tickless_enable(bool no_world_instantiated, KernelWakePlan_t *plan)
     (void) kernel_wake_planner_arm(plan, duty, asmutils_read_timestamp_counter() + tickless_reconciler_pass.period,
                                    KERNEL_WAKE_PLANNER_NEVER);
 
+    kernel_wake_latency_assume(&tickless_wake_latency,
+                               kernel_tickless_cycles_from_microseconds(KERNEL_TICKLESS_FIRST_LEAD_MICROSECONDS));
     tickless_nominal_hz = tick_hz;
     tickless_microseconds_short_of_a_tick = 0u;
     tickless_longest_sleep_cycles = kernel_tickless_cycles_from_microseconds(KERNEL_TICKLESS_MAX_SLEEP_MICROSECONDS);

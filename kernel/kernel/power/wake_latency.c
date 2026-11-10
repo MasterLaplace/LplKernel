@@ -45,3 +45,9 @@ void kernel_wake_latency_learn(KernelWakeLatency_t *estimate, uint64_t latency)
     if (estimate->samples != UINT32_MAX)
         ++estimate->samples;
 }
+
+void kernel_wake_latency_assume(KernelWakeLatency_t *estimate, uint64_t lead)
+{
+    if (estimate->samples == 0u)
+        estimate->lead = lead;
+}

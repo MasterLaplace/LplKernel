@@ -64,6 +64,15 @@ extern "C" {
 #define KERNEL_TICKLESS_MAX_SLEEP_MICROSECONDS 1000000u
 
 /**
+ * @brief The lead a sleep arms its wake-up with before the timer has ended any sleep of the boot, in microseconds.
+ *
+ * A millisecond, the order of the worst wake-ups seen under a hypervisor, as RFC 6298 (2.1) assumes a second before
+ * its first round trip: a lead too long costs the first timer wake-up of the boot a margin inside its window, a lead
+ * of zero would serve it late. The first wake-up the timer ends replaces it with what it measured.
+ */
+#define KERNEL_TICKLESS_FIRST_LEAD_MICROSECONDS 1000u
+
+/**
  * @brief Stops the periodic tick, whichever timer owns it, permits sleeping without it, and hands
  *        the tick's own duty to @p plan.
  *
@@ -132,9 +141,11 @@ uint32_t kernel_tickless_microseconds_from_cycles(uint64_t cycles);
  * @details The plan is served at the cycle the core woke, so a window that opened while the interrupt
  *          was on its way is served too. The timer comes after its deadline by a latency, so the wake-up is
  *          armed early by the lead the timer's own wake-ups taught (wake_latency.h), never before the earliest
- *          of the window it serves: a window at least that wide is served by its latest, and a narrower one,
- *          a window of one cycle among them, late by less than the latency, which the plan's worst overshoot
- *          measures. Only a sleep the timer ended teaches the lead; one another interrupt cut short does not.
+ *          of the window it serves: a window at least that wide is served by its latest, a narrower one late by
+ *          less than without the lead, and a window of one cycle late by the whole latency, which the plan's
+ *          worst overshoot measures. Only a sleep the timer ended teaches the lead; one another interrupt cut
+ *          short does not. Before the timer has ended any sleep of the boot, the lead is
+ *          @ref KERNEL_TICKLESS_FIRST_LEAD_MICROSECONDS.
  *          A wake-up already due is served without sleeping, and one further than
  *          @ref KERNEL_TICKLESS_MAX_SLEEP_MICROSECONDS is cut to it. In TSC-deadline mode the armed cycle is
  *          the deadline, so the interrupt never comes before it; in count mode a count stands for it, through

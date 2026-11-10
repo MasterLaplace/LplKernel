@@ -158,6 +158,27 @@ KERNEL_TEST(stopping_the_tick_needs_a_plan_with_room_for_its_duty)
 }
 
 /**
+ * @brief From the first stopped tick of the boot, a sleep arms its wake-up early: by the assumed lead before the timer
+ *        has ended any sleep, then by what the timer's wake-ups taught. Placed before every other test that stops the
+ *        tick, so that on a boot that runs this file first, the lead it reads is the assumed one.
+ */
+KERNEL_TEST(a_stopped_tick_leads_its_wake_ups_from_the_first_one)
+{
+    if (!tickless_test_can_stop_the_tick(test))
+        return;
+
+    (void) tickless_test_begin();
+    const bool stopped = kernel_tickless_enable(true, &tickless_test_plan);
+    const uint64_t lead = kernel_tickless_wake_lead_cycles();
+    kernel_tickless_disable();
+
+    kernel_test_check(test, stopped, "the tick stops");
+    kernel_test_check(test, lead != 0u, "and the lead is already set, assumed or learned");
+    kernel_test_check(test, tickless_test_tick_runs(), "and the tick runs again");
+    kernel_test_measure(test, "wake_lead_us", kernel_tickless_microseconds_from_cycles(lead));
+}
+
+/**
  * @brief With the tick stopped, the reconciler's pass is a duty of the session's plan that never wakes
  *        the core and rides the first wake-up a tick period after the last pass; the tick takes it back
  *        when it starts again.
