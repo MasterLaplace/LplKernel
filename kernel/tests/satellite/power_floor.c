@@ -20,7 +20,6 @@
 
 KERNEL_TEST_SUITE(power_floor, KERNEL_TEST_STAGE_BOOTED);
 
-/** Frames the satellite node runs for: 320 ms of audio, a sleep to each frame's deadline. */
 #define POWER_FLOOR_AUDIO_CLASS    0x04u /**< A multimedia controller. */
 #define POWER_FLOOR_AUDIO_SUBCLASS 0x03u /**< Its Intel HDA subclass. */
 #define POWER_FLOOR_INTERRUPT_PIN  0x3Du /**< A PCI function's Interrupt Pin register: 1 to 4 for INTA to INTD. */
@@ -31,7 +30,11 @@ KERNEL_TEST_SUITE(power_floor, KERNEL_TEST_STAGE_BOOTED);
 #define POWER_FLOOR_ENTRY_TARGET   24u   /**< Where its destination starts in its high register. */
 #define POWER_FLOOR_ISA_IRQS       16u   /**< ISA IRQs 0 to 15, the lines of the 8259 pair. */
 
-#define POWER_FLOOR_ITERATIONS 8u
+/**
+ * Services of the capture the satellite node runs for: twenty buffers, 800 ms of audio, long enough for the
+ * reconciler's pass, 64 ticks of a 100 Hz tick, to come due during the session and ride one of its wake-ups.
+ */
+#define POWER_FLOOR_ITERATIONS 20u
 
 /** The capture's rate: its stream format 0x0210 is 16 kHz, mono, 16 bits. */
 #define POWER_FLOOR_SAMPLE_RATE_HZ 16000u
@@ -317,9 +320,9 @@ KERNEL_TEST(every_wake_up_of_the_session_is_accounted_for)
 }
 
 /**
- * @brief Where no interrupt brings the buffers, the capture wakes the core on its own deadline once a buffer,
- *        before the controller writes over a half: no wake-up of the session serves nothing, none is late,
- *        and the session sleeps no longer than a buffer per service.
+ * @brief Where no interrupt brings the buffers, the capture wakes the core on its own deadline once a buffer, before
+ *        the controller writes over a half: no wake-up of the session serves nothing, each pump runs past its
+ *        latest by less than the margin its window keeps, and none is more than a buffer after the last.
  */
 KERNEL_TEST(the_capture_keeps_its_own_deadline_where_nothing_interrupts)
 {
@@ -332,15 +335,48 @@ KERNEL_TEST(the_capture_keeps_its_own_deadline_where_nothing_interrupts)
         return;
     }
 
-    kernel_test_check(test, report->wasted_wakes == 0u && report->late_services == 0u,
-                      "no wake-up served nothing, and none was late");
+    kernel_test_check(test, report->wasted_wakes == 0u, "no wake-up served nothing");
+    kernel_test_check(test, report->overshoot_microseconds < POWER_FLOOR_FRAME_MICROSECONDS / 8u,
+                      "each pump ran past its latest by less than an eighth of a buffer, the window's margin");
     kernel_test_check(test, report->sleeps <= report->capture_services + 1u, "one wake-up per service");
     kernel_test_check(test,
-                      report->slept_microseconds <= (report->capture_services + 1u) * POWER_FLOOR_FRAME_MICROSECONDS,
-                      "each a buffer at most after the last");
+                      report->slept_microseconds <= report->capture_services * (POWER_FLOOR_FRAME_MICROSECONDS -
+                                                                                POWER_FLOOR_FRAME_MICROSECONDS / 8u +
+                                                                                report->overshoot_microseconds),
+                      "each at most seven eighths of a buffer and a wake-up's latency after the last");
     kernel_test_measure(test, "sleeps", report->sleeps);
     kernel_test_measure(test, "capture_services", report->capture_services);
     kernel_test_measure(test, "slept_microseconds", report->slept_microseconds);
+    kernel_test_measure(test, "late_services", report->late_services);
+    kernel_test_measure(test, "overshoot_microseconds", report->overshoot_microseconds);
+}
+
+/**
+ * @brief The reconciler's pass, which the stopped tick no longer runs, comes due once the session has lasted a
+ *        tick period, and rides a wake-up of the capture: the wake-up serves both, and the pass costs none of
+ *        its own.
+ */
+KERNEL_TEST(the_reconciler_pass_rides_a_capture_wake_up)
+{
+    const SatelliteReport_t *const report = power_floor_run_once();
+    const uint32_t tick_hz = kernel_tickless_nominal_frequency_hz();
+
+    if (report == NULL || report->ticks_avoided == 0u || tick_hz == 0u)
+    {
+        kernel_test_skip(test, "the session did not stop the tick");
+        return;
+    }
+
+    const uint32_t period_microseconds = (KERNEL_RECONCILER_TICK_SAMPLE_PERIOD * 1000000u) / tick_hz;
+    kernel_test_check(test, report->slept_microseconds >= period_microseconds, "the session lasted a tick period");
+    kernel_test_check(test, report->reconciler_passes >= 1u, "the pass ran with the tick stopped");
+    kernel_test_check(test, report->batched_wakes >= report->reconciler_passes,
+                      "each time on a wake-up that also served the capture");
+    kernel_test_check(test, report->wasted_wakes == 0u && report->sleeps <= report->capture_services + 1u,
+                      "so it cost no wake-up of its own");
+    kernel_test_measure(test, "reconciler_passes", report->reconciler_passes);
+    kernel_test_measure(test, "batched_wakes", report->batched_wakes);
+    kernel_test_measure(test, "period_microseconds", period_microseconds);
 }
 
 /**

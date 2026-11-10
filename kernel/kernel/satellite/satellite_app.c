@@ -1,5 +1,6 @@
 #include <kernel/satellite/satellite_app.h>
 
+#include <kernel/core/reconciler.h>
 #include <kernel/hal/hal_audio.h>
 #include <kernel/lib/asmutils.h>
 #include <kernel/power/frequency_scaling.h>
@@ -113,21 +114,30 @@ static void satellite_drain_waiting_frames(SatelliteReport_t *report)
  *          window opens at once and holds the interrupt for two buffers: the next one is due within one,
  *          and the timer wakes the core only when it fails to come, long before the ring's eight fill.
  *          Where this loop is the producer, it must pump each completed half before the controller
- *          writes over it one buffer later, so the window closes one buffer on and opens half a buffer
- *          on, after which a wake-up for another duty finds one worth taking.
+ *          writes over it one buffer later, so the window closes an eighth of a buffer short of one
+ *          buffer on, a margin for the wake-up's latency and for a counter rate measured on a late tick,
+ *          and opens half a buffer on, after which a wake-up for another duty finds one worth taking.
+ *          Without a calibrated counter there is no buffer to count in cycles, and the capture rides
+ *          whatever wakes the core.
  *
  * @param capture The capture duty.
  * @param from    The cycle of that service.
  */
 static void satellite_arm_capture(SatelliteCapture_t *capture, uint64_t from)
 {
-    if (hardware_abstraction_layer_audio_capture_is_interrupt_driven())
+    const uint64_t frame = capture->frame_cycles;
+
+    if (frame == 0u)
     {
-        (void) kernel_wake_planner_arm(capture->plan, capture->duty, from, from + 2u * capture->frame_cycles);
+        (void) kernel_wake_planner_arm(capture->plan, capture->duty, from, KERNEL_WAKE_PLANNER_NEVER);
         return;
     }
-    (void) kernel_wake_planner_arm(capture->plan, capture->duty, from + capture->frame_cycles / 2u,
-                                   from + capture->frame_cycles);
+    if (hardware_abstraction_layer_audio_capture_is_interrupt_driven())
+    {
+        (void) kernel_wake_planner_arm(capture->plan, capture->duty, from, from + 2u * frame);
+        return;
+    }
+    (void) kernel_wake_planner_arm(capture->plan, capture->duty, from + frame / 2u, from + frame - frame / 8u);
 }
 
 /**
@@ -135,7 +145,7 @@ static void satellite_arm_capture(SatelliteCapture_t *capture, uint64_t from)
  *        the next window.
  *
  * @param context The SatelliteCapture_t.
- * @param now     The wake-up's cycle.
+ * @param now     The cycle the core woke at.
  */
 static void satellite_serve_capture(void *context, uint64_t now)
 {
@@ -184,6 +194,7 @@ bool kernel_satellite_app_run(uint32_t iterations, SatelliteReport_t *out)
     kernel_wake_planner_initialize(&satellite_plan);
     capture.duty = kernel_wake_planner_declare(&satellite_plan, satellite_serve_capture, &capture);
     (void) kernel_tickless_enable(true, &satellite_plan);
+    const uint32_t passes_before = kernel_reconciler_get_periodic_pass_count();
     capture.frame_cycles = kernel_tickless_cycles_from_microseconds(SATELLITE_FRAME_MICROSECONDS);
     satellite_probe_output_limiter(&report);
 
@@ -202,6 +213,9 @@ bool kernel_satellite_app_run(uint32_t iterations, SatelliteReport_t *out)
     report.capture_services = capture.services;
     report.wasted_wakes = satellite_plan.wasted_wakes;
     report.late_services = satellite_plan.late_services;
+    report.batched_wakes = satellite_plan.batched_wakes;
+    report.overshoot_microseconds = kernel_tickless_microseconds_from_cycles(satellite_plan.latest_overshoot);
+    report.reconciler_passes = kernel_reconciler_get_periodic_pass_count() - passes_before;
     report.sleeps = kernel_processor_sleep_count();
     report.sleeps_skipped = kernel_processor_sleep_skipped_count();
     report.halts = kernel_processor_sleep_halt_count();
@@ -211,6 +225,7 @@ bool kernel_satellite_app_run(uint32_t iterations, SatelliteReport_t *out)
     satellite_govern_on_measured_duty(&report);
     (void) hardware_abstraction_layer_audio_capture_stop();
     kernel_tickless_disable();
+    kernel_wake_planner_withdraw(&satellite_plan, capture.duty);
 
     *out = report;
     return true;

@@ -49,20 +49,23 @@ extern "C" {
  * @brief What a run of the node cost.
  */
 typedef struct {
-    uint32_t idle_iterations;    /**< Times the loop slept on its plan. */
-    uint32_t capture_services;   /**< Times the capture duty drained the ring. */
-    uint32_t wasted_wakes;       /**< Wake-ups of the session that served no duty. */
-    uint32_t late_services;      /**< Duties served after their window closed. */
-    uint32_t slept_microseconds; /**< Time the session spent asleep with the tick stopped. */
-    uint32_t sleeps;             /**< Times the processor was actually put to sleep. */
-    uint32_t sleeps_skipped;     /**< Times a sleep was unnecessary — the watch had fired. */
-    uint32_t halts;              /**< Sleeps that fell back to HLT for want of MONITOR. */
-    uint32_t duty_permille;      /**< Share of accounted cycles spent awake. */
-    uint32_t ticks_avoided;      /**< Periodic interrupts the profile did not take. */
-    uint32_t monitor_available;  /**< 1 when the processor implements MONITOR/MWAIT. */
-    uint32_t scaling_available;  /**< 1 when it can actually change its clock. */
-    uint32_t scaling_refused;    /**< Performance-state requests the hardware could not honour. */
-    uint32_t governed_state;     /**< The state the governor asked for. */
+    uint32_t idle_iterations;        /**< Rounds of the loop on its plan: a sleep, or a wake-up already due. */
+    uint32_t capture_services;       /**< Times the capture duty drained the ring. */
+    uint32_t wasted_wakes;           /**< Wake-ups of the session that served no duty. */
+    uint32_t late_services;          /**< Duties served after their window closed. */
+    uint32_t slept_microseconds;     /**< Time the session spent asleep with the tick stopped. */
+    uint32_t batched_wakes;          /**< Wake-ups that served two duties or more. */
+    uint32_t overshoot_microseconds; /**< The most a duty ran past its latest. */
+    uint32_t reconciler_passes;      /**< Reconciler passes the session's wake-ups carried with the tick stopped. */
+    uint32_t sleeps;                 /**< Times the processor was actually put to sleep. */
+    uint32_t sleeps_skipped;         /**< Times a sleep was unnecessary — the watch had fired. */
+    uint32_t halts;                  /**< Sleeps that fell back to HLT for want of MONITOR. */
+    uint32_t duty_permille;          /**< Share of accounted cycles spent awake. */
+    uint32_t ticks_avoided;          /**< Periodic interrupts the profile did not take. */
+    uint32_t monitor_available;      /**< 1 when the processor implements MONITOR/MWAIT. */
+    uint32_t scaling_available;      /**< 1 when it can actually change its clock. */
+    uint32_t scaling_refused;        /**< Performance-state requests the hardware could not honour. */
+    uint32_t governed_state;         /**< The state the governor asked for. */
     uint32_t effective_permille; /**< Clock actually delivered over the run, or KERNEL_FREQUENCY_SCALING_NO_FEEDBACK. */
     uint32_t audio_present;      /**< 1 when a codec was found AND can be driven. */
     uint32_t output_ceiling;     /**< Loudest sample this kernel will ever emit. */
