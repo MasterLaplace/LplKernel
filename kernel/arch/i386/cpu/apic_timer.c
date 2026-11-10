@@ -18,6 +18,9 @@ static uint8_t advanced_pic_timer_local_apic_mmio_mapped = 0u;
 static uint32_t advanced_pic_timer_local_apic_version_register = 0u;
 static uint32_t advanced_pic_timer_local_apic_calibrated_frequency_hz = 0u;
 static uint8_t advanced_pic_timer_local_apic_periodic_mode_enabled = 0u;
+static uint32_t advanced_pic_timer_calibration_local_timer_counts = 0u;
+static uint64_t advanced_pic_timer_calibration_timestamp_counter_cycles = 0u;
+static uint64_t advanced_pic_timer_timestamp_counter_calibrated_frequency_hz = 0u;
 
 static uint8_t advanced_pic_timer_backend_map_local_apic_mmio(void)
 {
@@ -54,25 +57,29 @@ static uint8_t advanced_pic_timer_backend_map_local_apic_mmio(void)
 }
 
 /**
- * @brief The timer count that lasts @p microseconds at the calibrated frequency.
+ * @brief The timer count that lasts @p cycles of the timestamp counter, by the two counts of the
+ *        calibration.
  *
- * @note Microseconds times hertz overflows 32 bits above about four seconds, so the product
- *       is formed in 64 bits and only then narrowed. A wrap would arm the timer for a
- *       fraction of the delay asked for, which is the failure that looks like a spurious
- *       wake-up rather than like a bug.
+ * @note The product is formed in 64 bits and checked: a wrap would arm the timer for a fraction of
+ *       the delay asked for, which is the failure that looks like a spurious wake-up rather than
+ *       like a bug, so a delay too long for the product gets the timer's whole range.
  *
- * @param microseconds Delay.
- * @return The count, at least 1 and at most the 32-bit maximum.
+ * @param cycles Delay.
+ * @return The count, rounded down, at least 1 and at most the 32-bit maximum.
  */
-static uint32_t advanced_pic_timer_count_for_microseconds(uint32_t microseconds)
+static uint32_t advanced_pic_timer_count_for_cycles(uint64_t cycles)
 {
-    uint64_t ticks = (uint64_t) advanced_pic_timer_local_apic_calibrated_frequency_hz * (uint64_t) microseconds;
-    ticks /= 1000000u;
-    if (ticks == 0u)
-        ticks = 1u;
-    if (ticks > 0xFFFFFFFFu)
-        ticks = 0xFFFFFFFFu;
-    return (uint32_t) ticks;
+    uint64_t product = 0u;
+
+    if (__builtin_mul_overflow(cycles, (uint64_t) advanced_pic_timer_calibration_local_timer_counts, &product))
+        return 0xFFFFFFFFu;
+
+    const uint64_t count = product / advanced_pic_timer_calibration_timestamp_counter_cycles;
+    if (count == 0u)
+        return 1u;
+    if (count > 0xFFFFFFFFu)
+        return 0xFFFFFFFFu;
+    return (uint32_t) count;
 }
 
 uint8_t advanced_pic_timer_backend_initialize(uint32_t target_frequency_hz)
@@ -180,21 +187,28 @@ uint8_t advanced_pic_timer_backend_calibrate_with_pit(void)
     apic_write(LAPIC_REG_TIMER_DIV, 0x3u);
     apic_write(LAPIC_REG_LVT_TIMER, (1u << 16u) | 0xFEu);
     apic_write(LAPIC_REG_TIMER_INIT, 0xFFFFFFFFu);
+    const uint64_t start_cycle = asmutils_read_timestamp_counter();
 
     end_tick = start_tick + 8u;
     while (interrupt_request_get_tick_count() < end_tick)
         asmutils_no_operation();
 
     local_apic_current_count = apic_read(LAPIC_REG_TIMER_CUR);
+    const uint64_t end_cycle = asmutils_read_timestamp_counter();
     local_apic_elapsed_counts = 0xFFFFFFFFu - local_apic_current_count;
 
     apic_write(LAPIC_REG_TIMER_INIT, 0u);
 
-    if (local_apic_elapsed_counts == 0u)
+    if (local_apic_elapsed_counts == 0u || end_cycle <= start_cycle)
     {
         advanced_pic_timer_backend_state_name = "apic-calibration-no-progress";
         return 0u;
     }
+
+    advanced_pic_timer_calibration_local_timer_counts = local_apic_elapsed_counts;
+    advanced_pic_timer_calibration_timestamp_counter_cycles = end_cycle - start_cycle;
+    advanced_pic_timer_timestamp_counter_calibrated_frequency_hz =
+        ((end_cycle - start_cycle) * (uint64_t) pit_frequency_hz) / 8u;
 
     local_apic_frequency_hz_u64 = (uint64_t) local_apic_elapsed_counts;
     local_apic_frequency_hz_u64 *= (uint64_t) pit_frequency_hz;
@@ -277,6 +291,11 @@ uint32_t advanced_pic_timer_backend_get_calibrated_timer_frequency_hz(void)
     return advanced_pic_timer_local_apic_calibrated_frequency_hz;
 }
 
+uint64_t advanced_pic_timer_backend_get_calibrated_timestamp_counter_frequency_hz(void)
+{
+    return advanced_pic_timer_timestamp_counter_calibrated_frequency_hz;
+}
+
 uint8_t advanced_pic_timer_backend_is_periodic_mode_enabled(void)
 {
     return advanced_pic_timer_local_apic_periodic_mode_enabled;
@@ -290,7 +309,7 @@ uint8_t advanced_pic_timer_backend_is_bootstrap_processor(void)
 }
 
 /**
- * @brief Arms the local timer to fire once, @p microseconds from now.
+ * @brief Arms the local timer to fire once, @p cycles of the timestamp counter from now.
  *
  * The other half of a tickless kernel. Periodic mode asks "wake me a thousand times
  * a second whatever happens"; this asks "wake me at this instant and not before",
@@ -298,19 +317,20 @@ uint8_t advanced_pic_timer_backend_is_bootstrap_processor(void)
  * none. Same divider and same vector as periodic mode — only bit 17 is dropped, so
  * the timer counts down once and stops.
  *
- * @param microseconds Delay; zero fires as soon as the hardware can.
+ * @param cycles Delay; zero fires as soon as the hardware can.
  * @return 1 when the timer was armed.
  */
-uint8_t advanced_pic_timer_backend_arm_one_shot(uint32_t microseconds)
+uint8_t advanced_pic_timer_backend_arm_one_shot_in_cycles(uint64_t cycles)
 {
     uint32_t count;
 
     if (!advanced_pic_timer_local_apic_mmio_mapped && !apic_is_x2apic_active())
         return 0u;
-    if (advanced_pic_timer_local_apic_calibrated_frequency_hz == 0u)
+    if (advanced_pic_timer_local_apic_calibrated_frequency_hz == 0u ||
+        advanced_pic_timer_calibration_timestamp_counter_cycles == 0u)
         return 0u;
 
-    count = advanced_pic_timer_count_for_microseconds(microseconds);
+    count = advanced_pic_timer_count_for_cycles(cycles);
 
     apic_write(LAPIC_REG_TIMER_DIV, 0x3u);
     apic_write(LAPIC_REG_LVT_TIMER, 32u + 0u);

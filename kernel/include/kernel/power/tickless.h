@@ -47,6 +47,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <kernel/power/wake_planner.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -62,24 +64,33 @@ extern "C" {
 #define KERNEL_TICKLESS_MAX_SLEEP_MICROSECONDS 1000000u
 
 /**
- * @brief Stops the periodic tick, whichever timer owns it, and permits sleeping without it.
+ * @brief Stops the periodic tick, whichever timer owns it, permits sleeping without it, and hands
+ *        the tick's own duty to @p plan.
  *
  * @details The saving is measured against the tick in force when the session starts, read from
  *          the timer rather than assumed: a profile that reported ticks avoided against a rate it
  *          was never running would be reporting fiction.
  *
+ *          The tick runs a reconciler pass every KERNEL_RECONCILER_TICK_SAMPLE_PERIOD ticks, and a
+ *          stopped tick would stop it in silence. The pass becomes a duty of @p plan that never wakes
+ *          the core: it only reads what running code changed, so it rides the first wake-up after
+ *          each period of the tick in force.
+ *
  * @param no_world_instantiated Caller's declaration that no authoritative simulation
  *                              is running. False refuses: stopping the tick under a
  *                              World would make its cadence depend on how busy the
  *                              machine was, and every parity gate rests on it not.
+ * @param plan                  The plan the session sleeps on; NULL refuses, and so does a plan
+ *                              with no duty left for the reconciler's pass.
  * @return true when the tick is stopped; false when refused, already stopped, or when no
  *         calibrated one-shot timer could wake a core with no tick.
  */
-bool kernel_tickless_enable(bool no_world_instantiated);
+bool kernel_tickless_enable(bool no_world_instantiated, KernelWakePlan_t *plan);
 
 /**
- * @brief Gives the tick back to the timer that owned it, at the rate it ran, and forbids stopping
- *        it again until the next @ref kernel_tickless_enable.
+ * @brief Gives the tick back to the timer that owned it, at the rate it ran, takes the reconciler's
+ *        pass back from the session's plan, and forbids stopping the tick again until the next
+ *        @ref kernel_tickless_enable.
  *
  * @note Does nothing when the tick was not stopped.
  */
@@ -92,20 +103,48 @@ void kernel_tickless_disable(void);
 bool kernel_tickless_enabled(void);
 
 /**
- * @brief Sleeps until @p microseconds have passed, with no tick in between.
+ * @brief The cycles of the timestamp counter that last @p microseconds, at the rate the local timer's
+ *        calibration measured.
  *
- * Returns early on any interrupt, which is the point rather than a caveat: a
- * deadline is the LATEST the caller wants to wake, and a device that has something
- * to say should not have to wait for it.
+ * @param microseconds A duration.
+ * @return Its cycles; 0 before a calibration succeeded.
+ */
+uint64_t kernel_tickless_cycles_from_microseconds(uint32_t microseconds);
+
+/**
+ * @brief The microseconds @p cycles of the timestamp counter last, at the rate the local timer's calibration
+ *        measured, rounded down.
+ *
+ * @param cycles A duration.
+ * @return Its microseconds, saturated at the 32-bit maximum; 0 before a calibration succeeded.
+ */
+uint32_t kernel_tickless_microseconds_from_cycles(uint64_t cycles);
+
+/**
+ * @brief Sleeps once, with no tick, until @p plan's next wake-up or any interrupt, then serves the
+ *        plan at that wake-up.
+ *
+ * Returns early on any interrupt, which is the point rather than a caveat: the plan's
+ * wake-up is the LATEST its duties allow, and a device that has something to say should
+ * not have to wait for it; the duties whose windows are open by then are served at its
+ * wake-up instead of costing one of their own.
+ *
+ * @details The plan is served at the cycle the core woke, so a window that opened while the interrupt
+ *          was on its way is served too, and a duty the plan's own deadline woke is late by that
+ *          interrupt's latency, which the plan's worst overshoot then measures. A deadline already passed
+ *          is served without sleeping, and one further than @ref KERNEL_TICKLESS_MAX_SLEEP_MICROSECONDS is
+ *          cut to it.
  *
  * @note Without permission the tick is still running, so the sleep simply takes the
  *       interrupts it delivers and reports no time slept. Honest and unremarkable — and
  *       counted the same way, so a profile cannot claim a saving it did not make.
  *
- * @param microseconds Delay; clamped to @ref KERNEL_TICKLESS_MAX_SLEEP_MICROSECONDS.
- * @return Microseconds actually spent, measured from the absolute clock.
+ * @param plan The plan the session sleeps on: with the tick stopped, the one
+ *             @ref kernel_tickless_enable was given, which carries the reconciler's pass; any other is
+ *             refused, neither slept on nor served.
+ * @return Microseconds actually spent, measured on the timestamp counter; 0 for a refused plan.
  */
-uint32_t kernel_tickless_sleep(uint32_t microseconds);
+uint32_t kernel_tickless_sleep_on(KernelWakePlan_t *plan);
 
 /**
  * @brief Periodic interrupts this profile did not take.
