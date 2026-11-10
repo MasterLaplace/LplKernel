@@ -1,6 +1,5 @@
 #include <kernel/core/reconciler.h>
 #include <kernel/diag/telemetry.h>
-#include <kernel/lib/asmutils.h>
 #include <kernel/memory/backpressure.h>
 #include <kernel/memory/frame_arena.h>
 #include <kernel/memory/heap.h>
@@ -53,6 +52,17 @@ static uint32_t reconciler_real_time_violations_since_declaration(void)
         return 0u;
 
     return current - reconciler_real_time_violation_baseline;
+}
+
+/**
+ * @brief Whether the tick has taken a pass, for processor_sleep_unless.
+ * @param context Unused.
+ * @return true once it has.
+ */
+static bool reconciler_periodic_pass_taken(void *context)
+{
+    (void) context;
+    return reconciler_periodic_pass_count > 0u;
 }
 
 void kernel_reconciler_declare(const KernelReconcilerDeclaration_t *declaration)
@@ -131,12 +141,8 @@ uint32_t kernel_reconciler_get_periodic_pass_count(void) { return reconciler_per
 bool kernel_reconciler_wait_for_periodic_pass(void)
 {
     for (uint32_t spin = 0u; spin < KERNEL_RECONCILER_PERIODIC_WAIT_LIMIT; ++spin)
-    {
-        if (reconciler_periodic_pass_count > 0u)
+        if (processor_sleep_unless(reconciler_periodic_pass_taken, NULL))
             return true;
-
-        asmutils_halt();
-    }
 
     return reconciler_periodic_pass_count > 0u;
 }

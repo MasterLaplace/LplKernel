@@ -164,12 +164,18 @@ uint32_t kernel_tickless_sleep_on(KernelWakePlan_t *plan)
     }
 
     const uint64_t longest = before + tickless_longest_sleep_cycles;
+    const uint32_t flags = asmutils_save_flags_and_disable_interrupts();
     if (!advanced_pic_timer_backend_arm_at_cycle(planned < longest ? planned : longest))
+    {
+        asmutils_restore_flags(flags);
         return tickless_sleep_until_any_interrupt(plan);
+    }
 
     processor_sleep_until_interrupt();
     const uint64_t after = asmutils_read_timestamp_counter();
-    if (advanced_pic_timer_backend_disarm(after))
+    const bool woken_early = advanced_pic_timer_backend_disarm(after) != 0u;
+    asmutils_restore_flags(flags);
+    if (woken_early)
         ++tickless_early_wakes;
 
     const uint32_t elapsed = tickless_microseconds_from_cycles(

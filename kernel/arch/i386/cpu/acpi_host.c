@@ -13,6 +13,7 @@
 #include <kernel/drivers/serial.h>
 #include <kernel/lib/asmutils.h>
 #include <kernel/memory/vmm.h>
+#include <kernel/power/processor_sleep.h>
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -183,6 +184,16 @@ static uint32_t acpi_host_microseconds_since(uint32_t start, uint32_t hertz)
     return (microseconds > UINT32_MAX) ? UINT32_MAX : (uint32_t) microseconds;
 }
 
+/**
+ * @brief Whether the tick deadline @p context has passed, for processor_sleep_unless.
+ * @param context The InterruptRequestDeadline_t.
+ * @return true once it has.
+ */
+static bool acpi_host_deadline_passed(void *context)
+{
+    return interrupt_request_deadline_passed((InterruptRequestDeadline_t *) context);
+}
+
 static uint32_t acpi_host_sleep_on_tick(uint32_t microseconds)
 {
     const uint32_t hertz = clock_get_tick_hz();
@@ -192,8 +203,8 @@ static uint32_t acpi_host_sleep_on_tick(uint32_t microseconds)
     if (hertz == 0u)
         return 0u;
     interrupt_request_deadline_start(&deadline, microseconds);
-    while (!interrupt_request_deadline_passed(&deadline))
-        asmutils_halt();
+    for (bool passed = false; !passed;)
+        passed = processor_sleep_unless(acpi_host_deadline_passed, &deadline);
     return acpi_host_microseconds_since(start, hertz);
 }
 
