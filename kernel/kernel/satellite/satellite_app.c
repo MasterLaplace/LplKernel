@@ -1,12 +1,25 @@
 #include <kernel/satellite/satellite_app.h>
 
 #include <kernel/hal/hal_audio.h>
+#include <kernel/lib/asmutils.h>
 #include <kernel/power/frequency_scaling.h>
 #include <kernel/power/processor_sleep.h>
 #include <kernel/power/tickless.h>
+#include <kernel/power/wake_planner.h>
 
-/** Microseconds of audio in one buffer, and therefore the longest useful sleep. */
+/** Microseconds of audio in one buffer. */
 #define SATELLITE_FRAME_MICROSECONDS 40000u
+
+/** The capture as a duty of the session's plan: what it reports into, and its window's measures. */
+typedef struct {
+    SatelliteReport_t *report; /**< Receives the capture peak. */
+    KernelWakePlan_t *plan;    /**< The plan it is a duty of. */
+    uint32_t duty;             /**< Its number there. */
+    uint64_t frame_cycles;     /**< One buffer, in cycles of the timestamp counter. */
+    uint32_t services;         /**< Times it ran. */
+} SatelliteCapture_t;
+
+static KernelWakePlan_t satellite_plan;
 
 /**
  * @brief The magnitude of a sample, without the overflow `-(-32768)` would be.
@@ -71,20 +84,67 @@ static void satellite_pump_capture_when_polled(void)
 }
 
 /**
- * @brief Drains one buffer and raises the capture peak to its loudest sample.
+ * @brief Drains every buffer waiting in the ring and raises the capture peak to its loudest sample.
  *
  * @note The frame is static rather than automatic: 640 samples is 1280 bytes, and a
  *       kernel stack is not the place to put them.
  *
  * @param report Receives the running capture peak.
  */
-static void satellite_drain_one_frame(SatelliteReport_t *report)
+static void satellite_drain_waiting_frames(SatelliteReport_t *report)
 {
     static int16_t frame[KERNEL_HAL_AUDIO_FRAME_SAMPLES];
-    const uint32_t samples = hardware_abstraction_layer_audio_capture_take(frame, KERNEL_HAL_AUDIO_FRAME_SAMPLES);
-    const uint32_t peak = satellite_peak_magnitude(frame, samples);
-    if (peak > report->capture_peak)
-        report->capture_peak = peak;
+
+    for (uint32_t taken = 0u; taken < KERNEL_HAL_AUDIO_RING_FRAMES; ++taken)
+    {
+        const uint32_t samples = hardware_abstraction_layer_audio_capture_take(frame, KERNEL_HAL_AUDIO_FRAME_SAMPLES);
+        if (samples == 0u)
+            return;
+        const uint32_t peak = satellite_peak_magnitude(frame, samples);
+        if (peak > report->capture_peak)
+            report->capture_peak = peak;
+    }
+}
+
+/**
+ * @brief Arms the capture's next window, from the service that just ran at @p from.
+ *
+ * @details Where the controller's interrupt is the producer, a wake-up means a buffer arrived, so the
+ *          window opens at once and holds the interrupt for two buffers: the next one is due within one,
+ *          and the timer wakes the core only when it fails to come, long before the ring's eight fill.
+ *          Where this loop is the producer, it must pump each completed half before the controller
+ *          writes over it one buffer later, so the window closes one buffer on and opens half a buffer
+ *          on, after which a wake-up for another duty finds one worth taking.
+ *
+ * @param capture The capture duty.
+ * @param from    The cycle of that service.
+ */
+static void satellite_arm_capture(SatelliteCapture_t *capture, uint64_t from)
+{
+    if (hardware_abstraction_layer_audio_capture_is_interrupt_driven())
+    {
+        (void) kernel_wake_planner_arm(capture->plan, capture->duty, from, from + 2u * capture->frame_cycles);
+        return;
+    }
+    (void) kernel_wake_planner_arm(capture->plan, capture->duty, from + capture->frame_cycles / 2u,
+                                   from + capture->frame_cycles);
+}
+
+/**
+ * @brief The capture duty: pumps the ring where nothing else does, drains what waits in it, and arms
+ *        the next window.
+ *
+ * @param context The SatelliteCapture_t.
+ * @param now     The wake-up's cycle.
+ */
+static void satellite_serve_capture(void *context, uint64_t now)
+{
+    SatelliteCapture_t *const capture = (SatelliteCapture_t *) context;
+
+    satellite_pump_capture_when_polled();
+    satellite_drain_waiting_frames(capture->report);
+    ++capture->services;
+    satellite_arm_capture(capture, now);
 }
 
 /**
@@ -120,22 +180,28 @@ bool kernel_satellite_app_run(uint32_t iterations, SatelliteReport_t *out)
     report.scaling_available = kernel_frequency_scaling_available() ? 1u : 0u;
     report.audio_present = hardware_abstraction_layer_audio_initialize() ? 1u : 0u;
 
-    (void) kernel_tickless_enable(true);
+    SatelliteCapture_t capture = {.report = &report, .plan = &satellite_plan};
+    kernel_wake_planner_initialize(&satellite_plan);
+    capture.duty = kernel_wake_planner_declare(&satellite_plan, satellite_serve_capture, &capture);
+    (void) kernel_tickless_enable(true, &satellite_plan);
+    capture.frame_cycles = kernel_tickless_cycles_from_microseconds(SATELLITE_FRAME_MICROSECONDS);
     satellite_probe_output_limiter(&report);
 
     const volatile uint32_t *const written = hardware_abstraction_layer_audio_capture_write_index();
     const uint32_t written_before = (written != NULL) ? *written : 0u;
 
-    for (uint32_t i = 0u; i < iterations; ++i)
+    satellite_arm_capture(&capture, asmutils_read_timestamp_counter());
+    while (capture.services < iterations)
     {
         ++report.idle_iterations;
-        satellite_pump_capture_when_polled();
-        satellite_drain_one_frame(&report);
-        (void) kernel_tickless_sleep(SATELLITE_FRAME_MICROSECONDS);
+        (void) kernel_tickless_sleep_on(&satellite_plan);
     }
 
     kernel_processor_sleep_close_session();
     report.frames_captured = (written != NULL) ? (*written - written_before) : 0u;
+    report.capture_services = capture.services;
+    report.wasted_wakes = satellite_plan.wasted_wakes;
+    report.late_services = satellite_plan.late_services;
     report.sleeps = kernel_processor_sleep_count();
     report.sleeps_skipped = kernel_processor_sleep_skipped_count();
     report.halts = kernel_processor_sleep_halt_count();

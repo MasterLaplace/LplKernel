@@ -49,7 +49,10 @@ extern "C" {
  * @brief What a run of the node cost.
  */
 typedef struct {
-    uint32_t idle_iterations;    /**< Times the loop went round with nothing to do. */
+    uint32_t idle_iterations;    /**< Times the loop slept on its plan. */
+    uint32_t capture_services;   /**< Times the capture duty drained the ring. */
+    uint32_t wasted_wakes;       /**< Wake-ups of the session that served no duty. */
+    uint32_t late_services;      /**< Duties served after their window closed. */
     uint32_t sleeps;             /**< Times the processor was actually put to sleep. */
     uint32_t sleeps_skipped;     /**< Times a sleep was unnecessary — the watch had fired. */
     uint32_t halts;              /**< Sleeps that fell back to HLT for want of MONITOR. */
@@ -78,18 +81,19 @@ typedef struct {
 } SatelliteReport_t;
 
 /**
- * @brief Brings the power floor up and runs the node for @p iterations frames.
+ * @brief Brings the power floor up and runs the node until its capture duty has drained the
+ *        ring @p iterations times.
  *
  * Nothing here allocates and nothing here blocks on a device that may be absent: the
  * profile must be able to boot on a machine with no codec and say so, rather than
  * wait forever for a buffer that will never arrive.
  *
- * @details Each frame sleeps to its deadline, which exercises the one-shot timer and so
- *          proves the periodic tick really is stopped. Where capture is interrupt-driven a
- *          completed half ends the sleep first, and the wake accounting sees it as a
- *          second source. Frames are counted as what ARRIVED rather than what the loop
- *          pumped, which is the same number when the loop is the producer and the only
- *          honest one when the interrupt is.
+ * @details The loop sleeps on a wake plan whose capture duty drains every buffer waiting,
+ *          which exercises the one-shot timer and so proves the periodic tick really is
+ *          stopped. Where capture is interrupt-driven a completed half ends the sleep, and
+ *          the wake accounting sees it as a second source. Frames are counted as what ARRIVED
+ *          rather than what the loop pumped, which is the same number when the loop is the
+ *          producer and the only honest one when the interrupt is.
  *
  * @note The deepest sleep hint is requested: a whole frame separates two buffers, so any
  *       C-state's exit latency is microseconds against 40 ms, and this caller is the one
@@ -103,7 +107,7 @@ typedef struct {
  *       what a simulation that needs it runs under, which is precisely the failure
  *       @ref kernel_tickless_enable exists to refuse.
  *
- * @param iterations Frames to run.
+ * @param iterations Services of the capture duty to run.
  * @param out        Receives the measurements.
  * @return true when the power floor came up.
  */

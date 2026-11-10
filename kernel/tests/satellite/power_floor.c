@@ -311,6 +311,41 @@ KERNEL_TEST(every_wake_up_of_the_session_is_accounted_for)
 }
 
 /**
+ * @brief Where the controller's interrupt ends the sleeps, the capture's window takes its wake-ups: none of
+ *        the session's serves nothing, none serves a duty late, no buffer is lost, and the core wakes once
+ *        per buffer that arrived, give or take the one in flight.
+ *
+ * @details Waking on the capture's own deadline and again on the interrupt that brings the buffer is two
+ *          wake-ups for one, and the one on the deadline finds the ring empty: it is the waste a window
+ *          that holds the interrupt removes.
+ */
+KERNEL_TEST(the_capture_rides_the_controllers_wake_ups)
+{
+    const SatelliteReport_t *const report = power_floor_run_once();
+
+    if (report == NULL || report->audio_present != 1u ||
+        !hardware_abstraction_layer_audio_capture_is_interrupt_driven())
+    {
+        kernel_test_skip(test, "no interrupt-driven capture ran on this machine");
+        return;
+    }
+
+    kernel_test_check(test, report->wasted_wakes == 0u, "no wake-up of the session served nothing");
+    kernel_test_check(test, report->late_services == 0u, "no duty was served late");
+    kernel_test_check(test, hardware_abstraction_layer_audio_capture_overruns() == 0u, "no buffer was lost");
+    kernel_test_check(test, report->sleeps <= report->frames_captured + 1u,
+                      "the core wakes once per buffer that arrived, give or take the one in flight");
+
+    kernel_test_measure(test, "sleeps", report->sleeps);
+    kernel_test_measure(test, "frames_captured", report->frames_captured);
+    kernel_test_measure(test, "capture_services", report->capture_services);
+    kernel_test_measure(test, "wasted_wakes", report->wasted_wakes);
+    kernel_test_measure(test, "late_services", report->late_services);
+    kernel_test_measure(test, "wakes_per_frame_permille",
+                        report->frames_captured != 0u ? (report->sleeps * 1000u) / report->frames_captured : 0u);
+}
+
+/**
  * @brief Nothing this kernel can emit is louder than its compile-time ceiling, checked by pushing a
  *        full-scale square wave through the limiter before there is anything to play.
  */
