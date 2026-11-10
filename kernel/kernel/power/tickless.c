@@ -15,22 +15,28 @@ static uint32_t tickless_microseconds_short_of_a_tick = 0u;
 static uint32_t tickless_early_wakes = 0u;
 static uint64_t tickless_slept_microseconds = 0u;
 static uint64_t tickless_longest_sleep_cycles = 0u;
-static uint64_t tickless_reconciler_period_cycles = 0u;
-static KernelWakePlan_t *tickless_plan = NULL;
-static uint32_t tickless_reconciler_duty = KERNEL_WAKE_PLANNER_NO_DUTY;
+
+/** The reconciler's pass while the tick is stopped: the plan it is a duty of, its number, its period. */
+typedef struct {
+    KernelWakePlan_t *plan; /**< The session's plan; NULL outside a session. */
+    uint32_t duty;          /**< The pass's number in it. */
+    uint64_t period;        /**< KERNEL_RECONCILER_TICK_SAMPLE_PERIOD ticks of the stopped tick, in cycles. */
+} TicklessReconcilerPass_t;
+
+static TicklessReconcilerPass_t tickless_reconciler_pass = {NULL, KERNEL_WAKE_PLANNER_NO_DUTY, 0u};
 
 /**
  * @brief The reconciler's pass the stopped tick would have run: runs it, and lets the next one ride the
  *        first wake-up a tick period later.
- * @param context Unused.
- * @param now     The wake-up's cycle.
+ * @param context The TicklessReconcilerPass_t.
+ * @param now     The cycle the core woke at.
  */
 static void tickless_run_the_reconciler_pass(void *context, uint64_t now)
 {
-    (void) context;
+    const TicklessReconcilerPass_t *const pass = (const TicklessReconcilerPass_t *) context;
+
     kernel_reconciler_check_periodic();
-    (void) kernel_wake_planner_arm(tickless_plan, tickless_reconciler_duty, now + tickless_reconciler_period_cycles,
-                                   KERNEL_WAKE_PLANNER_NEVER);
+    (void) kernel_wake_planner_arm(pass->plan, pass->duty, now + pass->period, KERNEL_WAKE_PLANNER_NEVER);
 }
 
 /**
@@ -72,11 +78,11 @@ static void tickless_count_ticks_avoided(uint32_t slept)
 }
 
 /**
- * @brief Sleeps until any interrupt with the tick still running, then serves @p plan at the wake-up.
+ * @brief Sleeps until any interrupt, the tick's when it runs, then serves @p plan at the wake-up.
  * @param plan The plan.
- * @return 0: no time is counted slept while the tick runs.
+ * @return 0: no time is counted slept without the one-shot timer.
  */
-static uint32_t tickless_sleep_on_the_tick(KernelWakePlan_t *plan)
+static uint32_t tickless_sleep_until_any_interrupt(KernelWakePlan_t *plan)
 {
     processor_sleep_until_interrupt();
     (void) kernel_wake_planner_serve(plan, asmutils_read_timestamp_counter());
@@ -94,14 +100,15 @@ bool kernel_tickless_enable(bool no_world_instantiated, KernelWakePlan_t *plan)
         advanced_pic_timer_backend_get_calibrated_timer_frequency_hz() == 0u || cycle_hz == 0u)
         return false;
 
-    const uint32_t duty = kernel_wake_planner_declare(plan, tickless_run_the_reconciler_pass, NULL);
+    const uint32_t duty =
+        kernel_wake_planner_declare(plan, tickless_run_the_reconciler_pass, &tickless_reconciler_pass);
     if (duty == KERNEL_WAKE_PLANNER_NO_DUTY)
         return false;
 
-    tickless_plan = plan;
-    tickless_reconciler_duty = duty;
-    tickless_reconciler_period_cycles = ((uint64_t) KERNEL_RECONCILER_TICK_SAMPLE_PERIOD * cycle_hz) / tick_hz;
-    (void) kernel_wake_planner_arm(plan, duty, asmutils_read_timestamp_counter() + tickless_reconciler_period_cycles,
+    tickless_reconciler_pass.plan = plan;
+    tickless_reconciler_pass.duty = duty;
+    tickless_reconciler_pass.period = ((uint64_t) KERNEL_RECONCILER_TICK_SAMPLE_PERIOD * cycle_hz) / tick_hz;
+    (void) kernel_wake_planner_arm(plan, duty, asmutils_read_timestamp_counter() + tickless_reconciler_pass.period,
                                    KERNEL_WAKE_PLANNER_NEVER);
 
     tickless_nominal_hz = tick_hz;
@@ -118,9 +125,9 @@ void kernel_tickless_disable(void)
         return;
 
     tickless_permitted = false;
-    kernel_wake_planner_withdraw(tickless_plan, tickless_reconciler_duty);
-    tickless_plan = NULL;
-    tickless_reconciler_duty = KERNEL_WAKE_PLANNER_NO_DUTY;
+    kernel_wake_planner_withdraw(tickless_reconciler_pass.plan, tickless_reconciler_pass.duty);
+    tickless_reconciler_pass.plan = NULL;
+    tickless_reconciler_pass.duty = KERNEL_WAKE_PLANNER_NO_DUTY;
     interrupt_request_resume_periodic_tick();
 }
 
@@ -134,10 +141,19 @@ uint64_t kernel_tickless_cycles_from_microseconds(uint32_t microseconds)
            ((uint64_t) (microseconds % TICKLESS_MICROSECONDS_PER_SECOND) * hertz) / TICKLESS_MICROSECONDS_PER_SECOND;
 }
 
+uint32_t kernel_tickless_microseconds_from_cycles(uint64_t cycles)
+{
+    const uint64_t hertz = advanced_pic_timer_backend_get_calibrated_timestamp_counter_frequency_hz();
+
+    return hertz != 0u ? tickless_microseconds_from_cycles(cycles, hertz) : 0u;
+}
+
 uint32_t kernel_tickless_sleep_on(KernelWakePlan_t *plan)
 {
     if (!tickless_permitted)
-        return tickless_sleep_on_the_tick(plan);
+        return tickless_sleep_until_any_interrupt(plan);
+    if (plan != tickless_reconciler_pass.plan)
+        return 0u;
 
     const uint64_t before = asmutils_read_timestamp_counter();
     const uint64_t planned = kernel_wake_planner_next_wake(plan);
@@ -150,7 +166,7 @@ uint32_t kernel_tickless_sleep_on(KernelWakePlan_t *plan)
     const uint64_t longest = before + tickless_longest_sleep_cycles;
     const uint64_t deadline = planned < longest ? planned : longest;
     if (!advanced_pic_timer_backend_arm_one_shot_in_cycles(deadline - before))
-        return tickless_sleep_on_the_tick(plan);
+        return tickless_sleep_until_any_interrupt(plan);
 
     const uint32_t armed = advanced_pic_timer_backend_read_current_count();
     processor_sleep_until_interrupt();
@@ -158,8 +174,7 @@ uint32_t kernel_tickless_sleep_on(KernelWakePlan_t *plan)
     advanced_pic_timer_backend_disable();
     const uint64_t after = asmutils_read_timestamp_counter();
 
-    const bool on_the_deadline = remaining == 0u || remaining > armed || armed == 0u;
-    if (!on_the_deadline)
+    if (remaining != 0u && remaining <= armed && armed != 0u)
         ++tickless_early_wakes;
 
     const uint32_t elapsed = tickless_microseconds_from_cycles(
@@ -167,8 +182,7 @@ uint32_t kernel_tickless_sleep_on(KernelWakePlan_t *plan)
     tickless_slept_microseconds += elapsed;
     tickless_count_ticks_avoided(elapsed);
 
-    const bool planned_instant = on_the_deadline && deadline == planned && after > deadline;
-    (void) kernel_wake_planner_serve(plan, planned_instant ? deadline : after);
+    (void) kernel_wake_planner_serve(plan, after);
     return elapsed;
 }
 

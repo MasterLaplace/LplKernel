@@ -112,6 +112,15 @@ bool kernel_tickless_enabled(void);
 uint64_t kernel_tickless_cycles_from_microseconds(uint32_t microseconds);
 
 /**
+ * @brief The microseconds @p cycles of the timestamp counter last, at the rate the local timer's calibration
+ *        measured, rounded down.
+ *
+ * @param cycles A duration.
+ * @return Its microseconds, saturated at the 32-bit maximum; 0 before a calibration succeeded.
+ */
+uint32_t kernel_tickless_microseconds_from_cycles(uint64_t cycles);
+
+/**
  * @brief Sleeps once, with no tick, until @p plan's next wake-up or any interrupt, then serves the
  *        plan at that wake-up.
  *
@@ -120,17 +129,20 @@ uint64_t kernel_tickless_cycles_from_microseconds(uint32_t microseconds);
  * not have to wait for it; the duties whose windows are open by then are served at its
  * wake-up instead of costing one of their own.
  *
- * @details A wake-up on the plan's own deadline is served at that deadline's cycle, the instant it
- *          planned, whatever the interrupt then took to arrive; any other at the cycle the core
- *          woke. A deadline already passed is served without sleeping, and one further than
- *          @ref KERNEL_TICKLESS_MAX_SLEEP_MICROSECONDS is cut to it.
+ * @details The plan is served at the cycle the core woke, so a window that opened while the interrupt
+ *          was on its way is served too, and a duty the plan's own deadline woke is late by that
+ *          interrupt's latency, which the plan's worst overshoot then measures. A deadline already passed
+ *          is served without sleeping, and one further than @ref KERNEL_TICKLESS_MAX_SLEEP_MICROSECONDS is
+ *          cut to it.
  *
  * @note Without permission the tick is still running, so the sleep simply takes the
  *       interrupts it delivers and reports no time slept. Honest and unremarkable — and
  *       counted the same way, so a profile cannot claim a saving it did not make.
  *
- * @param plan The plan the session sleeps on.
- * @return Microseconds actually spent, measured on the timestamp counter.
+ * @param plan The plan the session sleeps on: with the tick stopped, the one
+ *             @ref kernel_tickless_enable was given, which carries the reconciler's pass; any other is
+ *             refused, neither slept on nor served.
+ * @return Microseconds actually spent, measured on the timestamp counter; 0 for a refused plan.
  */
 uint32_t kernel_tickless_sleep_on(KernelWakePlan_t *plan);
 

@@ -9,9 +9,8 @@ KERNEL_TEST_SUITE(wake_planner, KERNEL_TEST_STAGE_BOOTED);
 /** Window sets the comparison with every other schedule draws. */
 #define WAKE_PLANNER_TEST_DRAWS 96u
 
-/** Cycles over which a drawn window opens, and the longest one drawn. */
-#define WAKE_PLANNER_TEST_SPAN   1000u
-#define WAKE_PLANNER_TEST_LENGTH 300u
+#define WAKE_PLANNER_TEST_SPAN   1000u /**< Cycles over which a drawn window opens. */
+#define WAKE_PLANNER_TEST_LENGTH 300u  /**< The longest window drawn, in cycles. */
 
 /** What a test duty leaves behind each time it runs. */
 typedef struct {

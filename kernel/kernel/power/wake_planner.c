@@ -2,7 +2,7 @@
 
 #include <stddef.h>
 
-_Static_assert(KERNEL_WAKE_PLANNER_DUTIES <= 32u, "one bit per duty in a 32-bit mask");
+_Static_assert(KERNEL_WAKE_PLANNER_DUTIES < 32u, "one bit per duty in a 32-bit mask, and a full mask below it");
 
 /**
  * @brief The bit of a duty number in the plan's masks, or 0 for a number that names no slot.
@@ -56,6 +56,18 @@ static uint32_t wake_planner_most_urgent(const KernelWakePlan_t *plan, uint32_t 
     return chosen;
 }
 
+/**
+ * @brief Counts a duty run @p overshoot cycles past its latest, and keeps the worst such overshoot.
+ * @param plan      The plan.
+ * @param overshoot Cycles past the latest; never zero here.
+ */
+static void wake_planner_count_late(KernelWakePlan_t *plan, uint64_t overshoot)
+{
+    ++plan->late_services;
+    if (overshoot > plan->latest_overshoot)
+        plan->latest_overshoot = overshoot;
+}
+
 void kernel_wake_planner_initialize(KernelWakePlan_t *plan)
 {
     for (uint32_t slot = 0u; slot < KERNEL_WAKE_PLANNER_DUTIES; ++slot)
@@ -72,6 +84,7 @@ void kernel_wake_planner_initialize(KernelWakePlan_t *plan)
     plan->batched_wakes = 0u;
     plan->services = 0u;
     plan->late_services = 0u;
+    plan->latest_overshoot = 0u;
 }
 
 uint32_t kernel_wake_planner_declare(KernelWakePlan_t *plan, KernelWakePlannerDuty_t duty, void *context)
@@ -135,7 +148,7 @@ uint32_t kernel_wake_planner_serve(KernelWakePlan_t *plan, uint64_t now)
         const uint32_t slot = wake_planner_most_urgent(plan, open);
         open &= ~(1u << slot);
         if (now > plan->latest[slot])
-            ++plan->late_services;
+            wake_planner_count_late(plan, now - plan->latest[slot]);
         ++served;
         plan->duties[slot](plan->contexts[slot], now);
     }

@@ -62,7 +62,7 @@ extern "C" {
  *          the data it found; a window armed here opens at a later wake-up, never at this one.
  *
  * @param context What the duty was declared with.
- * @param now     The wake-up's cycle: the planned one when the core woke on its own deadline.
+ * @param now     The cycle the core woke at.
  */
 typedef void (*KernelWakePlannerDuty_t)(void *context, uint64_t now);
 
@@ -85,6 +85,7 @@ typedef struct {
     uint32_t batched_wakes;                                     /**< Wake-ups that served two duties or more. */
     uint32_t services;                                          /**< Duties run. */
     uint32_t late_services;                                     /**< Duties run after their latest. */
+    uint64_t latest_overshoot; /**< The most cycles a duty ran past its latest: a wake-up's latency, at least. */
 } __attribute__((aligned(64))) KernelWakePlan_t;
 
 /**
@@ -96,6 +97,9 @@ void kernel_wake_planner_initialize(KernelWakePlan_t *plan);
 
 /**
  * @brief Declares a duty, unarmed.
+ *
+ * @note Not from a duty while its wake-up is served: a duty withdrawn there leaves a number the wake-up may
+ *       still serve, and a declaration would take it unarmed.
  *
  * @param plan    The plan.
  * @param duty    What runs when its window is open at a wake-up; NULL is refused.
@@ -138,11 +142,13 @@ uint64_t kernel_wake_planner_next_wake(const KernelWakePlan_t *plan);
  *        with the earliest latest first.
  *
  * @details The duties are the ones open when the wake-up begins: one armed by a duty that runs here
- *          waits for the next wake-up, and one withdrawn by it is not run. One run after its latest is
- *          counted late.
+ *          waits for the next wake-up, and one withdrawn by it is not run. Lateness is counted against
+ *          @p now: a duty run after its latest is counted late, and how far past it raises the plan's
+ *          worst overshoot. A wake-up on the plan's own deadline comes after it by the interrupt's latency,
+ *          so its duties are late by that much, which the overshoot measures.
  *
  * @param plan The plan.
- * @param now  The wake-up's cycle.
+ * @param now  The cycle the core woke at.
  * @return The duties run.
  */
 uint32_t kernel_wake_planner_serve(KernelWakePlan_t *plan, uint64_t now);

@@ -2,14 +2,23 @@
 #include <kernel/cpu/apic_timer.h>
 #include <kernel/cpu/irq.h>
 #include <kernel/lib/asmutils.h>
+#include <kernel/power/processor_sleep.h>
 #include <kernel/power/tickless.h>
 #include <kernel/testing/test.h>
 
 KERNEL_TEST_SUITE(tickless, KERNEL_TEST_STAGE_BOOTED);
 
-/** Where the window a sleep must land in opens, and how long it lasts, in microseconds. */
-#define TICKLESS_TEST_WINDOW_OPENS_MICROSECONDS 2000u
-#define TICKLESS_TEST_WINDOW_MICROSECONDS       2000u
+/** @name The window a sleep must land in, in microseconds
+ *  @{ */
+#define TICKLESS_TEST_WINDOW_OPENS_MICROSECONDS 2000u /**< How long after the arming it opens. */
+#define TICKLESS_TEST_WINDOW_MICROSECONDS       2000u /**< How long it stays open. */
+/** @} */
+
+/**
+ * How late, in microseconds, the interrupt of a sleep's own deadline may come: two ticks of 100 Hz, what a loaded
+ * host is seen to add to a tick (#655).
+ */
+#define TICKLESS_TEST_LATENESS_MICROSECONDS 20000u
 
 /** Sleeps a window may take: interrupts other than its deadline may end the first ones. */
 #define TICKLESS_TEST_SLEEPS 64u
@@ -18,13 +27,14 @@ KERNEL_TEST_SUITE(tickless, KERNEL_TEST_STAGE_BOOTED);
 #define TICKLESS_TEST_WAIT_CYCLE_BUDGET 8000000000ull
 
 static KernelWakePlan_t tickless_test_plan;
+static KernelWakePlan_t tickless_test_other_plan;
 static uint32_t tickless_test_runs;
 static uint64_t tickless_test_instant;
 
 /**
  * @brief Records that the test's duty ran, and at which wake-up.
  * @param context Unused.
- * @param now     The wake-up's cycle.
+ * @param now     The cycle the core woke at.
  */
 static void tickless_test_record(void *context, uint64_t now)
 {
@@ -60,12 +70,42 @@ static bool tickless_test_tick_runs(void)
 }
 
 /**
- * @brief The tick stays on when no plan is given to carry its duty.
+ * @brief Empties the test's plan and declares one duty that records its runs.
+ * @return The duty's number.
  */
-KERNEL_TEST(stopping_the_tick_needs_a_plan_to_carry_its_duty)
+static uint32_t tickless_test_begin(void)
+{
+    kernel_wake_planner_initialize(&tickless_test_plan);
+    tickless_test_runs = 0u;
+    return kernel_wake_planner_declare(&tickless_test_plan, tickless_test_record, NULL);
+}
+
+/**
+ * @brief Whether the tick can be stopped on this boot: it needs the local timer calibrated.
+ * @param test The test, skipped when it cannot.
+ * @return true when it can.
+ */
+static bool tickless_test_can_stop_the_tick(KernelTest_t *test)
+{
+    if (advanced_pic_timer_backend_get_calibrated_timestamp_counter_frequency_hz() != 0u)
+        return true;
+    kernel_test_skip(test, "the local timer was not calibrated, so the tick cannot stop");
+    return false;
+}
+
+/**
+ * @brief The tick stays on when no plan, or a plan with no room left, is given to carry its duty.
+ */
+KERNEL_TEST(stopping_the_tick_needs_a_plan_with_room_for_its_duty)
 {
     kernel_test_check(test, !kernel_tickless_enable(true, NULL) && !kernel_tickless_enabled(),
                       "without a plan the tick is not stopped");
+
+    kernel_wake_planner_initialize(&tickless_test_plan);
+    for (uint32_t index = 0u; index < KERNEL_WAKE_PLANNER_DUTIES; ++index)
+        (void) kernel_wake_planner_declare(&tickless_test_plan, tickless_test_record, NULL);
+    kernel_test_check(test, !kernel_tickless_enable(true, &tickless_test_plan) && !kernel_tickless_enabled(),
+                      "nor with a plan that has no duty left for the reconciler's pass");
 }
 
 /**
@@ -75,11 +115,8 @@ KERNEL_TEST(stopping_the_tick_needs_a_plan_to_carry_its_duty)
  */
 KERNEL_TEST(the_reconciler_pass_goes_on_with_the_tick_stopped)
 {
-    if (advanced_pic_timer_backend_get_calibrated_timestamp_counter_frequency_hz() == 0u)
-    {
-        kernel_test_skip(test, "the local timer was not calibrated, so the tick cannot stop");
+    if (!tickless_test_can_stop_the_tick(test))
         return;
-    }
 
     kernel_wake_planner_initialize(&tickless_test_plan);
     const uint64_t period = tickless_test_reconciler_period();
@@ -110,19 +147,15 @@ KERNEL_TEST(the_reconciler_pass_goes_on_with_the_tick_stopped)
 }
 
 /**
- * @brief A sleep on a plan, with the tick stopped, serves its duty inside its window, on time.
+ * @brief A sleep on a plan, with the tick stopped, serves its duty once its window has opened, at the cycle the
+ *        core woke: on its deadline, by the interrupt's latency after it, which the plan's overshoot holds.
  */
-KERNEL_TEST(a_sleep_on_the_plan_serves_its_duty_inside_its_window)
+KERNEL_TEST(a_sleep_on_the_plan_serves_its_duty_when_its_window_is_due)
 {
-    if (advanced_pic_timer_backend_get_calibrated_timestamp_counter_frequency_hz() == 0u)
-    {
-        kernel_test_skip(test, "the local timer was not calibrated, so the tick cannot stop");
+    if (!tickless_test_can_stop_the_tick(test))
         return;
-    }
 
-    kernel_wake_planner_initialize(&tickless_test_plan);
-    tickless_test_runs = 0u;
-    const uint32_t duty = kernel_wake_planner_declare(&tickless_test_plan, tickless_test_record, NULL);
+    const uint32_t duty = tickless_test_begin();
     const bool stopped = kernel_tickless_enable(true, &tickless_test_plan);
     const uint64_t earliest = asmutils_read_timestamp_counter() +
                               kernel_tickless_cycles_from_microseconds(TICKLESS_TEST_WINDOW_OPENS_MICROSECONDS);
@@ -136,26 +169,121 @@ KERNEL_TEST(a_sleep_on_the_plan_serves_its_duty_inside_its_window)
         slept += kernel_tickless_sleep_on(&tickless_test_plan);
         ++sleeps;
     }
-    const uint64_t woke = asmutils_read_timestamp_counter();
+    kernel_tickless_disable();
+
+    const uint64_t lateness = kernel_tickless_cycles_from_microseconds(TICKLESS_TEST_LATENESS_MICROSECONDS);
+    kernel_test_check(test, stopped, "the tick stops");
+    kernel_test_check(test, tickless_test_runs == 1u, "the duty is served once");
+    kernel_test_check(test, tickless_test_instant >= earliest && tickless_test_instant <= latest + lateness,
+                      "once its window has opened, and soon after it closed");
+    kernel_test_check(test,
+                      tickless_test_instant > latest ?
+                          tickless_test_plan.late_services == 1u &&
+                              tickless_test_plan.latest_overshoot == tickless_test_instant - latest :
+                          tickless_test_plan.late_services == 0u && tickless_test_plan.latest_overshoot == 0u,
+                      "late exactly by how far past its latest it ran");
+    kernel_test_check(test,
+                      slept >= TICKLESS_TEST_WINDOW_OPENS_MICROSECONDS &&
+                          slept <= TICKLESS_TEST_WINDOW_OPENS_MICROSECONDS + TICKLESS_TEST_WINDOW_MICROSECONDS +
+                                       TICKLESS_TEST_LATENESS_MICROSECONDS,
+                      "and the microseconds it counts asleep are the window's");
+    kernel_test_check(test, tickless_test_tick_runs(), "and the tick runs again");
+    kernel_test_measure(test, "sleeps", sleeps);
+    kernel_test_measure(test, "slept_us", slept);
+    kernel_test_measure(test, "overshoot_us",
+                        kernel_tickless_microseconds_from_cycles(tickless_test_plan.latest_overshoot));
+}
+
+/**
+ * @brief A window that opens after the plan's deadline, while that deadline's interrupt is on its way, is served at
+ *        the same wake-up: the plan is served at the cycle the core woke, not at the one it planned.
+ */
+KERNEL_TEST(a_window_that_opens_while_the_interrupt_is_on_its_way_is_served_at_that_wake_up)
+{
+    if (!tickless_test_can_stop_the_tick(test))
+        return;
+
+    const uint32_t due = tickless_test_begin();
+    const uint32_t opening = kernel_wake_planner_declare(&tickless_test_plan, tickless_test_record, NULL);
+    const bool stopped = kernel_tickless_enable(true, &tickless_test_plan);
+    const uint64_t deadline = asmutils_read_timestamp_counter() +
+                              kernel_tickless_cycles_from_microseconds(TICKLESS_TEST_WINDOW_OPENS_MICROSECONDS);
+    (void) kernel_wake_planner_arm(&tickless_test_plan, due, deadline, deadline);
+    (void) kernel_wake_planner_arm(&tickless_test_plan, opening, deadline + 1u, KERNEL_WAKE_PLANNER_NEVER);
+
+    uint32_t sleeps = 0u;
+    while (tickless_test_runs == 0u && sleeps < TICKLESS_TEST_SLEEPS)
+    {
+        (void) kernel_tickless_sleep_on(&tickless_test_plan);
+        ++sleeps;
+    }
     kernel_tickless_disable();
 
     kernel_test_check(test, stopped, "the tick stops");
-    kernel_test_check(test, tickless_test_runs == 1u, "the duty is served once");
-    kernel_test_check(test, tickless_test_instant >= earliest && tickless_test_instant <= latest, "inside its window");
-    kernel_test_check(test, tickless_test_plan.late_services == 0u, "on time");
-    kernel_test_check(test,
-                      woke <= latest + kernel_tickless_cycles_from_microseconds(TICKLESS_TEST_WINDOW_MICROSECONDS),
-                      "the core really woke within a window of its latest");
-    kernel_test_check(test,
-                      slept >= TICKLESS_TEST_WINDOW_OPENS_MICROSECONDS &&
-                          slept <= TICKLESS_TEST_WINDOW_OPENS_MICROSECONDS + 2u * TICKLESS_TEST_WINDOW_MICROSECONDS,
-                      "and the microseconds it counts asleep are the window's");
-    kernel_test_measure(test, "slept_us", slept);
-    kernel_test_check(test, tickless_test_tick_runs(), "and the tick runs again");
-    kernel_test_measure(test, "sleeps", sleeps);
-    kernel_test_measure(test, "served_after_opening_us",
-                        tickless_test_instant >= earliest ?
-                            (uint32_t) (((tickless_test_instant - earliest) * 1000000u) /
-                                        advanced_pic_timer_backend_get_calibrated_timestamp_counter_frequency_hz()) :
-                            0u);
+    kernel_test_check(test, tickless_test_runs == 2u && tickless_test_plan.batched_wakes == 1u,
+                      "the wake-up for the deadline also serves the window that opened a cycle after it");
+}
+
+/**
+ * @brief A window already due when the sleep begins is served at once, without sleeping.
+ */
+KERNEL_TEST(a_window_already_due_is_served_without_sleeping)
+{
+    if (!tickless_test_can_stop_the_tick(test))
+        return;
+
+    const uint32_t duty = tickless_test_begin();
+    const bool stopped = kernel_tickless_enable(true, &tickless_test_plan);
+    (void) kernel_wake_planner_arm(&tickless_test_plan, duty, 0u, 1u);
+    const uint32_t sleeps = kernel_processor_sleep_count();
+    const uint32_t slept = kernel_tickless_sleep_on(&tickless_test_plan);
+    const uint32_t sleeps_after = kernel_processor_sleep_count();
+    kernel_tickless_disable();
+
+    kernel_test_check(test, stopped, "the tick stops");
+    kernel_test_check(test, tickless_test_runs == 1u && slept == 0u && sleeps_after == sleeps,
+                      "the duty is served and the core never slept");
+}
+
+/**
+ * @brief With the tick stopped, a plan other than the session's is refused: neither slept on nor served, since
+ *        the reconciler's pass rides only the session's.
+ */
+KERNEL_TEST(a_plan_other_than_the_sessions_is_refused)
+{
+    if (!tickless_test_can_stop_the_tick(test))
+        return;
+
+    (void) tickless_test_begin();
+    kernel_wake_planner_initialize(&tickless_test_other_plan);
+    const uint32_t other = kernel_wake_planner_declare(&tickless_test_other_plan, tickless_test_record, NULL);
+    (void) kernel_wake_planner_arm(&tickless_test_other_plan, other, 0u, 1u);
+    const bool stopped = kernel_tickless_enable(true, &tickless_test_plan);
+    const uint32_t sleeps = kernel_processor_sleep_count();
+    const uint32_t slept = kernel_tickless_sleep_on(&tickless_test_other_plan);
+    const uint32_t sleeps_after = kernel_processor_sleep_count();
+    kernel_tickless_disable();
+
+    kernel_test_check(test, stopped, "the tick stops");
+    kernel_test_check(
+        test, tickless_test_runs == 0u && slept == 0u && sleeps_after == sleeps && tickless_test_other_plan.wakes == 0u,
+        "the other plan is neither slept on nor served");
+}
+
+/**
+ * @brief With the tick running, a sleep on a plan lasts until the next interrupt, the tick's at the latest, and
+ *        serves the plan there; no time is counted slept.
+ */
+KERNEL_TEST(with_the_tick_running_a_sleep_serves_the_plan_at_the_next_interrupt)
+{
+    const uint32_t duty = tickless_test_begin();
+    (void) kernel_wake_planner_arm(&tickless_test_plan, duty, 0u, KERNEL_WAKE_PLANNER_NEVER);
+    const uint32_t tick = interrupt_request_get_tick_count();
+    const uint32_t slept = kernel_tickless_sleep_on(&tickless_test_plan);
+
+    kernel_test_check(test, !kernel_tickless_enabled(), "the tick runs");
+    kernel_test_check(test, tickless_test_runs == 1u && tickless_test_plan.wakes == 1u,
+                      "the wake-up serves the plan once");
+    kernel_test_check(test, slept == 0u, "and counts no time slept");
+    kernel_test_measure(test, "ticks", interrupt_request_get_tick_count() - tick);
 }
