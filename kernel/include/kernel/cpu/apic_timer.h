@@ -152,6 +152,18 @@ extern uint8_t advanced_pic_timer_backend_arms_timestamp_counter_deadlines(void)
 extern uint8_t advanced_pic_timer_backend_has_invariant_timestamp_counter(void);
 
 /**
+ * @brief Whether the local timer keeps counting in every C-state: CPUID.06H:EAX[2], ARAT, read by
+ *        @ref advanced_pic_timer_backend_initialize.
+ *
+ * @details Without it, or without leaf 06H, the timer may stop in a deep C-state and during an Enhanced
+ *          Intel SpeedStep transition (Intel SDM vol. 3A, §13.5.4, revision 093), and with it the tick it owns
+ *          and the wake-up of every tickless sleep.
+ *
+ * @return 1 when CPUID promises it, 0 otherwise.
+ */
+extern uint8_t advanced_pic_timer_backend_always_runs(void);
+
+/**
  * @brief Arms the local timer to interrupt once, when the timestamp counter reaches @p deadline.
  *
  * The half of the timer a tickless kernel needs: periodic mode wakes on a cadence, this wakes at a deadline.

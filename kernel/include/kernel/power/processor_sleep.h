@@ -134,7 +134,21 @@ uint32_t kernel_processor_sleep_monitor_line_bytes(void);
 uint32_t kernel_processor_sleep_enumerated_hints(uint32_t leaf5_edx);
 
 /**
- * @brief Which MWAIT hints this processor enumerates.
+ * @brief Which of the enumerated hints a sleep may take: every one where the local timer always runs, and C1's
+ *        alone where it may stop.
+ *
+ * @details The local timer owns the tick in every profile and arms every tickless sleep's wake-up, so a C-state
+ *          that stops it stops both; C1 never does, whatever the processor. Pure, like
+ *          @ref kernel_processor_sleep_enumerated_hints, so that a test hands it what no emulator gives.
+ *
+ * @param enumerated        What @ref kernel_processor_sleep_enumerated_hints gave.
+ * @param timer_always_runs What @ref advanced_pic_timer_backend_always_runs says.
+ * @return The hints a sleep may take, a bit per hint.
+ */
+uint32_t kernel_processor_sleep_usable_hints(uint32_t enumerated, bool timer_always_runs);
+
+/**
+ * @brief Which MWAIT hints a sleep may take on this processor: the usable ones of those it enumerates.
  * @return The mask, or zero when the pair is unavailable.
  */
 uint32_t kernel_processor_sleep_available_hints(void);
@@ -150,14 +164,15 @@ uint32_t kernel_processor_sleep_available_hints(void);
 bool kernel_processor_sleep_has_interrupt_break(void);
 
 /**
- * @brief Asks for a sleep depth, clamped to what the processor actually enumerates.
+ * @brief Asks for a sleep depth, clamped to what the processor enumerates and its local timer allows.
  *
- * @details Asking is not getting: a request the processor does not enumerate is lowered
- *          to the deepest enumerated hint below it and counted, rather than passed
- *          through to raise a fault or to land somewhere unintended. What a hint costs
- *          in wake latency is NOT in CPUID — it lives in ACPI `_CST`, which needs an AML
- *          interpreter this kernel does not have — so choosing a depth stays a decision
- *          of the caller that knows its own deadline, never a derivation.
+ * @details Asking is not getting: a request past the usable hints, those the processor enumerates and, without
+ *          a local timer that always runs, C1's alone (@ref kernel_processor_sleep_usable_hints), is lowered to
+ *          the deepest usable hint below it and counted, rather than passed through to raise a fault, to land
+ *          somewhere unintended, or to stop the timer that wakes the core. What a hint costs in wake latency is
+ *          NOT in CPUID: it lives in ACPI `_CST`, which the ACPI layer publishes per CPU
+ *          (kernel/acpi/processor_idle.h) and no sleep reads yet (#298), so choosing a depth stays a decision of
+ *          the caller that knows its own deadline, never a derivation.
  *
  * @param hint Desired hint index; @ref PROCESSOR_SLEEP_HINT_C1 is the floor.
  * @return true when the request was granted exactly as asked.

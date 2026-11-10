@@ -6,6 +6,9 @@
 #define APIC_CPUID_LEAF_EXTENDED_MAXIMUM               0x80000000u
 #define APIC_CPUID_LEAF_ADVANCED_POWER_MANAGEMENT      0x80000007u
 #define APIC_CPUID_EDX_BIT_INVARIANT_TIMESTAMP_COUNTER (1u << 8u)
+#define APIC_CPUID_LEAF_BASIC_MAXIMUM                  0x00000000u
+#define APIC_CPUID_LEAF_THERMAL_AND_POWER              0x00000006u
+#define APIC_CPUID_EAX_BIT_ALWAYS_RUNNING_TIMER        (1u << 2u)
 
 #define IA32_APIC_BASE_MSR                0x0000001Bu
 #define IA32_APIC_BASE_BSP_BIT            (1ull << 8u)
@@ -38,6 +41,7 @@ static uint64_t advanced_pic_timer_calibration_timestamp_counter_cycles = 0u;
 static uint64_t advanced_pic_timer_timestamp_counter_calibrated_frequency_hz = 0u;
 static uint8_t advanced_pic_timer_timestamp_counter_deadlines = 0u;
 static uint8_t advanced_pic_timer_invariant_timestamp_counter = 0u;
+static uint8_t advanced_pic_timer_always_running = 0u;
 /**
  * The timer's LVT entry in force, which spares rewriting it on every arming. It holds only because this backend is the
  * one writer of the bootstrap processor's entry: another writer, a resume from sleep or an arming on another core,
@@ -90,6 +94,24 @@ static uint8_t advanced_pic_timer_read_invariant_timestamp_counter(void)
         return 0u;
     asmutils_cpuid(APIC_CPUID_LEAF_ADVANCED_POWER_MANAGEMENT, 0u, &eax, &ebx, &ecx, &edx);
     return (uint8_t) (((edx & APIC_CPUID_EDX_BIT_INVARIANT_TIMESTAMP_COUNTER) != 0u) ? 1u : 0u);
+}
+
+/**
+ * @brief Reads CPUID.06H:EAX[2], ARAT: the local timer keeps counting in every C-state.
+ * @return 1 when the bit is set, 0 when it is clear or leaf 06H is absent.
+ */
+static uint8_t advanced_pic_timer_read_always_running(void)
+{
+    uint32_t eax = 0u;
+    uint32_t ebx = 0u;
+    uint32_t ecx = 0u;
+    uint32_t edx = 0u;
+
+    asmutils_cpuid(APIC_CPUID_LEAF_BASIC_MAXIMUM, 0u, &eax, &ebx, &ecx, &edx);
+    if (eax < APIC_CPUID_LEAF_THERMAL_AND_POWER)
+        return 0u;
+    asmutils_cpuid(APIC_CPUID_LEAF_THERMAL_AND_POWER, 0u, &eax, &ebx, &ecx, &edx);
+    return (uint8_t) (((eax & APIC_CPUID_EAX_BIT_ALWAYS_RUNNING_TIMER) != 0u) ? 1u : 0u);
 }
 
 static uint8_t advanced_pic_timer_backend_map_local_apic_mmio(void)
@@ -209,6 +231,7 @@ uint8_t advanced_pic_timer_backend_initialize(uint32_t target_frequency_hz)
     advanced_pic_timer_armed_deadline = 0u;
     advanced_pic_timer_timestamp_counter_deadlines = 0u;
     advanced_pic_timer_invariant_timestamp_counter = advanced_pic_timer_read_invariant_timestamp_counter();
+    advanced_pic_timer_always_running = advanced_pic_timer_read_always_running();
 
     asmutils_cpuid(APIC_CPUID_LEAF_FEATURES, 0u, &eax, &ebx, &ecx, &edx);
     if ((edx & APIC_CPUID_EDX_BIT_APIC) == 0u)
@@ -430,6 +453,8 @@ uint8_t advanced_pic_timer_backend_has_invariant_timestamp_counter(void)
 {
     return advanced_pic_timer_invariant_timestamp_counter;
 }
+
+uint8_t advanced_pic_timer_backend_always_runs(void) { return advanced_pic_timer_always_running; }
 
 uint8_t advanced_pic_timer_backend_arm_at_cycle(uint64_t deadline)
 {

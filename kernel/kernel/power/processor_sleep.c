@@ -1,5 +1,7 @@
 #include <kernel/power/processor_sleep.h>
 
+#include <kernel/cpu/apic_timer.h>
+
 #include <kernel/lib/asmutils.h>
 #include <kernel/power/wakeup_accounting.h>
 
@@ -211,7 +213,8 @@ void kernel_processor_sleep_initialize(void)
     processor_sleep_monitor_available = true;
     processor_sleep_monitor_line = line;
     processor_sleep_interrupt_break = (ecx & PROCESSOR_SLEEP_CPUID_INTERRUPT_BREAK_BIT) != 0u;
-    processor_sleep_available_hints = kernel_processor_sleep_enumerated_hints(edx);
+    processor_sleep_available_hints = kernel_processor_sleep_usable_hints(
+        kernel_processor_sleep_enumerated_hints(edx), advanced_pic_timer_backend_always_runs() != 0u);
 }
 
 bool kernel_processor_sleep_has_monitor(void) { return processor_sleep_monitor_available; }
@@ -289,6 +292,11 @@ uint32_t kernel_processor_sleep_enumerated_hints(uint32_t leaf5_edx)
     }
 
     return mask;
+}
+
+uint32_t kernel_processor_sleep_usable_hints(uint32_t enumerated, bool timer_always_runs)
+{
+    return timer_always_runs ? enumerated : enumerated & (1u << PROCESSOR_SLEEP_HINT_C1);
 }
 
 uint32_t kernel_processor_sleep_available_hints(void) { return processor_sleep_available_hints; }

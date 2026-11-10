@@ -332,3 +332,35 @@ KERNEL_TEST(an_arming_after_a_stop_writes_the_entry_again)
                       "the arming after the stop is in its mode, as the one before it");
     kernel_test_check(test, local_timer_test_tick_runs(), "and the tick, given back, runs");
 }
+
+/** @name CPUID leaf 06H, read here apart from the backend (Intel SDM vol. 3A, §13.5.4)
+ *  @{ */
+#define LOCAL_TIMER_TEST_CPUID_THERMAL_AND_POWER 0x06u      /**< The leaf. */
+#define LOCAL_TIMER_TEST_CPUID_ALWAYS_RUNNING    (1u << 2u) /**< EAX[2], ARAT. */
+/** @} */
+
+/**
+ * @brief The backend says the local timer always runs exactly when CPUID.06H:EAX[2] does, and no on a processor whose
+ *        highest leaf is below 06H: QEMU's `-cpu max` sets the bit, `-cpu max,-arat` clears it.
+ */
+KERNEL_TEST(the_backend_says_whether_the_local_timer_survives_deep_sleep)
+{
+    uint32_t highest = 0u;
+    uint32_t eax = 0u;
+    uint32_t ebx = 0u;
+    uint32_t ecx = 0u;
+    uint32_t edx = 0u;
+
+    asmutils_cpuid(0u, 0u, &highest, &ebx, &ecx, &edx);
+    if (highest >= LOCAL_TIMER_TEST_CPUID_THERMAL_AND_POWER)
+        asmutils_cpuid(LOCAL_TIMER_TEST_CPUID_THERMAL_AND_POWER, 0u, &eax, &ebx, &ecx, &edx);
+    const uint8_t expected =
+        highest >= LOCAL_TIMER_TEST_CPUID_THERMAL_AND_POWER && (eax & LOCAL_TIMER_TEST_CPUID_ALWAYS_RUNNING) != 0u ?
+            1u :
+            0u;
+
+    kernel_test_check(test, advanced_pic_timer_backend_always_runs() == expected,
+                      "the backend reads the always-running timer as CPUID gives it");
+    kernel_test_measure(test, "timer_always_runs", advanced_pic_timer_backend_always_runs());
+    kernel_test_measure(test, "highest_leaf", highest);
+}
