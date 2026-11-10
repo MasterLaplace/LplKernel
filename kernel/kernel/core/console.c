@@ -185,10 +185,13 @@ static void kernel_console_execute_command(Serial_t *com1, const char *command)
  *          key ends the sleep at once. The serial port is polled and has no such index, but
  *          the periodic tick is itself a break event, so its latency stays one tick rather
  *          than becoming unbounded.
+ *
+ * @param seen The write index read before the ring was found empty: a key that came after that
+ *             read has moved it, and the sleep does not begin.
  */
-static void kernel_console_sleep_until_input(void)
+static void kernel_console_sleep_until_input(uint32_t seen)
 {
-    (void) processor_sleep_until_write(keyboard_get_ring_head_address(), *keyboard_get_ring_head_address());
+    (void) processor_sleep_until_write(keyboard_get_ring_head_address(), seen);
 }
 
 #else /* !LPL_KERNEL_ENABLE_CONSOLE */
@@ -225,6 +228,7 @@ void kernel_console_run_interactive_loop(Serial_t *com1)
         char key_char = 0;
         uint8_t serial_char = 0u;
         uint8_t incoming = 0u;
+        const uint32_t seen = *keyboard_get_ring_head_address();
 
         if (keyboard_try_pop_char(&key_char))
             incoming = (uint8_t) key_char;
@@ -233,7 +237,7 @@ void kernel_console_run_interactive_loop(Serial_t *com1)
 
         if (!incoming)
         {
-            kernel_console_sleep_until_input();
+            kernel_console_sleep_until_input(seen);
             continue;
         }
 
