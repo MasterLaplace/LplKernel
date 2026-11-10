@@ -143,14 +143,16 @@ static uint32_t wake_planner_test_fewest_wakes(const uint64_t *earliest, const u
 }
 
 /**
- * @brief Runs a plan the way a core sleeps on it: wakes at its next wake-up until none is needed.
- * @return The wake-ups taken.
+ * @brief Runs a plan the way a core sleeps on it: wakes at its next wake-up until none is needed, or until
+ *        it has woken once more than it has duties, which no plan of drawn windows needs.
+ * @return The wake-ups taken; more than KERNEL_WAKE_PLANNER_DUTIES when the plan never stopped asking.
  */
 static uint32_t wake_planner_test_sleep_through(void)
 {
     uint32_t wakes = 0u;
 
-    for (uint64_t next = kernel_wake_planner_next_wake(&wake_planner_test_plan); next != KERNEL_WAKE_PLANNER_NEVER;
+    for (uint64_t next = kernel_wake_planner_next_wake(&wake_planner_test_plan);
+         next != KERNEL_WAKE_PLANNER_NEVER && wakes <= KERNEL_WAKE_PLANNER_DUTIES;
          next = kernel_wake_planner_next_wake(&wake_planner_test_plan))
     {
         (void) kernel_wake_planner_serve(&wake_planner_test_plan, next);
