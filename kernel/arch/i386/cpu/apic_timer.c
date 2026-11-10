@@ -1,15 +1,30 @@
 #include <kernel/cpu/apic_timer.h>
 
-#define APIC_CPUID_LEAF_FEATURES 0x00000001u
-#define APIC_CPUID_EDX_BIT_APIC  (1u << 9u)
+#define APIC_CPUID_LEAF_FEATURES                       0x00000001u
+#define APIC_CPUID_EDX_BIT_APIC                        (1u << 9u)
+#define APIC_CPUID_ECX_BIT_TIMESTAMP_COUNTER_DEADLINE  (1u << 24u)
+#define APIC_CPUID_LEAF_EXTENDED_MAXIMUM               0x80000000u
+#define APIC_CPUID_LEAF_ADVANCED_POWER_MANAGEMENT      0x80000007u
+#define APIC_CPUID_EDX_BIT_INVARIANT_TIMESTAMP_COUNTER (1u << 8u)
 
 #define IA32_APIC_BASE_MSR                0x0000001Bu
 #define IA32_APIC_BASE_BSP_BIT            (1ull << 8u)
 #define IA32_APIC_BASE_X2APIC_MODE_BIT    (1ull << 10u)
 #define IA32_APIC_BASE_ENABLE_BIT         (1ull << 11u)
 #define IA32_APIC_BASE_PHYSICAL_BASE_MASK 0xFFFFF000ull
+#define IA32_TSC_DEADLINE_MSR             0x000006E0u
 
 #define APIC_TIMER_MMIO_VIRTUAL_BASE 0xFFB00000u
+
+/** @name The local timer's LVT entry (Intel SDM vol. 3A, Figure 13-8 and Table 13-2)
+ *  @{ */
+#define APIC_TIMER_VECTOR                         32u         /**< The tick's vector, IRQ0 remapped. */
+#define APIC_TIMER_LVT_MASKED                     (1u << 16u) /**< Mask bit. */
+#define APIC_TIMER_LVT_PERIODIC                   (1u << 17u) /**< Bits 18:17 = 01b. */
+#define APIC_TIMER_LVT_TIMESTAMP_COUNTER_DEADLINE (2u << 17u) /**< Bits 18:17 = 10b. */
+#define APIC_TIMER_LVT_PARKED                     (APIC_TIMER_LVT_MASKED | 0xFEu) /**< Masked, one-shot. */
+#define APIC_TIMER_LVT_UNWRITTEN                  0xFFFFFFFFu /**< Bits 31:19 are reserved: no write is this. */
+/** @} */
 
 static const char *advanced_pic_timer_backend_state_name = "apic-probe-only";
 static uint32_t advanced_pic_timer_local_apic_physical_base = 0u;
@@ -21,6 +36,56 @@ static uint8_t advanced_pic_timer_local_apic_periodic_mode_enabled = 0u;
 static uint32_t advanced_pic_timer_calibration_local_timer_counts = 0u;
 static uint64_t advanced_pic_timer_calibration_timestamp_counter_cycles = 0u;
 static uint64_t advanced_pic_timer_timestamp_counter_calibrated_frequency_hz = 0u;
+static uint8_t advanced_pic_timer_timestamp_counter_deadlines = 0u;
+static uint8_t advanced_pic_timer_invariant_timestamp_counter = 0u;
+static uint32_t advanced_pic_timer_lvt_timer = APIC_TIMER_LVT_UNWRITTEN;
+static uint64_t advanced_pic_timer_armed_deadline = 0u;
+
+static uint8_t advanced_pic_timer_is_reachable(void)
+{
+    return (uint8_t) ((advanced_pic_timer_local_apic_mmio_mapped || apic_is_x2apic_active()) ? 1u : 0u);
+}
+
+/**
+ * @brief Writes @p value to the timer's LVT entry, and keeps it as the entry in force.
+ * @param value The entry.
+ */
+static void advanced_pic_timer_write_lvt(uint32_t value)
+{
+    apic_write(LAPIC_REG_LVT_TIMER, value);
+    advanced_pic_timer_lvt_timer = value;
+}
+
+/**
+ * @brief Writes @p value to the timer's LVT entry unless it is already the entry in force.
+ * @param value The entry.
+ * @return 1 when it was written.
+ */
+static uint8_t advanced_pic_timer_select_lvt(uint32_t value)
+{
+    if (advanced_pic_timer_lvt_timer == value)
+        return 0u;
+    advanced_pic_timer_write_lvt(value);
+    return 1u;
+}
+
+/**
+ * @brief CPUID.80000007H:EDX[8], once CPUID.80000000H says the leaf exists.
+ * @return 1 when the invariant timestamp counter is promised.
+ */
+static uint8_t advanced_pic_timer_read_invariant_timestamp_counter(void)
+{
+    uint32_t eax = 0u;
+    uint32_t ebx = 0u;
+    uint32_t ecx = 0u;
+    uint32_t edx = 0u;
+
+    asmutils_cpuid(APIC_CPUID_LEAF_EXTENDED_MAXIMUM, 0u, &eax, &ebx, &ecx, &edx);
+    if (eax < APIC_CPUID_LEAF_ADVANCED_POWER_MANAGEMENT)
+        return 0u;
+    asmutils_cpuid(APIC_CPUID_LEAF_ADVANCED_POWER_MANAGEMENT, 0u, &eax, &ebx, &ecx, &edx);
+    return (uint8_t) (((edx & APIC_CPUID_EDX_BIT_INVARIANT_TIMESTAMP_COUNTER) != 0u) ? 1u : 0u);
+}
 
 static uint8_t advanced_pic_timer_backend_map_local_apic_mmio(void)
 {
@@ -82,6 +147,42 @@ static uint32_t advanced_pic_timer_count_for_cycles(uint64_t cycles)
     return (uint32_t) count;
 }
 
+/**
+ * @brief Arms @p deadline in TSC-deadline mode.
+ *
+ * @details The fence orders the memory-mapped write of the entry before the WRMSR, which the SDM requires in xAPIC
+ *          mode only (§13.5.4.1); it is paid on the first sleep of a session, when the entry changes. A deadline of
+ *          zero would disarm the timer, and becomes 1, already passed.
+ *
+ * @param deadline Cycle of the timestamp counter.
+ */
+static void advanced_pic_timer_arm_timestamp_counter_deadline(uint64_t deadline)
+{
+    if (advanced_pic_timer_select_lvt(APIC_TIMER_LVT_TIMESTAMP_COUNTER_DEADLINE | APIC_TIMER_VECTOR) &&
+        !apic_is_x2apic_active())
+        asmutils_memory_fence();
+
+    advanced_pic_timer_armed_deadline = deadline != 0u ? deadline : 1u;
+    asmutils_write_model_specific_register(IA32_TSC_DEADLINE_MSR, advanced_pic_timer_armed_deadline);
+}
+
+/**
+ * @brief Arms @p deadline in count mode, from the cycles left until it.
+ * @param deadline Cycle of the timestamp counter.
+ * @return 1 when armed, 0 without a calibration.
+ */
+static uint8_t advanced_pic_timer_arm_count(uint64_t deadline)
+{
+    if (advanced_pic_timer_local_apic_calibrated_frequency_hz == 0u ||
+        advanced_pic_timer_calibration_timestamp_counter_cycles == 0u)
+        return 0u;
+
+    const uint64_t now = asmutils_read_timestamp_counter();
+    (void) advanced_pic_timer_select_lvt(APIC_TIMER_VECTOR);
+    apic_write(LAPIC_REG_TIMER_INIT, advanced_pic_timer_count_for_cycles(deadline > now ? deadline - now : 0u));
+    return 1u;
+}
+
 uint8_t advanced_pic_timer_backend_initialize(uint32_t target_frequency_hz)
 {
     uint32_t eax;
@@ -99,13 +200,19 @@ uint8_t advanced_pic_timer_backend_initialize(uint32_t target_frequency_hz)
     advanced_pic_timer_local_apic_version_register = 0u;
     advanced_pic_timer_local_apic_calibrated_frequency_hz = 0u;
     advanced_pic_timer_local_apic_periodic_mode_enabled = 0u;
+    advanced_pic_timer_lvt_timer = APIC_TIMER_LVT_UNWRITTEN;
+    advanced_pic_timer_armed_deadline = 0u;
+    advanced_pic_timer_invariant_timestamp_counter = advanced_pic_timer_read_invariant_timestamp_counter();
 
     asmutils_cpuid(APIC_CPUID_LEAF_FEATURES, 0u, &eax, &ebx, &ecx, &edx);
     if ((edx & APIC_CPUID_EDX_BIT_APIC) == 0u)
     {
+        advanced_pic_timer_timestamp_counter_deadlines = 0u;
         advanced_pic_timer_backend_state_name = "apic-probe-no-local-apic";
         return 0u;
     }
+    advanced_pic_timer_timestamp_counter_deadlines =
+        (uint8_t) (((ecx & APIC_CPUID_ECX_BIT_TIMESTAMP_COUNTER_DEADLINE) != 0u) ? 1u : 0u);
 
     apic_base_msr = asmutils_read_model_specific_register(IA32_APIC_BASE_MSR);
     if ((apic_base_msr & IA32_APIC_BASE_ENABLE_BIT) == 0u)
@@ -152,7 +259,7 @@ uint8_t advanced_pic_timer_backend_late_initialize(void)
 
     advanced_pic_timer_local_apic_version_register = apic_read(LAPIC_REG_VERSION);
 
-    apic_write(LAPIC_REG_LVT_TIMER, (1u << 16u) | 0xFEu);
+    advanced_pic_timer_write_lvt(APIC_TIMER_LVT_PARKED);
 
     advanced_pic_timer_backend_state_name =
         apic_is_x2apic_active() ? "x2apic-ready-lvt-masked" : "xapic-ready-lvt-masked";
@@ -168,7 +275,7 @@ uint8_t advanced_pic_timer_backend_calibrate_with_pit(void)
     uint32_t local_apic_elapsed_counts;
     uint64_t local_apic_frequency_hz_u64;
 
-    if (!advanced_pic_timer_local_apic_mmio_mapped && !apic_is_x2apic_active())
+    if (!advanced_pic_timer_is_reachable())
         return 0u;
 
     pit_frequency_hz = interrupt_request_get_timer_frequency_hz();
@@ -185,7 +292,7 @@ uint8_t advanced_pic_timer_backend_calibrate_with_pit(void)
     start_tick = interrupt_request_get_tick_count();
 
     apic_write(LAPIC_REG_TIMER_DIV, 0x3u);
-    apic_write(LAPIC_REG_LVT_TIMER, (1u << 16u) | 0xFEu);
+    advanced_pic_timer_write_lvt(APIC_TIMER_LVT_PARKED);
     apic_write(LAPIC_REG_TIMER_INIT, 0xFFFFFFFFu);
     const uint64_t start_cycle = asmutils_read_timestamp_counter();
 
@@ -227,7 +334,7 @@ uint8_t advanced_pic_timer_backend_enable_periodic_mode(uint32_t target_frequenc
     uint32_t timer_initial_count;
     uint32_t lapic_timer_hz;
 
-    if (!advanced_pic_timer_local_apic_mmio_mapped && !apic_is_x2apic_active())
+    if (!advanced_pic_timer_is_reachable())
     {
         interrupt_request_set_timer_owner_is_apic(0u);
         advanced_pic_timer_local_apic_periodic_mode_enabled = 0u;
@@ -252,7 +359,8 @@ uint8_t advanced_pic_timer_backend_enable_periodic_mode(uint32_t target_frequenc
         timer_initial_count = 1u;
 
     apic_write(LAPIC_REG_TIMER_DIV, 0x3u);
-    apic_write(LAPIC_REG_LVT_TIMER, (1u << 17u) | (32u + 0u));
+    advanced_pic_timer_write_lvt(APIC_TIMER_LVT_PERIODIC | APIC_TIMER_VECTOR);
+    advanced_pic_timer_armed_deadline = 0u;
     apic_write(LAPIC_REG_TIMER_INIT, timer_initial_count);
 
     programmable_interrupt_controller_set_mask(0u);
@@ -273,7 +381,7 @@ uint32_t advanced_pic_timer_backend_get_local_apic_physical_base(void)
 
 uint32_t advanced_pic_timer_backend_get_local_apic_virtual_base(void)
 {
-    if (!advanced_pic_timer_local_apic_mmio_mapped && !apic_is_x2apic_active())
+    if (!advanced_pic_timer_is_reachable())
         return 0u;
 
     return APIC_TIMER_MMIO_VIRTUAL_BASE;
@@ -308,63 +416,70 @@ uint8_t advanced_pic_timer_backend_is_bootstrap_processor(void)
     return advanced_pic_timer_local_apic_is_bootstrap_processor;
 }
 
-/**
- * @brief Arms the local timer to fire once, @p cycles of the timestamp counter from now.
- *
- * The other half of a tickless kernel. Periodic mode asks "wake me a thousand times
- * a second whatever happens"; this asks "wake me at this instant and not before",
- * which on an idle node is the difference between a thousand wake-ups a second and
- * none. Same divider and same vector as periodic mode — only bit 17 is dropped, so
- * the timer counts down once and stops.
- *
- * @param cycles Delay; zero fires as soon as the hardware can.
- * @return 1 when the timer was armed.
- */
-uint8_t advanced_pic_timer_backend_arm_one_shot_in_cycles(uint64_t cycles)
+uint8_t advanced_pic_timer_backend_arms_timestamp_counter_deadlines(void)
 {
-    uint32_t count;
+    return advanced_pic_timer_timestamp_counter_deadlines;
+}
 
-    if (!advanced_pic_timer_local_apic_mmio_mapped && !apic_is_x2apic_active())
+uint8_t advanced_pic_timer_backend_has_invariant_timestamp_counter(void)
+{
+    return advanced_pic_timer_invariant_timestamp_counter;
+}
+
+uint8_t advanced_pic_timer_backend_arm_at_cycle(uint64_t deadline)
+{
+    if (!advanced_pic_timer_is_reachable())
         return 0u;
-    if (advanced_pic_timer_local_apic_calibrated_frequency_hz == 0u ||
-        advanced_pic_timer_calibration_timestamp_counter_cycles == 0u)
+
+    if (advanced_pic_timer_timestamp_counter_deadlines)
+        advanced_pic_timer_arm_timestamp_counter_deadline(deadline);
+    else if (!advanced_pic_timer_arm_count(deadline))
         return 0u;
-
-    count = advanced_pic_timer_count_for_cycles(cycles);
-
-    apic_write(LAPIC_REG_TIMER_DIV, 0x3u);
-    apic_write(LAPIC_REG_LVT_TIMER, 32u + 0u);
-    apic_write(LAPIC_REG_TIMER_INIT, count);
 
     advanced_pic_timer_local_apic_periodic_mode_enabled = 0u;
-    advanced_pic_timer_backend_state_name = apic_is_x2apic_active() ? "x2apic-oneshot" : "xapic-oneshot";
+    if (advanced_pic_timer_timestamp_counter_deadlines)
+        advanced_pic_timer_backend_state_name = apic_is_x2apic_active() ? "x2apic-tsc-deadline" : "xapic-tsc-deadline";
+    else
+        advanced_pic_timer_backend_state_name = apic_is_x2apic_active() ? "x2apic-oneshot" : "xapic-oneshot";
+    return 1u;
+}
+
+uint8_t advanced_pic_timer_backend_disarm(uint64_t now)
+{
+    if (!advanced_pic_timer_is_reachable())
+        return 0u;
+
+    if (advanced_pic_timer_timestamp_counter_deadlines)
+    {
+        const uint64_t deadline = advanced_pic_timer_armed_deadline;
+
+        advanced_pic_timer_armed_deadline = 0u;
+        if (deadline == 0u || now >= deadline)
+            return 0u;
+        asmutils_write_model_specific_register(IA32_TSC_DEADLINE_MSR, 0u);
+        return 1u;
+    }
+
+    if (advanced_pic_timer_lvt_timer != APIC_TIMER_VECTOR || apic_read(LAPIC_REG_TIMER_CUR) == 0u)
+        return 0u;
+    apic_write(LAPIC_REG_TIMER_INIT, 0u);
     return 1u;
 }
 
 /**
  * @brief Stops the local timer entirely.
  *
- * Writing zero to the initial count halts the countdown; the vector is left masked
- * so a stale count cannot deliver an interrupt afterwards.
+ * Writing zero to the initial count halts a countdown, and leaving TSC-deadline mode disarms a deadline
+ * (§13.5.4.1); the vector is left masked so that a stale count cannot deliver an interrupt afterwards.
  */
 void advanced_pic_timer_backend_disable(void)
 {
-    if (!advanced_pic_timer_local_apic_mmio_mapped && !apic_is_x2apic_active())
+    if (!advanced_pic_timer_is_reachable())
         return;
 
     apic_write(LAPIC_REG_TIMER_INIT, 0u);
-    apic_write(LAPIC_REG_LVT_TIMER, (1u << 16u) | 0xFEu);
+    advanced_pic_timer_write_lvt(APIC_TIMER_LVT_PARKED);
+    advanced_pic_timer_armed_deadline = 0u;
     advanced_pic_timer_local_apic_periodic_mode_enabled = 0u;
     advanced_pic_timer_backend_state_name = "apic-timer-stopped";
-}
-
-/**
- * @brief Reads the local timer's remaining count.
- * @return Ticks left before it fires, or 0 when the timer is unavailable.
- */
-uint32_t advanced_pic_timer_backend_read_current_count(void)
-{
-    if (!advanced_pic_timer_local_apic_mmio_mapped && !apic_is_x2apic_active())
-        return 0u;
-    return apic_read(LAPIC_REG_TIMER_CUR);
 }

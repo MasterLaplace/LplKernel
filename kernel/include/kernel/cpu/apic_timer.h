@@ -13,7 +13,7 @@
  * notice and the permission notice are kept. See the LICENSE file.
  *
  * @file apic_timer.h
- * @brief Local APIC timer backend: calibration, periodic and one-shot modes.
+ * @brief Local APIC timer backend: calibration, periodic mode, and one-shot deadlines in TSC-deadline or count mode.
  *
  * @author @MasterLaplace
  * @version 0.0.0
@@ -128,29 +128,65 @@ extern void advanced_pic_timer_backend_signal_end_of_interrupt(void);
 extern uint8_t advanced_pic_timer_backend_is_bootstrap_processor(void);
 
 /**
- * @brief Arms the local timer to fire once, @p cycles of the timestamp counter from now.
+ * @brief Whether the one-shot timer arms deadlines on the timestamp counter: CPUID.01H:ECX[24], read by
+ *        @ref advanced_pic_timer_backend_initialize.
  *
- * The half of the timer a tickless kernel needs: periodic mode wakes on a cadence,
- * this wakes at a deadline. Programming a deadline instead of a period is what lets
- * an idle core sleep for seconds rather than a millisecond at a time.
+ * @details TSC-deadline mode (Intel SDM vol. 3A, §13.5.4.1, revision 093) interrupts when the timestamp counter
+ *          reaches the deadline written to IA32_TSC_DEADLINE: the deadline is the plan's own cycle, with no count
+ *          scaled by a calibrated ratio, and arming it is one write. Without it the one-shot counts down.
  *
- * @details The count is the cycles scaled by the two counts of the calibration, rounded down so that
- *          the timer never fires after the cycle asked for; at least one count, at most the timer's range.
- *
- * @param cycles Delay before the interrupt, in cycles of the timestamp counter.
- * @return 1 when armed, 0 when the local APIC is unavailable or uncalibrated.
+ * @return 1 in TSC-deadline mode, 0 in count mode.
  */
-extern uint8_t advanced_pic_timer_backend_arm_one_shot_in_cycles(uint64_t cycles);
+extern uint8_t advanced_pic_timer_backend_arms_timestamp_counter_deadlines(void);
 
 /**
- * @brief Stops the local timer and masks its vector.
+ * @brief Whether the timestamp counter runs at one rate in every P-, C- and T-state: CPUID.80000007H:EDX[8]
+ *        (Intel SDM vol. 3B, §20.17.1, revision 093), read by @ref advanced_pic_timer_backend_initialize.
+ *
+ * @note A hypervisor hides the bit from a guest it may migrate (QEMU's `-cpu host` does, `-cpu host,+invtsc` does
+ *       not) while the counter it gives still runs at one rate: the bit says the rate is promised, not that it is
+ *       steady, so nothing is refused without it.
+ *
+ * @return 1 when CPUID promises it, 0 otherwise or when the extended leaf is absent.
+ */
+extern uint8_t advanced_pic_timer_backend_has_invariant_timestamp_counter(void);
+
+/**
+ * @brief Arms the local timer to interrupt once, when the timestamp counter reaches @p deadline.
+ *
+ * The half of the timer a tickless kernel needs: periodic mode wakes on a cadence, this wakes at a deadline.
+ * Programming a deadline instead of a period is what lets an idle core sleep for seconds rather than a
+ * millisecond at a time.
+ *
+ * @details In TSC-deadline mode the deadline is written to IA32_TSC_DEADLINE, and the interrupt comes when the
+ *          counter equals or exceeds it, never before. In count mode the count is the cycles left scaled by the two
+ *          counts of the calibration, rounded down; at least one count, at most the timer's range. A deadline
+ *          already passed fires as soon as the hardware can, in both modes. The timer's mode is written only when
+ *          it changes, so that a sleep after the first of a session costs one register write.
+ *
+ * @note The mode written is the bootstrap processor's: the backend keeps one timer's state, as for the
+ *       calibration and periodic mode.
+ *
+ * @param deadline Cycle of the timestamp counter.
+ * @return 1 when armed, 0 when the local APIC is unavailable, or in count mode uncalibrated.
+ */
+extern uint8_t advanced_pic_timer_backend_arm_at_cycle(uint64_t deadline);
+
+/**
+ * @brief Disarms the timer @ref advanced_pic_timer_backend_arm_at_cycle armed, if it has not fired yet.
+ *
+ * @details In TSC-deadline mode a deadline the counter has not reached by @p now has not fired, as the SDM tells a
+ *          stale interrupt apart (§13.5.4.1), and one it has reached cleared itself; in count mode a current count
+ *          other than zero is still counting.
+ *
+ * @param now The cycle the core woke at.
+ * @return 1 when the timer had not fired, so that the wake-up came from elsewhere; 0 when it had, or was not armed.
+ */
+extern uint8_t advanced_pic_timer_backend_disarm(uint64_t now);
+
+/**
+ * @brief Stops the local timer, whichever mode it is in, and masks its vector.
  */
 extern void advanced_pic_timer_backend_disable(void);
-
-/**
- * @brief Ticks remaining before the local timer fires.
- * @return The current count, or 0 when the timer is unavailable.
- */
-extern uint32_t advanced_pic_timer_backend_read_current_count(void);
 
 #endif /* KERNEL_CPU_ADVANCED_PROGRAMMABLE_INTERRUPT_CONTROLLER_TIMER_H */

@@ -133,7 +133,9 @@ uint32_t kernel_tickless_microseconds_from_cycles(uint64_t cycles);
  *          was on its way is served too, and a duty the plan's own deadline woke is late by that
  *          interrupt's latency, which the plan's worst overshoot then measures. A deadline already passed
  *          is served without sleeping, and one further than @ref KERNEL_TICKLESS_MAX_SLEEP_MICROSECONDS is
- *          cut to it.
+ *          cut to it. The timer is armed at the wake-up's own cycle: in TSC-deadline mode that cycle is the
+ *          deadline, so the interrupt never comes before it; in count mode a count stands for it, through
+ *          the calibration's ratio.
  *
  * @note Without permission the tick is still running, so the sleep simply takes the
  *       interrupts it delivers and reports no time slept. Honest and unremarkable — and
@@ -159,7 +161,8 @@ uint32_t kernel_tickless_sleep_on(KernelWakePlan_t *plan);
 uint32_t kernel_tickless_ticks_avoided(void);
 
 /**
- * @brief Times the sleep was cut short by something other than its deadline.
+ * @brief Times the sleep was cut short by something other than its deadline: the timer was still armed
+ *        when the core woke.
  * @return The count.
  */
 uint32_t kernel_tickless_early_wakes(void);

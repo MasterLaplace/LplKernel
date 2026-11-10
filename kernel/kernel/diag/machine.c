@@ -64,6 +64,8 @@ void kernel_machine_report(Serial_t *serial)
     machine_write_value("acpi", advanced_configuration_and_power_interface_madt_get_state_name());
     machine_write_value("apic", machine_local_apic_mode());
     machine_write_value("apic_reason", apic_mode_reason_name(apic_get_mode()));
+    kernel_telemetry_write_boolean("tsc_deadline", advanced_pic_timer_backend_arms_timestamp_counter_deadlines() != 0u);
+    kernel_telemetry_write_boolean("tsc_invariant", advanced_pic_timer_backend_has_invariant_timestamp_counter() != 0u);
     machine_write_value("ioapic", input_output_advanced_programmable_interrupt_controller_get_state_name());
     kernel_telemetry_write_unsigned("ioapic_lines_refused",
                                     input_output_advanced_programmable_interrupt_controller_get_lines_refused());

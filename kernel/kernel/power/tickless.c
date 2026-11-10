@@ -164,17 +164,12 @@ uint32_t kernel_tickless_sleep_on(KernelWakePlan_t *plan)
     }
 
     const uint64_t longest = before + tickless_longest_sleep_cycles;
-    const uint64_t deadline = planned < longest ? planned : longest;
-    if (!advanced_pic_timer_backend_arm_one_shot_in_cycles(deadline - before))
+    if (!advanced_pic_timer_backend_arm_at_cycle(planned < longest ? planned : longest))
         return tickless_sleep_until_any_interrupt(plan);
 
-    const uint32_t armed = advanced_pic_timer_backend_read_current_count();
     processor_sleep_until_interrupt();
-    const uint32_t remaining = advanced_pic_timer_backend_read_current_count();
-    advanced_pic_timer_backend_disable();
     const uint64_t after = asmutils_read_timestamp_counter();
-
-    if (remaining != 0u && remaining <= armed && armed != 0u)
+    if (advanced_pic_timer_backend_disarm(after))
         ++tickless_early_wakes;
 
     const uint32_t elapsed = tickless_microseconds_from_cycles(

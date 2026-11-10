@@ -330,6 +330,16 @@ extern void asmutils_flush_cache_line(const volatile void *address);
 extern void asmutils_write_back_and_invalidate_caches(void);
 
 /**
+ * @brief Orders every load and store before it, uncached and memory-mapped ones included, before every load and
+ *        store after it (MFENCE).
+ *
+ * @details The instruction is SSE2's: it exists when CPUID leaf 1 sets EDX bit 26, and raises #UD without it. The
+ *          SDM names it for the one ordering the timer needs, a memory-mapped write to the local APIC's timer entry
+ *          before the WRMSR to IA32_TSC_DEADLINE that follows it in xAPIC mode (Intel SDM vol. 3A, §13.5.4.1).
+ */
+extern void asmutils_memory_fence(void);
+
+/**
  * @brief Stores a zero at @p target, publishing first the address to resume at if it faults.
  *
  * @details

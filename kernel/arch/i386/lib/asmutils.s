@@ -269,6 +269,12 @@ asmutils_write_back_and_invalidate_caches:
     wbinvd
     ret
 
+.globl asmutils_memory_fence
+.type asmutils_memory_fence, @function
+asmutils_memory_fence:
+    mfence
+    ret
+
 .globl asmutils_store_zero_with_resume_address
 .type asmutils_store_zero_with_resume_address, @function
 asmutils_store_zero_with_resume_address:
