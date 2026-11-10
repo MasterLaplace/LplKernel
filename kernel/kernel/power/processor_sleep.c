@@ -13,8 +13,9 @@
  * MWAIT extension bit 0: treat interrupts as break events even when MASKED.
  *
  * Gated on CPUID.05H:ECX bit 1, which raises #GP when the bit is set without it. Dropping
- * it costs nothing on these paths: MWAIT already exits on an UNMASKED external interrupt,
- * and they all run with EFLAGS.IF set.
+ * it costs nothing on these paths: each MWAIT comes right after the STI that unmasks
+ * interrupts, so a pending one ends it all the same. Linux passes the bit only to a
+ * MWAIT entered masked (mwait_idle_with_hints, arch/x86/include/asm/mwait.h, v6.12).
  */
 #define PROCESSOR_SLEEP_BREAK_ON_INTERRUPT 1u
 
@@ -106,43 +107,81 @@ static uint32_t processor_sleep_deepest_enumerated_at_or_below(uint32_t ceiling)
 }
 
 /**
- * @brief Sleeps until @p watched changes or an interrupt arrives, interrupts masked on entry.
- * @param watched  Address to watch.
- * @param expected Value that means "nothing new yet".
- * @return How the processor was put to sleep, if at all.
+ * @struct ProcessorSleepWatch_t
+ * @brief The word a watched sleep waits on, and the value that means nothing new.
  */
-static ProcessorSleepMode_t processor_sleep_masked_until_write(const volatile uint32_t *watched, uint32_t expected)
+typedef struct {
+    const volatile uint32_t *watched; /**< The word. */
+    uint32_t expected;                /**< Its value until something new arrives. */
+} ProcessorSleepWatch_t;
+
+/**
+ * @brief Whether the watched word has moved, for processor_sleep_masked.
+ * @param context The ProcessorSleepWatch_t.
+ * @return true once it differs from the value expected.
+ */
+static bool processor_sleep_watched_moved(void *context)
 {
+    const ProcessorSleepWatch_t *const watch = (const ProcessorSleepWatch_t *) context;
+
+    return *watch->watched != watch->expected;
+}
+
+/**
+ * @brief Sleeps unless @p done says the wait is over: masks interrupts, arms the monitor on @p line, asks @p done,
+ *        then enters MWAIT or HLT in the step that enables interrupts, and gives the interrupt flag back as found.
+ *
+ * @details The one place every sleep of this module is entered, so that the masking around the last check is written,
+ *          and tested, once. A wait on the idle line that returns while still armed is counted unattributed, since
+ *          nothing writes that line; one on another line, a write.
+ *
+ * @param line    The line MONITOR watches: the idle line when only an interrupt should end the wait.
+ * @param done    Asked once, after the monitor is armed; NULL never says the wait is over.
+ * @param context What @p done receives.
+ * @param hint    MWAIT's hint.
+ * @return How the processor was put to sleep, PROCESSOR_SLEEP_NONE when @p done said the wait was over.
+ */
+static ProcessorSleepMode_t processor_sleep_masked(const volatile void *line, ProcessorSleepCondition_t done,
+                                                   void *context, uint32_t hint)
+{
+    const uint32_t flags = asmutils_save_flags_and_disable_interrupts();
     const uint64_t before = asmutils_read_timestamp_counter();
+    ProcessorSleepMode_t mode = PROCESSOR_SLEEP_NONE;
+
     processor_sleep_charge_awake(before);
-
     if (processor_sleep_monitor_available)
-        asmutils_monitor((const void *) watched, 0u, 0u);
+        asmutils_monitor((const void *) line, 0u, 0u);
 
-    if (*watched != expected)
+    if (done != NULL && done(context))
     {
         ++processor_sleep_skipped;
         processor_sleep_last_wake = before;
-        return PROCESSOR_SLEEP_NONE;
     }
-
-    ++processor_sleep_sleeps;
-    kernel_wakeup_accounting_arm();
-
-    if (!processor_sleep_monitor_available)
+    else if (!processor_sleep_monitor_available)
     {
+        ++processor_sleep_sleeps;
         ++processor_sleep_halts;
+        kernel_wakeup_accounting_arm();
         asmutils_enable_interrupts_and_halt();
         kernel_wakeup_accounting_close_unattributed();
         processor_sleep_charge_asleep_since(before);
-        return PROCESSOR_SLEEP_HALT;
+        mode = PROCESSOR_SLEEP_HALT;
     }
-
-    asmutils_enable_interrupts_and_monitor_wait(
-        processor_sleep_hint, processor_sleep_interrupt_break ? PROCESSOR_SLEEP_BREAK_ON_INTERRUPT : 0u);
-    kernel_wakeup_accounting_close_monitor_write();
-    processor_sleep_charge_asleep_since(before);
-    return PROCESSOR_SLEEP_MONITOR;
+    else
+    {
+        ++processor_sleep_sleeps;
+        kernel_wakeup_accounting_arm();
+        asmutils_enable_interrupts_and_monitor_wait(
+            hint, processor_sleep_interrupt_break ? PROCESSOR_SLEEP_BREAK_ON_INTERRUPT : 0u);
+        if (line == &processor_sleep_idle_line)
+            kernel_wakeup_accounting_close_unattributed();
+        else
+            kernel_wakeup_accounting_close_monitor_write();
+        processor_sleep_charge_asleep_since(before);
+        mode = PROCESSOR_SLEEP_MONITOR;
+    }
+    asmutils_restore_flags(flags);
+    return mode;
 }
 
 void kernel_processor_sleep_initialize(void)
@@ -196,47 +235,19 @@ ProcessorSleepMode_t processor_sleep_until_write(const volatile uint32_t *watche
         return PROCESSOR_SLEEP_HALT;
     }
 
-    const uint32_t flags = asmutils_save_flags_and_disable_interrupts();
-    const ProcessorSleepMode_t mode = processor_sleep_masked_until_write(watched, expected);
-    asmutils_restore_flags(flags);
-    return mode;
+    ProcessorSleepWatch_t watch = {watched, expected};
+    return processor_sleep_masked(watched, processor_sleep_watched_moved, &watch, processor_sleep_hint);
 }
 
 void processor_sleep_until_interrupt(void)
 {
-    const uint32_t flags = asmutils_save_flags_and_disable_interrupts();
-    const uint64_t before = asmutils_read_timestamp_counter();
-    processor_sleep_charge_awake(before);
-
-    ++processor_sleep_sleeps;
-    kernel_wakeup_accounting_arm();
-
-    if (processor_sleep_monitor_available)
-    {
-        asmutils_monitor((const void *) &processor_sleep_idle_line, 0u, 0u);
-        asmutils_enable_interrupts_and_monitor_wait(
-            processor_sleep_hint, processor_sleep_interrupt_break ? PROCESSOR_SLEEP_BREAK_ON_INTERRUPT : 0u);
-    }
-    else
-    {
-        ++processor_sleep_halts;
-        asmutils_enable_interrupts_and_halt();
-    }
-
-    kernel_wakeup_accounting_close_unattributed();
-    processor_sleep_charge_asleep_since(before);
-    asmutils_restore_flags(flags);
+    (void) processor_sleep_masked(&processor_sleep_idle_line, NULL, NULL, processor_sleep_hint);
 }
 
 bool processor_sleep_unless(ProcessorSleepCondition_t done, void *context)
 {
-    const uint32_t flags = asmutils_save_flags_and_disable_interrupts();
-    const bool over = done(context);
-
-    if (!over)
-        processor_sleep_until_interrupt();
-    asmutils_restore_flags(flags);
-    return over;
+    return processor_sleep_masked(&processor_sleep_idle_line, done, context, PROCESSOR_SLEEP_HINT_C1) ==
+           PROCESSOR_SLEEP_NONE;
 }
 
 uint32_t kernel_processor_sleep_count(void) { return processor_sleep_sleeps; }

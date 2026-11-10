@@ -225,8 +225,10 @@ typedef bool (*ProcessorSleepCondition_t)(void *context);
  *
  * For a loop that waits on what an interrupt handler changes, a tick count or a flag: the handler that changes it
  * after @p done read it ends the sleep instead of running just before it, which would leave the sleep waiting for the
- * interrupt after, a tick too late, or with the tick stopped forever. The sleep is
- * @ref processor_sleep_until_interrupt's, so it is counted and attributed as one.
+ * interrupt after, a tick too late, or with the tick stopped forever. It is counted and attributed as
+ * @ref processor_sleep_until_interrupt's sleep is, and a wait already over as a skip, but it sleeps in C1 whatever
+ * depth was granted: such a wait is a tick at most, and a deeper state could stop the local timer whose tick ends it
+ * on a processor without ARAT (#298).
  *
  * @param done    Asked once, with interrupts masked; not NULL.
  * @param context What @p done receives.
