@@ -62,6 +62,17 @@ static void wake_planner_test_record_and_rearm(void *context, uint64_t now)
 }
 
 /**
+ * @brief Records the run, then withdraws the second duty of the plan.
+ * @param context The duty's WakePlannerTestDuty_t.
+ * @param now     The wake-up's cycle.
+ */
+static void wake_planner_test_record_and_withdraw_the_second(void *context, uint64_t now)
+{
+    wake_planner_test_record(context, now);
+    kernel_wake_planner_withdraw(&wake_planner_test_plan, wake_planner_test_duties[1].number);
+}
+
+/**
  * @brief Empties the plan and the log, then declares @p count duties that record their runs.
  * @param count Duties to declare, at most KERNEL_WAKE_PLANNER_DUTIES.
  * @return true when every declaration was taken.
@@ -220,6 +231,30 @@ KERNEL_TEST(a_window_armed_while_serving_opens_at_the_next_wake)
                           kernel_wake_planner_serve(&wake_planner_test_plan, 5u) == 1u &&
                           wake_planner_test_log.count == 2u,
                       "the rearmed window is served at the next wake-up");
+}
+
+/**
+ * @brief A duty withdrawn by one that runs before it at the same wake-up is not run, though its window was
+ *        open when the wake-up began.
+ */
+KERNEL_TEST(a_duty_withdrawn_during_a_wake_is_not_run)
+{
+    kernel_wake_planner_initialize(&wake_planner_test_plan);
+    wake_planner_test_log.count = 0u;
+    for (uint32_t index = 0u; index < 2u; ++index)
+        wake_planner_test_duties[index].log = &wake_planner_test_log;
+    wake_planner_test_duties[0].number = kernel_wake_planner_declare(
+        &wake_planner_test_plan, wake_planner_test_record_and_withdraw_the_second, &wake_planner_test_duties[0]);
+    wake_planner_test_duties[1].number =
+        kernel_wake_planner_declare(&wake_planner_test_plan, wake_planner_test_record, &wake_planner_test_duties[1]);
+
+    (void) kernel_wake_planner_arm(&wake_planner_test_plan, wake_planner_test_duties[0].number, 0u, 10u);
+    (void) kernel_wake_planner_arm(&wake_planner_test_plan, wake_planner_test_duties[1].number, 0u, 20u);
+    kernel_test_check(test,
+                      kernel_wake_planner_serve(&wake_planner_test_plan, 10u) == 1u &&
+                          wake_planner_test_log.count == 1u &&
+                          wake_planner_test_log.duties[0] == wake_planner_test_duties[0].number,
+                      "only the duty that withdrew the other ran");
 }
 
 /**

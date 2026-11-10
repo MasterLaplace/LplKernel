@@ -53,6 +53,7 @@ typedef struct {
     uint32_t capture_services;   /**< Times the capture duty drained the ring. */
     uint32_t wasted_wakes;       /**< Wake-ups of the session that served no duty. */
     uint32_t late_services;      /**< Duties served after their window closed. */
+    uint32_t slept_microseconds; /**< Time the session spent asleep with the tick stopped. */
     uint32_t sleeps;             /**< Times the processor was actually put to sleep. */
     uint32_t sleeps_skipped;     /**< Times a sleep was unnecessary — the watch had fired. */
     uint32_t halts;              /**< Sleeps that fell back to HLT for want of MONITOR. */

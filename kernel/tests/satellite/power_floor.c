@@ -33,6 +33,12 @@ KERNEL_TEST_SUITE(power_floor, KERNEL_TEST_STAGE_BOOTED);
 
 #define POWER_FLOOR_ITERATIONS 8u
 
+/** The capture's rate: its stream format 0x0210 is 16 kHz, mono, 16 bits. */
+#define POWER_FLOOR_SAMPLE_RATE_HZ 16000u
+
+/** One capture buffer, in microseconds, from its samples and its rate. */
+#define POWER_FLOOR_FRAME_MICROSECONDS ((KERNEL_HAL_AUDIO_FRAME_SAMPLES * 1000000u) / POWER_FLOOR_SAMPLE_RATE_HZ)
+
 /** Ticks waited after the run: 100 ms at 100 Hz, two capture periods and a half. */
 #define POWER_FLOOR_TICKS_AFTER_THE_RUN 10u
 
@@ -308,6 +314,33 @@ KERNEL_TEST(every_wake_up_of_the_session_is_accounted_for)
     kernel_test_measure(test, "attributed", kernel_wakeup_accounting_get_attributed_count());
     kernel_test_measure(test, "monitor_wakes", kernel_wakeup_accounting_get_monitor_wake_count());
     kernel_test_measure(test, "sources", kernel_wakeup_accounting_get_source_count());
+}
+
+/**
+ * @brief Where no interrupt brings the buffers, the capture wakes the core on its own deadline once a buffer,
+ *        before the controller writes over a half: no wake-up of the session serves nothing, none is late,
+ *        and the session sleeps no longer than a buffer per service.
+ */
+KERNEL_TEST(the_capture_keeps_its_own_deadline_where_nothing_interrupts)
+{
+    const SatelliteReport_t *const report = power_floor_run_once();
+
+    if (report == NULL ||
+        (report->audio_present == 1u && hardware_abstraction_layer_audio_capture_is_interrupt_driven()))
+    {
+        kernel_test_skip(test, "the controller's interrupt brought the buffers");
+        return;
+    }
+
+    kernel_test_check(test, report->wasted_wakes == 0u && report->late_services == 0u,
+                      "no wake-up served nothing, and none was late");
+    kernel_test_check(test, report->sleeps <= report->capture_services + 1u, "one wake-up per service");
+    kernel_test_check(test,
+                      report->slept_microseconds <= (report->capture_services + 1u) * POWER_FLOOR_FRAME_MICROSECONDS,
+                      "each a buffer at most after the last");
+    kernel_test_measure(test, "sleeps", report->sleeps);
+    kernel_test_measure(test, "capture_services", report->capture_services);
+    kernel_test_measure(test, "slept_microseconds", report->slept_microseconds);
 }
 
 /**

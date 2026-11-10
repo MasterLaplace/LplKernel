@@ -194,7 +194,7 @@ bool kernel_satellite_app_run(uint32_t iterations, SatelliteReport_t *out)
     while (capture.services < iterations)
     {
         ++report.idle_iterations;
-        (void) kernel_tickless_sleep_on(&satellite_plan);
+        report.slept_microseconds += kernel_tickless_sleep_on(&satellite_plan);
     }
 
     kernel_processor_sleep_close_session();
