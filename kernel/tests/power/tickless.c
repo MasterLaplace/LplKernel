@@ -130,17 +130,27 @@ KERNEL_TEST(a_sleep_on_the_plan_serves_its_duty_inside_its_window)
     (void) kernel_wake_planner_arm(&tickless_test_plan, duty, earliest, latest);
 
     uint32_t sleeps = 0u;
+    uint32_t slept = 0u;
     while (tickless_test_runs == 0u && sleeps < TICKLESS_TEST_SLEEPS)
     {
-        (void) kernel_tickless_sleep_on(&tickless_test_plan);
+        slept += kernel_tickless_sleep_on(&tickless_test_plan);
         ++sleeps;
     }
+    const uint64_t woke = asmutils_read_timestamp_counter();
     kernel_tickless_disable();
 
     kernel_test_check(test, stopped, "the tick stops");
     kernel_test_check(test, tickless_test_runs == 1u, "the duty is served once");
     kernel_test_check(test, tickless_test_instant >= earliest && tickless_test_instant <= latest, "inside its window");
     kernel_test_check(test, tickless_test_plan.late_services == 0u, "on time");
+    kernel_test_check(test,
+                      woke <= latest + kernel_tickless_cycles_from_microseconds(TICKLESS_TEST_WINDOW_MICROSECONDS),
+                      "the core really woke within a window of its latest");
+    kernel_test_check(test,
+                      slept >= TICKLESS_TEST_WINDOW_OPENS_MICROSECONDS &&
+                          slept <= TICKLESS_TEST_WINDOW_OPENS_MICROSECONDS + 2u * TICKLESS_TEST_WINDOW_MICROSECONDS,
+                      "and the microseconds it counts asleep are the window's");
+    kernel_test_measure(test, "slept_us", slept);
     kernel_test_check(test, tickless_test_tick_runs(), "and the tick runs again");
     kernel_test_measure(test, "sleeps", sleeps);
     kernel_test_measure(test, "served_after_opening_us",
