@@ -241,3 +241,43 @@ KERNEL_TEST(a_deadline_already_passed_fires_at_once)
     kernel_test_check(test, local_timer_test_tick_runs(), "and the tick runs again");
     kernel_test_measure(test, "fire_cycles", (uint32_t) (now - armed_at));
 }
+
+/**
+ * @brief A second arming in a session writes the deadline alone, not the timer's entry again: an entry masked behind
+ *        the backend's back stays masked.
+ */
+KERNEL_TEST(a_second_arming_in_a_session_writes_only_its_deadline)
+{
+    if (!local_timer_test_can_stop_the_tick(test))
+        return;
+
+    const uint64_t far = advanced_pic_timer_backend_get_calibrated_timestamp_counter_frequency_hz();
+
+    interrupt_request_suspend_periodic_tick();
+    const bool first = advanced_pic_timer_backend_arm_at_cycle(asmutils_read_timestamp_counter() + far) != 0u;
+    const uint32_t entry = apic_read(LAPIC_REG_LVT_TIMER);
+    apic_write(LAPIC_REG_LVT_TIMER, entry | LOCAL_TIMER_TEST_LVT_MASKED);
+    const bool second = advanced_pic_timer_backend_arm_at_cycle(asmutils_read_timestamp_counter() + far) != 0u;
+    const uint32_t entry_after = apic_read(LAPIC_REG_LVT_TIMER);
+    (void) advanced_pic_timer_backend_disarm(asmutils_read_timestamp_counter());
+    interrupt_request_resume_periodic_tick();
+
+    kernel_test_check(test, first && second, "both armings take");
+    kernel_test_check(test, entry_after == (entry | LOCAL_TIMER_TEST_LVT_MASKED),
+                      "the second writes no entry: the one masked behind its back is still there");
+    kernel_test_check(test, local_timer_test_tick_runs(), "and the tick, given back, runs");
+}
+
+/**
+ * @brief Disarming with nothing armed says the timer had fired, and leaves the periodic tick running.
+ */
+KERNEL_TEST(disarming_with_nothing_armed_leaves_the_tick_running)
+{
+    if (!local_timer_test_can_stop_the_tick(test))
+        return;
+
+    const bool disarmed = advanced_pic_timer_backend_disarm(asmutils_read_timestamp_counter()) != 0u;
+
+    kernel_test_check(test, !disarmed, "nothing was armed, so nothing is disarmed");
+    kernel_test_check(test, local_timer_test_tick_runs(), "and the tick runs on");
+}
