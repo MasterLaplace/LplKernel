@@ -442,7 +442,8 @@ KERNEL_TEST(a_deadline_closer_than_its_arming_ends_the_sleep)
  *        slows both, and a wide window costs one wake-up of the timer, as without the lead.
  *
  * @details A quarter of the wide windows may still be late: a host that holds the virtual processor for
- *          milliseconds makes a wake-up no lead could have served, and the plan counts it late as it should.
+ *          milliseconds makes a wake-up no lead could have served, and the plan counts it late as it should. The lead
+ *          stays shorter than the sleeps it is taught by, which a lead taught by their length would not.
  */
 KERNEL_TEST(a_lead_learned_from_the_wake_ups_serves_wide_windows_by_their_latest)
 {
@@ -493,6 +494,8 @@ KERNEL_TEST(a_lead_learned_from_the_wake_ups_serves_wide_windows_by_their_latest
                       "the wide windows are served by their latest, but for a held wake-up now and then");
     kernel_test_check(test, timer_wide <= TICKLESS_TEST_LED_ROUNDS,
                       "and each took at most one wake-up of the timer, as without the lead");
+    kernel_test_check(test, lead_sum / TICKLESS_TEST_LED_ROUNDS < closes,
+                      "the lead is taught by the timer's lateness, not by the sleeps, and stays shorter than them");
     kernel_test_check(test, tickless_test_tick_runs(), "and the tick runs again");
     kernel_test_measure(test, "tsc_deadline", advanced_pic_timer_backend_arms_timestamp_counter_deadlines());
     kernel_test_measure(test, "late_wide", late_wide);
