@@ -185,31 +185,3 @@ KERNEL_TEST(a_full_count_of_wake_ups_keeps_learning)
         test, wake_latency_test_near(kernel_wake_latency_lead(&estimate), 2150u) && estimate.samples == UINT32_MAX,
         "the count stays full and the lead goes on falling");
 }
-
-/**
- * @brief Wake-ups learned together count from the shortest up, so that one held among them is held to twice the lead
- *        the others taught: three of 800 cycles and one of 100000 give a lead of 7500, given in either order, where
- *        learning the long one first gives about 489094.
- */
-KERNEL_TEST(wake_ups_learned_together_count_from_the_shortest_up)
-{
-    KernelWakeLatency_t given_long_first = {0};
-    KernelWakeLatency_t given_long_last = {0};
-    uint64_t long_first[4] = {125u * WAKE_LATENCY_TEST_STEADY, WAKE_LATENCY_TEST_STEADY, WAKE_LATENCY_TEST_STEADY,
-                              WAKE_LATENCY_TEST_STEADY};
-    uint64_t long_last[4] = {WAKE_LATENCY_TEST_STEADY, WAKE_LATENCY_TEST_STEADY, WAKE_LATENCY_TEST_STEADY,
-                             125u * WAKE_LATENCY_TEST_STEADY};
-
-    kernel_wake_latency_learn_ascending(&given_long_first, long_first, 4u);
-    kernel_wake_latency_learn_ascending(&given_long_last, long_last, 4u);
-
-    kernel_test_check(test,
-                      wake_latency_test_near(kernel_wake_latency_lead(&given_long_first), 7500u) &&
-                          kernel_wake_latency_lead(&given_long_first) == kernel_wake_latency_lead(&given_long_last),
-                      "the held wake-up counts last, in either order");
-    kernel_test_check(test,
-                      long_first[0] == WAKE_LATENCY_TEST_STEADY && long_first[3] == 125u * WAKE_LATENCY_TEST_STEADY,
-                      "and the latencies are left sorted");
-    kernel_test_check(test, given_long_first.samples == 4u, "each is learned once");
-    kernel_test_measure(test, "lead_cycles", (uint32_t) kernel_wake_latency_lead(&given_long_first));
-}

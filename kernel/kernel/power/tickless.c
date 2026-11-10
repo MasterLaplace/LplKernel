@@ -130,7 +130,8 @@ static KernelWakeLatency_t *tickless_latency_of_the_depth(void)
  * @brief Probes @p depth's wake latency: KERNEL_TICKLESS_PROBES sleeps on the timer, the first
  *        KERNEL_TICKLESS_FIRST_PROBE_MICROSECONDS long and each next one four times longer, so that a hypervisor's
  *        halt-polling window and a package state that engages late are both crossed; those the timer ended teach the
- *        depth's estimate, from the shortest latency up, and their time with the tick stopped is counted.
+ *        depth's estimate from the longest sleep down, so that the first sets the lead to four times the latency of
+ *        the sleep most like a duty's, and their time with the tick stopped is counted.
  * @param depth The depth sleeps enter, which a probe sleep enters too.
  */
 static void tickless_probe(uint32_t depth)
@@ -147,7 +148,8 @@ static void tickless_probe(uint32_t depth)
         if (tickless_sleep_until(armed, &after) == TICKLESS_WAKE_TIMER)
             latencies[taught++] = after > armed ? after - armed : 0u;
     }
-    kernel_wake_latency_learn_ascending(&tickless_wake_latency[depth], latencies, taught);
+    for (uint32_t index = taught; index > 0u; --index)
+        kernel_wake_latency_learn(&tickless_wake_latency[depth], latencies[index - 1u]);
     tickless_probe_cycles = asmutils_read_timestamp_counter() - began;
     const uint32_t probed = tickless_microseconds_from_cycles(
         tickless_probe_cycles, advanced_pic_timer_backend_get_calibrated_timestamp_counter_frequency_hz());

@@ -84,16 +84,6 @@ typedef struct {
 void kernel_wake_latency_learn(KernelWakeLatency_t *estimate, uint64_t latency);
 
 /**
- * @brief Learns several wake-ups at once, from the shortest latency to the longest, so that a long one among them
- *        counts at most as twice the lead the shorter ones taught, whatever order they came in.
- *
- * @param estimate  The core's estimate.
- * @param latencies The latencies, in cycles, as @ref kernel_wake_latency_learn takes them; sorted on return.
- * @param count     How many.
- */
-void kernel_wake_latency_learn_ascending(KernelWakeLatency_t *estimate, uint64_t *latencies, uint32_t count);
-
-/**
  * @brief Sets the lead an estimate gives before it has learned any wake-up; once it has, does nothing.
  *
  * @details The first wake-up learned replaces it, counted at most as twice it, so that a first wake-up the

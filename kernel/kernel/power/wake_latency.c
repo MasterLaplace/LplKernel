@@ -34,23 +34,6 @@ static uint32_t wake_latency_envelope(const KernelWakeLatency_t *estimate)
     return (estimate->smoothed_eighths >> 3u) + (estimate->deviation_quarters * KERNEL_WAKE_LATENCY_DEVIATIONS) / 4u;
 }
 
-/**
- * @brief Sorts @p values in place, the smallest first: an insertion sort, for the handful of probes a depth takes.
- * @param values The values.
- * @param count  How many.
- */
-static void wake_latency_sort(uint64_t *values, uint32_t count)
-{
-    for (uint32_t next = 1u; next < count; ++next)
-    {
-        const uint64_t value = values[next];
-        uint32_t slot = next;
-        for (; slot > 0u && values[slot - 1u] > value; --slot)
-            values[slot] = values[slot - 1u];
-        values[slot] = value;
-    }
-}
-
 void kernel_wake_latency_learn(KernelWakeLatency_t *estimate, uint64_t latency)
 {
     const uint32_t sample = wake_latency_sample(estimate->lead, latency);
@@ -79,11 +62,4 @@ void kernel_wake_latency_assume(KernelWakeLatency_t *estimate, uint64_t lead)
     if (estimate->samples == 0u)
         estimate->lead =
             lead > KERNEL_WAKE_LATENCY_LONGEST_CYCLES ? KERNEL_WAKE_LATENCY_LONGEST_CYCLES : (uint32_t) lead;
-}
-
-void kernel_wake_latency_learn_ascending(KernelWakeLatency_t *estimate, uint64_t *latencies, uint32_t count)
-{
-    wake_latency_sort(latencies, count);
-    for (uint32_t index = 0u; index < count; ++index)
-        kernel_wake_latency_learn(estimate, latencies[index]);
 }
