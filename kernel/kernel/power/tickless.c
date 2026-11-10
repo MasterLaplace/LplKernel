@@ -96,7 +96,7 @@ static void tickless_count_ticks_avoided(uint32_t slept)
  * @param out_after Receives the cycle the core woke at, when it slept.
  * @return How the sleep ended.
  */
-static TicklessWake_t tickless_sleep_until(uint64_t armed, uint64_t *out_after)
+__attribute__((always_inline)) static inline TicklessWake_t tickless_sleep_until(uint64_t armed, uint64_t *out_after)
 {
     const uint32_t flags = asmutils_save_flags_and_disable_interrupts();
     if (!advanced_pic_timer_backend_arm_at_cycle(armed))
@@ -122,7 +122,8 @@ static KernelWakeLatency_t *tickless_latency_of_the_depth(void)
 {
     KernelWakeLatency_t *const latency = &tickless_wake_latency[kernel_processor_sleep_depth()];
 
-    kernel_wake_latency_assume(latency, kernel_wake_latency_lead(&tickless_wake_latency[tickless_probed_depth]));
+    if (latency->samples == 0u)
+        kernel_wake_latency_assume(latency, kernel_wake_latency_lead(&tickless_wake_latency[tickless_probed_depth]));
     return latency;
 }
 
