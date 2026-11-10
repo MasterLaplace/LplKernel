@@ -38,6 +38,11 @@ static uint64_t advanced_pic_timer_calibration_timestamp_counter_cycles = 0u;
 static uint64_t advanced_pic_timer_timestamp_counter_calibrated_frequency_hz = 0u;
 static uint8_t advanced_pic_timer_timestamp_counter_deadlines = 0u;
 static uint8_t advanced_pic_timer_invariant_timestamp_counter = 0u;
+/**
+ * The timer's LVT entry in force, which spares rewriting it on every arming. It holds only because this backend is the
+ * one writer of the bootstrap processor's entry: another writer, a resume from sleep or an arming on another core,
+ * would make it lie in silence.
+ */
 static uint32_t advanced_pic_timer_lvt_timer = APIC_TIMER_LVT_UNWRITTEN;
 static uint64_t advanced_pic_timer_armed_deadline = 0u;
 
@@ -202,17 +207,15 @@ uint8_t advanced_pic_timer_backend_initialize(uint32_t target_frequency_hz)
     advanced_pic_timer_local_apic_periodic_mode_enabled = 0u;
     advanced_pic_timer_lvt_timer = APIC_TIMER_LVT_UNWRITTEN;
     advanced_pic_timer_armed_deadline = 0u;
+    advanced_pic_timer_timestamp_counter_deadlines = 0u;
     advanced_pic_timer_invariant_timestamp_counter = advanced_pic_timer_read_invariant_timestamp_counter();
 
     asmutils_cpuid(APIC_CPUID_LEAF_FEATURES, 0u, &eax, &ebx, &ecx, &edx);
     if ((edx & APIC_CPUID_EDX_BIT_APIC) == 0u)
     {
-        advanced_pic_timer_timestamp_counter_deadlines = 0u;
         advanced_pic_timer_backend_state_name = "apic-probe-no-local-apic";
         return 0u;
     }
-    advanced_pic_timer_timestamp_counter_deadlines =
-        (uint8_t) (((ecx & APIC_CPUID_ECX_BIT_TIMESTAMP_COUNTER_DEADLINE) != 0u) ? 1u : 0u);
 
     apic_base_msr = asmutils_read_model_specific_register(IA32_APIC_BASE_MSR);
     if ((apic_base_msr & IA32_APIC_BASE_ENABLE_BIT) == 0u)
@@ -229,6 +232,8 @@ uint8_t advanced_pic_timer_backend_initialize(uint32_t target_frequency_hz)
     }
 
     advanced_pic_timer_local_apic_physical_base = (uint32_t) local_apic_physical_base_u64;
+    advanced_pic_timer_timestamp_counter_deadlines =
+        (uint8_t) (((ecx & APIC_CPUID_ECX_BIT_TIMESTAMP_COUNTER_DEADLINE) != 0u) ? 1u : 0u);
     advanced_pic_timer_local_apic_is_bootstrap_processor =
         (uint8_t) (((apic_base_msr & IA32_APIC_BASE_BSP_BIT) != 0u) ? 1u : 0u);
 
