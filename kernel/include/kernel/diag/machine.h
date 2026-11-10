@@ -46,6 +46,8 @@ extern "C" {
  *            register index reaches, which no route reaches;
  *          - `apic`: `x2apic`, `xapic` or `absent`;
  *          - `apic_reason`: why the local APIC runs that mode, as apic_mode_reason_name names it;
+ *          - `tsc_deadline`: 1 when the one-shot timer arms deadlines on the timestamp counter, CPUID.01H:ECX[24];
+ *          - `tsc_invariant`: 1 when CPUID.80000007H:EDX[8] promises the counter one rate in every state;
  *          - `audio_controller`: 1 when the bus holds a high-definition audio controller.
  *          A character other than a letter, a digit, '.', '-' or '_' in a value becomes '-', so
  *          the telemetry module never has to sanitise one.
