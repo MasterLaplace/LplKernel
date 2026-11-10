@@ -12,7 +12,8 @@
 
 #include <string.h>
 
-#define INTERRUPT_CONTROLLERS_TEST_TICKS 8u /**< Ticks the contract waits for. */
+#define INTERRUPT_CONTROLLERS_TEST_TICKS      8u  /**< Ticks the contract waits for. */
+#define INTERRUPT_CONTROLLERS_TEST_RATE_PARTS 10u /**< A rate counted apart may stray by one part in this. */
 #define INTERRUPT_CONTROLLERS_TEST_DEADLINE_PERIODS                                                                    \
     12u /**< The deadline's length in tick periods: more than eight, since it counts the same tick. */
 #define INTERRUPT_CONTROLLERS_TEST_HIGHEST_NAMEABLE_PROCESSOR                                                          \
@@ -174,28 +175,39 @@ static uint8_t interrupt_controllers_lines_left_unmasked(const uint8_t *lines, u
 /**
  * @brief The tick's contract, whichever timer keeps it: the profile's frequency, and ticks that arrive.
  *
- * @details The wait ends after eight ticks, or, should the tick stop, once the deadline's limit of
- *          polls without a tick runs out. A count of loop iterations ran out before eight ticks under
- *          KVM. The deadline counts the same tick, so the pace of the ticks is not checked here.
+ * @details The wait starts on a tick and ends after eight more, or, should the tick stop, once the
+ *          deadline's limit of polls without a tick runs out. A count of loop iterations ran out before
+ *          eight ticks under KVM. The deadline counts the same tick, so the pace of the ticks is not
+ *          checked here; the timestamp counter is read on the first tick and on the last, so a caller can.
+ *
+ * @param test The test.
+ * @return The timestamp counter's cycles over the eight ticks; 0 when they did not all arrive.
  */
-static void interrupt_controllers_check_the_tick_contract(KernelTest_t *test)
+static uint64_t interrupt_controllers_check_the_tick_contract(KernelTest_t *test)
 {
     const uint32_t tick_hz = clock_get_tick_hz();
-    const uint32_t start = clock_get_tick_count();
     InterruptRequestDeadline_t deadline;
 
     kernel_test_check(test, tick_hz != 0u && tick_hz == clock_get_profile_tick_hz(),
                       "the tick keeps the profile's frequency");
     if (tick_hz == 0u)
-        return;
+        return 0u;
 
-    interrupt_request_deadline_start(&deadline, INTERRUPT_CONTROLLERS_TEST_DEADLINE_PERIODS * (1000000u / tick_hz));
+    interrupt_request_deadline_start(&deadline,
+                                     (INTERRUPT_CONTROLLERS_TEST_DEADLINE_PERIODS + 1u) * (1000000u / tick_hz));
+    const uint32_t before = clock_get_tick_count();
+    while (clock_get_tick_count() == before && !interrupt_request_deadline_passed(&deadline))
+        asmutils_pause();
+    const uint32_t start = clock_get_tick_count();
+    const uint64_t first_cycle = asmutils_read_timestamp_counter();
     while (clock_get_tick_count() - start < INTERRUPT_CONTROLLERS_TEST_TICKS &&
            !interrupt_request_deadline_passed(&deadline))
         asmutils_pause();
+    const uint64_t last_cycle = asmutils_read_timestamp_counter();
 
-    kernel_test_check(test, clock_get_tick_count() - start >= INTERRUPT_CONTROLLERS_TEST_TICKS,
-                      "eight ticks arrive before the tick stalls");
+    const bool arrived = clock_get_tick_count() - start >= INTERRUPT_CONTROLLERS_TEST_TICKS;
+    kernel_test_check(test, arrived, "eight ticks arrive before the tick stalls");
+    return arrived ? last_cycle - first_cycle : 0u;
 }
 
 /**
@@ -617,7 +629,20 @@ KERNEL_TEST(local_timer_owns_the_tick)
     kernel_test_check(test, tick_hz != 0u && apic_read(LAPIC_REG_TIMER_INIT) == local_timer_hz / tick_hz,
                       "and its period is one tick");
     kernel_test_measure(test, "local_timer_hz", local_timer_hz);
-    interrupt_controllers_check_the_tick_contract(test);
+
+    const uint64_t calibrated = advanced_pic_timer_backend_get_calibrated_timestamp_counter_frequency_hz();
+    const uint64_t cycles = interrupt_controllers_check_the_tick_contract(test);
+    const uint64_t counted = tick_hz != 0u ? (cycles * tick_hz) / INTERRUPT_CONTROLLERS_TEST_TICKS : 0u;
+    kernel_test_check(test, calibrated != 0u, "the timestamp counter's rate was measured on the same ticks");
+    kernel_test_check(test,
+                      counted != 0u &&
+                          calibrated * INTERRUPT_CONTROLLERS_TEST_RATE_PARTS <=
+                              counted * (INTERRUPT_CONTROLLERS_TEST_RATE_PARTS + 1u) &&
+                          counted * INTERRUPT_CONTROLLERS_TEST_RATE_PARTS <=
+                              calibrated * (INTERRUPT_CONTROLLERS_TEST_RATE_PARTS + 1u),
+                      "and is the rate it runs at over eight ticks counted apart, within a tenth");
+    kernel_test_measure(test, "timestamp_counter_kilohertz", (uint32_t) (calibrated / 1000u));
+    kernel_test_measure(test, "counted_kilohertz", (uint32_t) (counted / 1000u));
 }
 
 /**
@@ -633,9 +658,11 @@ KERNEL_TEST(the_pit_keeps_the_tick_when_the_local_timer_is_declined)
         return;
     }
 
-    kernel_test_check(test, advanced_pic_timer_backend_get_calibrated_timer_frequency_hz() == 0u,
-                      "the local timer was not calibrated");
+    kernel_test_check(test,
+                      advanced_pic_timer_backend_get_calibrated_timer_frequency_hz() == 0u &&
+                          advanced_pic_timer_backend_get_calibrated_timestamp_counter_frequency_hz() == 0u,
+                      "neither the local timer nor the timestamp counter was calibrated");
     kernel_test_check(test, !interrupt_request_is_timer_owner_apic(), "the PIT owns the tick");
     kernel_test_check(test, !advanced_pic_timer_backend_is_periodic_mode_enabled(), "the local timer does not tick");
-    interrupt_controllers_check_the_tick_contract(test);
+    (void) interrupt_controllers_check_the_tick_contract(test);
 }

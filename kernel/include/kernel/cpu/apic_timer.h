@@ -82,7 +82,9 @@ extern uint32_t advanced_pic_timer_backend_get_local_apic_version_register(void)
  * @brief Calibrate LAPIC timer rate against PIT tick cadence.
  *
  * The timer stays masked while it counts eight PIT ticks; the frequency it measures is the one
- * periodic and one-shot modes are programmed from.
+ * periodic and one-shot modes are programmed from. The timestamp counter is read at both ends of the
+ * same ticks, so its rate costs no wait of its own, and the ratio of the two counts, which one-shot
+ * mode is armed from, holds whatever a late tick did to the window.
  *
  * @return Non-zero when calibration data is available, zero otherwise.
  */
@@ -92,6 +94,12 @@ extern uint8_t advanced_pic_timer_backend_calibrate_with_pit(void);
  * @brief Return measured LAPIC timer frequency estimate in Hertz.
  */
 extern uint32_t advanced_pic_timer_backend_get_calibrated_timer_frequency_hz(void);
+
+/**
+ * @brief The timestamp counter's rate, measured over the ticks the local timer was calibrated on.
+ * @return Cycles per second; 0 until a calibration succeeded.
+ */
+extern uint64_t advanced_pic_timer_backend_get_calibrated_timestamp_counter_frequency_hz(void);
 
 /**
  * @brief Enable LAPIC periodic timer mode using the remapped timer vector.
@@ -120,16 +128,19 @@ extern void advanced_pic_timer_backend_signal_end_of_interrupt(void);
 extern uint8_t advanced_pic_timer_backend_is_bootstrap_processor(void);
 
 /**
- * @brief Arms the local timer to fire once, after a delay.
+ * @brief Arms the local timer to fire once, @p cycles of the timestamp counter from now.
  *
  * The half of the timer a tickless kernel needs: periodic mode wakes on a cadence,
  * this wakes at a deadline. Programming a deadline instead of a period is what lets
  * an idle core sleep for seconds rather than a millisecond at a time.
  *
- * @param microseconds Delay before the interrupt.
+ * @details The count is the cycles scaled by the two counts of the calibration, rounded down so that
+ *          the timer never fires after the cycle asked for; at least one count, at most the timer's range.
+ *
+ * @param cycles Delay before the interrupt, in cycles of the timestamp counter.
  * @return 1 when armed, 0 when the local APIC is unavailable or uncalibrated.
  */
-extern uint8_t advanced_pic_timer_backend_arm_one_shot(uint32_t microseconds);
+extern uint8_t advanced_pic_timer_backend_arm_one_shot_in_cycles(uint64_t cycles);
 
 /**
  * @brief Stops the local timer and masks its vector.
