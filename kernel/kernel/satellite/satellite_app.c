@@ -215,6 +215,7 @@ bool kernel_satellite_app_run(uint32_t iterations, SatelliteReport_t *out)
     report.late_services = satellite_plan.late_services;
     report.batched_wakes = satellite_plan.batched_wakes;
     report.overshoot_microseconds = kernel_tickless_microseconds_from_cycles(satellite_plan.latest_overshoot);
+    report.wake_lead_microseconds = kernel_tickless_microseconds_from_cycles(kernel_tickless_wake_lead_cycles());
     report.reconciler_passes = kernel_reconciler_get_periodic_pass_count() - passes_before;
     report.sleeps = kernel_processor_sleep_count();
     report.sleeps_skipped = kernel_processor_sleep_skipped_count();

@@ -130,11 +130,14 @@ uint32_t kernel_tickless_microseconds_from_cycles(uint64_t cycles);
  * wake-up instead of costing one of their own.
  *
  * @details The plan is served at the cycle the core woke, so a window that opened while the interrupt
- *          was on its way is served too, and a duty the plan's own deadline woke is late by that
- *          interrupt's latency, which the plan's worst overshoot then measures. A deadline already passed
- *          is served without sleeping, and one further than @ref KERNEL_TICKLESS_MAX_SLEEP_MICROSECONDS is
- *          cut to it. The timer is armed at the wake-up's own cycle: in TSC-deadline mode that cycle is the
- *          deadline, so the interrupt never comes before it; in count mode a count stands for it, through
+ *          was on its way is served too. The timer comes after its deadline by a latency, so the wake-up is
+ *          armed early by the lead the timer's own wake-ups taught (wake_latency.h), never before the earliest
+ *          of the window it serves: a window at least that wide is served by its latest, and a narrower one,
+ *          a window of one cycle among them, late by less than the latency, which the plan's worst overshoot
+ *          measures. Only a sleep the timer ended teaches the lead; one another interrupt cut short does not.
+ *          A wake-up already due is served without sleeping, and one further than
+ *          @ref KERNEL_TICKLESS_MAX_SLEEP_MICROSECONDS is cut to it. In TSC-deadline mode the armed cycle is
+ *          the deadline, so the interrupt never comes before it; in count mode a count stands for it, through
  *          the calibration's ratio. Interrupts are masked from the arming to the sleep, which enables them
  *          in the same step: a deadline that passes while it is armed, closer than the arming takes, ends the
  *          sleep instead of being handled just before it, which with the tick stopped would leave nothing to
@@ -169,6 +172,13 @@ uint32_t kernel_tickless_ticks_avoided(void);
  * @return The count.
  */
 uint32_t kernel_tickless_early_wakes(void);
+
+/**
+ * @brief How many cycles before a window's latest a sleep arms its wake-up: what the timer's wake-ups taught,
+ *        over every session of this boot, of how late they come.
+ * @return The lead; 0 before the timer ended any sleep.
+ */
+uint64_t kernel_tickless_wake_lead_cycles(void);
 
 /**
  * @brief Total time spent with the tick stopped, in microseconds.

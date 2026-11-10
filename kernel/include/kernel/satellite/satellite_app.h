@@ -56,6 +56,7 @@ typedef struct {
     uint32_t slept_microseconds;     /**< Time the session spent asleep with the tick stopped. */
     uint32_t batched_wakes;          /**< Wake-ups that served two duties or more. */
     uint32_t overshoot_microseconds; /**< The most a duty ran past its latest. */
+    uint32_t wake_lead_microseconds; /**< How early the timer's wake-ups were armed, from what they taught. */
     uint32_t reconciler_passes;      /**< Reconciler passes the session's wake-ups carried with the tick stopped. */
     uint32_t sleeps;                 /**< Times the processor was actually put to sleep. */
     uint32_t sleeps_skipped;         /**< Times a sleep was unnecessary — the watch had fired. */
