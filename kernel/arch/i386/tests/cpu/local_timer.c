@@ -29,6 +29,12 @@ KERNEL_TEST_SUITE(local_timer, KERNEL_TEST_STAGE_BOOTED);
 /** Armings timed for their cost, an odd count so that the median is one of them. */
 #define LOCAL_TIMER_TEST_ARMINGS 15u
 
+/** @name The tick's vector in the Interrupt Request Register (Intel SDM vol. 3A, Table 13-1 and Figure 13-20)
+ *  @{ */
+#define LOCAL_TIMER_TEST_IRR_OF_THE_TICK 0x0210u    /**< IRR bits 63:32, which hold vector 32. */
+#define LOCAL_TIMER_TEST_IRR_TICK_BIT    (1u << 0u) /**< Vector 32, the first of them. */
+/** @} */
+
 /** Cycles a deadline already passed may take to fire before the test gives up, rather than hang the boot. */
 #define LOCAL_TIMER_TEST_FIRE_BUDGET_CYCLES 100000000ull
 
@@ -212,34 +218,53 @@ KERNEL_TEST(the_one_shot_arms_a_tsc_deadline_where_the_processor_offers_one)
 }
 
 /**
- * @brief A deadline already passed fires at once, in either mode, and disarming it afterwards says it fired.
+ * @brief Arms @p deadline with interrupts masked and waits for the tick's vector to be requested in the IRR, so that
+ *        the interrupt itself is seen rather than a register that a timer never armed reads alike.
+ * @param deadline   The cycle armed.
+ * @param out_cycles Receives the cycles from the arming to the request, or to giving up.
+ * @return true when armed, requested within LOCAL_TIMER_TEST_FIRE_BUDGET_CYCLES, and then said fired by disarming.
+ */
+static bool local_timer_test_requests_at_once(uint64_t deadline, uint32_t *out_cycles)
+{
+    const uint32_t flags = asmutils_save_flags_and_disable_interrupts();
+    const uint64_t armed_at = asmutils_read_timestamp_counter();
+    const bool armed = advanced_pic_timer_backend_arm_at_cycle(deadline) != 0u;
+    bool requested = false;
+    uint64_t now = armed_at;
+
+    while (armed && !requested && now - armed_at < LOCAL_TIMER_TEST_FIRE_BUDGET_CYCLES)
+    {
+        requested = (apic_read(LOCAL_TIMER_TEST_IRR_OF_THE_TICK) & LOCAL_TIMER_TEST_IRR_TICK_BIT) != 0u;
+        now = asmutils_read_timestamp_counter();
+    }
+    const bool disarmed = advanced_pic_timer_backend_disarm(now) != 0u;
+    asmutils_restore_flags(flags);
+
+    *out_cycles = (uint32_t) (now - armed_at);
+    return armed && requested && !disarmed;
+}
+
+/**
+ * @brief A deadline already passed requests the tick's interrupt at once, in either mode, and so does a deadline of
+ *        zero, which would disarm the timer if it were written as it is; disarming afterwards says each fired.
  */
 KERNEL_TEST(a_deadline_already_passed_fires_at_once)
 {
     if (!local_timer_test_can_stop_the_tick(test))
         return;
 
-    const bool offered = local_timer_test_offers_deadlines();
+    uint32_t passed_cycles = 0u;
+    uint32_t zero_cycles = 0u;
 
     interrupt_request_suspend_periodic_tick();
-    const uint64_t armed_at = asmutils_read_timestamp_counter();
-    const bool armed = advanced_pic_timer_backend_arm_at_cycle(armed_at - 1u) != 0u;
-    bool fired = false;
-    uint64_t now = armed_at;
-    while (!fired && now - armed_at < LOCAL_TIMER_TEST_FIRE_BUDGET_CYCLES)
-    {
-        fired = offered ? asmutils_read_model_specific_register(LOCAL_TIMER_TEST_TSC_DEADLINE_MSR) == 0u :
-                          apic_read(LAPIC_REG_TIMER_CUR) == 0u;
-        now = asmutils_read_timestamp_counter();
-    }
-    const bool disarmed = advanced_pic_timer_backend_disarm(now) != 0u;
+    const bool passed = local_timer_test_requests_at_once(asmutils_read_timestamp_counter() - 1u, &passed_cycles);
+    const bool zero = local_timer_test_requests_at_once(0u, &zero_cycles);
     interrupt_request_resume_periodic_tick();
 
-    kernel_test_check(test, armed && fired,
-                      offered ? "the deadline register clears itself at once" : "the count reaches zero at once");
-    kernel_test_check(test, !disarmed, "and disarming afterwards says it fired");
+    kernel_test_check(test, passed, "a deadline a cycle past requests the interrupt at once, and is said fired");
+    kernel_test_check(test, zero, "so does a deadline of zero");
     kernel_test_check(test, local_timer_test_tick_runs(), "and the tick runs again");
-    kernel_test_measure(test, "fire_cycles", (uint32_t) (now - armed_at));
+    kernel_test_measure(test, "fire_cycles", passed_cycles);
 }
 
 /**

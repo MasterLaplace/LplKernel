@@ -4,6 +4,7 @@
 #include <kernel/lib/asmutils.h>
 #include <kernel/power/processor_sleep.h>
 #include <kernel/power/tickless.h>
+#include <kernel/power/wakeup_accounting.h>
 #include <kernel/testing/test.h>
 
 KERNEL_TEST_SUITE(tickless, KERNEL_TEST_STAGE_BOOTED);
@@ -28,6 +29,9 @@ KERNEL_TEST_SUITE(tickless, KERNEL_TEST_STAGE_BOOTED);
 #define TICKLESS_TEST_DEADLINES             16u   /**< How many. */
 #define TICKLESS_TEST_DEADLINE_MICROSECONDS 2000u /**< How far each is from the sleep before it. */
 /** @} */
+
+/** The vector of the tick and of the one-shot, IRQ0 remapped: the dispatcher credits it with the wake-ups it ends. */
+#define TICKLESS_TEST_TIMER_VECTOR 32u
 
 /** Cycles a wait for the tick's return spins before it gives up, rather than hang the boot. */
 #define TICKLESS_TEST_WAIT_CYCLE_BUDGET 8000000000ull
@@ -278,10 +282,10 @@ KERNEL_TEST(a_plan_other_than_the_sessions_is_refused)
 
 /**
  * @brief Slept on one after the other, deadlines that are windows of one cycle are each served once, by the
- *        interrupt's latency after it: the wake error, measured. Every sleep ends on its deadline's interrupt or
- *        early, on another's, and only another's is counted early; in TSC-deadline mode the timer never fires before
- *        the deadline, so there is no third kind, while in count mode the calibration's ratio may fire it a little
- *        before, which costs one more sleep, never two.
+ *        interrupt's latency after it: the wake error, measured. The dispatcher, not the backend, says which
+ *        interrupt ended each sleep: in TSC-deadline mode the timer ends at most one sleep per deadline, since it
+ *        never fires before it, while in count mode the calibration's ratio may fire it a little before, which costs
+ *        at most one more sleep per deadline over the run.
  */
 KERNEL_TEST(a_deadline_wakes_the_core_by_the_interrupts_latency_after_it)
 {
@@ -291,6 +295,7 @@ KERNEL_TEST(a_deadline_wakes_the_core_by_the_interrupts_latency_after_it)
     const uint32_t duty = tickless_test_begin();
     const uint32_t early_before = kernel_tickless_early_wakes();
     const uint32_t halts_before = kernel_processor_sleep_count();
+    const uint32_t timer_before = kernel_wakeup_accounting_get_vector_count(TICKLESS_TEST_TIMER_VECTOR);
     const bool stopped = kernel_tickless_enable(true, &tickless_test_plan);
     uint64_t error_sum = 0u;
     uint64_t error_max = 0u;
@@ -310,17 +315,21 @@ KERNEL_TEST(a_deadline_wakes_the_core_by_the_interrupts_latency_after_it)
     }
     const uint32_t early = kernel_tickless_early_wakes() - early_before;
     const uint32_t halts = kernel_processor_sleep_count() - halts_before;
+    const uint32_t timer_wakes = kernel_wakeup_accounting_get_vector_count(TICKLESS_TEST_TIMER_VECTOR) - timer_before;
     kernel_tickless_disable();
 
     const bool deadlines = advanced_pic_timer_backend_arms_timestamp_counter_deadlines() != 0u;
     kernel_test_check(test, stopped, "the tick stops");
     kernel_test_check(test, tickless_test_runs == TICKLESS_TEST_DEADLINES, "each deadline is served once");
     kernel_test_check(test,
-                      deadlines ?
-                          halts == TICKLESS_TEST_DEADLINES + early :
-                          halts >= TICKLESS_TEST_DEADLINES + early && halts <= 2u * TICKLESS_TEST_DEADLINES + early,
-                      deadlines ? "every sleep ended on its deadline or early, on another interrupt" :
-                                  "every sleep ended on its deadline, early, or once per deadline just before it");
+                      deadlines ? halts == TICKLESS_TEST_DEADLINES + early : halts >= TICKLESS_TEST_DEADLINES + early,
+                      "every sleep ended on a deadline served, early with the timer still armed, or in count mode on "
+                      "the timer just before its deadline");
+    kernel_test_check(test,
+                      timer_wakes <= (deadlines ? TICKLESS_TEST_DEADLINES : 2u * TICKLESS_TEST_DEADLINES) &&
+                          timer_wakes + early <= halts,
+                      deadlines ? "the timer ended at most one sleep per deadline, so it never fired before one" :
+                                  "the timer ended at most two sleeps per deadline, over the run");
     kernel_test_check(test, tickless_test_tick_runs(), "and the tick runs again");
     kernel_test_measure(test, "tsc_deadline", deadlines ? 1u : 0u);
     kernel_test_measure(test, "wake_error_mean_us",
@@ -329,6 +338,7 @@ KERNEL_TEST(a_deadline_wakes_the_core_by_the_interrupts_latency_after_it)
     kernel_test_measure(test, "wasted_wakes", tickless_test_plan.wasted_wakes);
     kernel_test_measure(test, "early_wakes", early);
     kernel_test_measure(test, "sleeps", halts);
+    kernel_test_measure(test, "timer_wakes", timer_wakes);
 }
 
 /**
