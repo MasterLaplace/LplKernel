@@ -21,7 +21,8 @@
  * schedule of wake-ups covers the same windows with fewer: the first wake-up cannot come later
  * without missing a window, and coming earlier covers no more. Any wake-up a device causes serves
  * the open windows the same way, so a duty whose window holds a device's interrupt never costs a
- * wake-up of its own.
+ * wake-up of its own. A timer's wake-up comes after the cycle it was armed for, so the plan arms it
+ * a lead early, and a lead the wake-up takes exactly brings it to that same latest.
  *
  * A duty whose latest is @ref KERNEL_WAKE_PLANNER_NEVER never wakes the core: it runs at the first
  * wake-up after its earliest, whatever caused it, which is what a check that only reads what running
