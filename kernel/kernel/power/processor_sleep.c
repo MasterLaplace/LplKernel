@@ -140,7 +140,7 @@ __attribute__((always_inline)) static inline bool processor_sleep_watched_moved(
  * @param line    The line MONITOR watches: the idle line when only an interrupt should end the wait.
  * @param done    Asked once, after the monitor is armed; NULL never says the wait is over.
  * @param context What @p done receives.
- * @param hint    MWAIT's hint.
+ * @param hint    The hint index, which kernel_processor_sleep_mwait_hint encodes for MWAIT.
  * @return How the processor was put to sleep, PROCESSOR_SLEEP_NONE when @p done said the wait was over.
  */
 __attribute__((always_inline)) static inline ProcessorSleepMode_t
@@ -174,7 +174,8 @@ processor_sleep_masked(const volatile void *line, ProcessorSleepCondition_t done
         ++processor_sleep_sleeps;
         kernel_wakeup_accounting_arm();
         asmutils_enable_interrupts_and_monitor_wait(
-            hint, processor_sleep_interrupt_break ? PROCESSOR_SLEEP_BREAK_ON_INTERRUPT : 0u);
+            kernel_processor_sleep_mwait_hint(hint),
+            processor_sleep_interrupt_break ? PROCESSOR_SLEEP_BREAK_ON_INTERRUPT : 0u);
         if (line == &processor_sleep_idle_line)
             kernel_wakeup_accounting_close_unattributed();
         else

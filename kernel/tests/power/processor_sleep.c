@@ -490,3 +490,14 @@ KERNEL_TEST(an_initialisation_adopts_the_usable_hints)
                       "the hints adopted are the enumerated ones the timer allows");
     kernel_test_measure(test, "available_hints", kernel_processor_sleep_available_hints());
 }
+
+/**
+ * @brief A hint reaches MWAIT as its target C-state less one in bits 7:4: hint 0 targets C1 as 0x00, hint 1 C2 as
+ *        0x10, and the deepest, hint 6, C7 as 0x60, never a sub-state of C1.
+ */
+KERNEL_TEST(a_hint_reaches_mwait_as_its_c_state_in_bits_7_to_4)
+{
+    kernel_test_check(test, kernel_processor_sleep_mwait_hint(PROCESSOR_SLEEP_HINT_C1) == 0x00u, "C1 is 0x00");
+    kernel_test_check(test, kernel_processor_sleep_mwait_hint(1u) == 0x10u, "C2 is 0x10, not C1's sub-state 1");
+    kernel_test_check(test, kernel_processor_sleep_mwait_hint(PROCESSOR_SLEEP_HINT_MAX) == 0x60u, "C7 is 0x60");
+}

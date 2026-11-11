@@ -63,6 +63,15 @@ extern "C" {
 #define PROCESSOR_SLEEP_HINT_MAX 6u
 
 /**
+ * @brief The value MWAIT takes in EAX for a hint: the target C-state less one in bits 7:4, sub-state 0 in bits 3:0,
+ *        as Linux decodes it (`MWAIT_HINT2CSTATE`, arch/x86/include/asm/mwait.h), so that hint h targets C(h+1).
+ *
+ * @param hint A hint index, from @ref PROCESSOR_SLEEP_HINT_C1 to @ref PROCESSOR_SLEEP_HINT_MAX.
+ * @return EAX for MWAIT.
+ */
+static inline uint32_t kernel_processor_sleep_mwait_hint(uint32_t hint) { return (hint & 0xFu) << 4u; }
+
+/**
  * What kernel_processor_sleep_published_duty_cycle_permille() reads while no session has been
  * closed since the last one opened. Outside 0 to 1000 on purpose: every value in that range is
  * a duty cycle somebody could measure, zero included.
