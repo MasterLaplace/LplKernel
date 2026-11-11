@@ -24,8 +24,8 @@ static uint64_t tickless_longest_sleep_cycles = 0u;
 static KernelWakeLatency_t tickless_wake_latency[PROCESSOR_SLEEP_HINT_MAX + 1u] = {{0}};
 static uint64_t tickless_probe_cycles = 0u;
 static uint32_t tickless_probed_depths = 0u;
-static uint32_t tickless_published_lead_sleeps = 0u;
-static uint32_t tickless_bound_lead_sleeps = 0u;
+static uint32_t tickless_wakes_planned_on_a_published_lead = 0u;
+static uint32_t tickless_wakes_planned_on_the_bound = 0u;
 
 /** How a sleep armed on the local timer ended. */
 typedef enum {
@@ -154,7 +154,7 @@ static uint64_t tickless_probe_span_cycles(void)
 }
 
 /**
- * @brief The exit latency ACPI `_CST` publishes for @p depth on the processor that runs the call.
+ * @brief The entry and exit latency ACPI `_CST` publishes for @p depth on the processor that runs the call.
  * @param depth A hint index.
  * @return Cycles, or KERNEL_WAKE_LATENCY_UNPUBLISHED when the processor's CPU slot publishes no state for that depth.
  */
@@ -222,29 +222,31 @@ static uint32_t tickless_probe(uint32_t depth)
 
 /**
  * @brief Readies a sleep at @p depth, which no wake-up taught: probes the depth first when its probe ends before the
- *        plan's next wake-up and it was not probed since the tick stopped, then counts the sleep by where its lead
- *        comes from while it is still assumed.
+ *        plan's next wake-up and it was not probed since the tick stopped, then counts the wake-up the plan chooses
+ *        by where its lead comes from while it is still assumed.
  * @param plan  The session's plan.
  * @param depth The depth the sleep enters.
  * @return The microseconds a probe took, or 0.
  */
 static uint32_t tickless_ready_an_unlearned_depth(KernelWakePlan_t *plan, uint32_t depth)
 {
-    (void) tickless_assume_a_lead(depth);
+    KernelWakeLeadSource_t source = tickless_assume_a_lead(depth);
     const uint64_t now = asmutils_read_timestamp_counter();
     const uint64_t planned =
         kernel_wake_planner_next_wake(plan, kernel_wake_latency_lead(&tickless_wake_latency[depth]));
     const bool probed = ((tickless_probed_depths >> depth) & 1u) != 0u;
-    const uint32_t probe_microseconds = kernel_tickless_probes_before_sleeping(
-                                            probed, planned > now ? planned - now : 0u, tickless_probe_span_cycles()) ?
-                                            tickless_probe(depth) :
-                                            0u;
+    uint32_t probe_microseconds = 0u;
 
-    const KernelWakeLeadSource_t source = tickless_assume_a_lead(depth);
+    if (kernel_tickless_probes_before_sleeping(probed, planned > now ? planned - now : 0u,
+                                               tickless_probe_span_cycles()))
+    {
+        probe_microseconds = tickless_probe(depth);
+        source = tickless_assume_a_lead(depth);
+    }
     if (source == KERNEL_WAKE_LEAD_PUBLISHED)
-        ++tickless_published_lead_sleeps;
+        ++tickless_wakes_planned_on_a_published_lead;
     else if (source == KERNEL_WAKE_LEAD_BOUND)
-        ++tickless_bound_lead_sleeps;
+        ++tickless_wakes_planned_on_the_bound;
     return probe_microseconds;
 }
 
@@ -407,9 +409,9 @@ bool kernel_tickless_probes_before_sleeping(bool probed, uint64_t until_the_wake
     return !probed && until_the_wake >= probe_span;
 }
 
-uint32_t kernel_tickless_sleeps_on_a_published_lead(void) { return tickless_published_lead_sleeps; }
+uint32_t kernel_tickless_wakes_planned_on_a_published_lead(void) { return tickless_wakes_planned_on_a_published_lead; }
 
-uint32_t kernel_tickless_sleeps_on_the_bound(void) { return tickless_bound_lead_sleeps; }
+uint32_t kernel_tickless_wakes_planned_on_the_bound(void) { return tickless_wakes_planned_on_the_bound; }
 
 uint64_t kernel_tickless_nanoseconds_from_cycles(uint64_t cycles)
 {
@@ -423,3 +425,16 @@ uint64_t kernel_tickless_nanoseconds_from_cycles(uint64_t cycles)
 uint64_t kernel_tickless_slept_microseconds(void) { return tickless_slept_microseconds; }
 
 uint32_t kernel_tickless_nominal_frequency_hz(void) { return tickless_nominal_hz; }
+
+#if defined(LPL_KERNEL_ENABLE_SMOKE_TESTS)
+void kernel_tickless_debug_exchange_depth_estimate(uint32_t depth, KernelWakeLatency_t *estimate)
+{
+    if (depth > PROCESSOR_SLEEP_HINT_MAX)
+        return;
+
+    const KernelWakeLatency_t taken = tickless_wake_latency[depth];
+    tickless_wake_latency[depth] = *estimate;
+    *estimate = taken;
+    tickless_probed_depths &= ~(1u << depth);
+}
+#endif

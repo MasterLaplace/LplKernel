@@ -210,12 +210,12 @@ KERNEL_TEST(sleeps_of_increasing_length_are_learned_from_the_longest)
 }
 
 #define WAKE_LATENCY_TEST_SHALLOWER 1000u  /**< A shallower depth's learned lead, in cycles. */
-#define WAKE_LATENCY_TEST_PUBLISHED 3000u  /**< A deeper depth's published exit latency, in cycles. */
+#define WAKE_LATENCY_TEST_PUBLISHED 3000u  /**< A deeper depth's published entry and exit latency, in cycles. */
 #define WAKE_LATENCY_TEST_BOUND     50000u /**< The bound a depth with nothing published takes, in cycles. */
 
 /**
- * @brief A depth no wake-up taught leads by a shallower depth's lead plus the exit latency firmware publishes for it,
- *        never zero, and its first wake-up is bounded by twice that, as by any assumed lead.
+ * @brief A depth no wake-up taught leads by a shallower depth's lead plus the entry and exit latency firmware publishes
+ * for it, never zero, and its first wake-up is bounded by twice that, as by any assumed lead.
  */
 KERNEL_TEST(a_depth_that_learned_nothing_leads_by_a_shallower_lead_plus_its_published_latency)
 {
@@ -234,12 +234,14 @@ KERNEL_TEST(a_depth_that_learned_nothing_leads_by_a_shallower_lead_plus_its_publ
 }
 
 /**
- * @brief A depth firmware publishes nothing for takes the bound, and so does one whose published latency is zero with
- *        no shallower lead: a sum of zero is the lead the defect armed with.
+ * @brief A depth firmware publishes nothing for takes the bound, and so does one no shallower depth of which learned a
+ *        lead, whatever it publishes: its latency alone leaves out the timer's, and zero is the lead the defect armed
+ *        with.
  */
-KERNEL_TEST(a_depth_with_nothing_published_or_a_sum_of_zero_leads_by_the_bound)
+KERNEL_TEST(a_depth_with_nothing_published_or_no_shallower_lead_leads_by_the_bound)
 {
     KernelWakeLatency_t unpublished = {0};
+    KernelWakeLatency_t alone = {0};
     KernelWakeLatency_t zero = {0};
 
     kernel_test_check(test,
@@ -248,6 +250,11 @@ KERNEL_TEST(a_depth_with_nothing_published_or_a_sum_of_zero_leads_by_the_bound)
                                                            WAKE_LATENCY_TEST_BOUND) == KERNEL_WAKE_LEAD_BOUND &&
                           kernel_wake_latency_lead(&unpublished) == WAKE_LATENCY_TEST_BOUND,
                       "nothing published: the bound, whatever was learned at a shallower depth");
+    kernel_test_check(test,
+                      kernel_wake_latency_assume_unlearned(&alone, 0u, WAKE_LATENCY_TEST_PUBLISHED,
+                                                           WAKE_LATENCY_TEST_BOUND) == KERNEL_WAKE_LEAD_BOUND &&
+                          kernel_wake_latency_lead(&alone) == WAKE_LATENCY_TEST_BOUND,
+                      "3000 published and no shallower lead: the bound, not the published latency alone");
     kernel_test_check(test,
                       kernel_wake_latency_assume_unlearned(&zero, 0u, 0u, WAKE_LATENCY_TEST_BOUND) ==
                               KERNEL_WAKE_LEAD_BOUND &&

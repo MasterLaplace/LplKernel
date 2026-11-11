@@ -35,14 +35,14 @@ static uint32_t wake_latency_envelope(const KernelWakeLatency_t *estimate)
 }
 
 /**
- * @brief The lead a shallower depth's lead and a published exit latency give: their sum, saturated.
+ * @brief The lead a shallower depth's lead and a published entry and exit latency give: their sum, saturated.
  * @param shallower The lead learned at a shallower depth, or 0.
- * @param published The published exit latency, or KERNEL_WAKE_LATENCY_UNPUBLISHED.
- * @return The sum, or 0 when nothing is published.
+ * @param published The published entry and exit latency, or KERNEL_WAKE_LATENCY_UNPUBLISHED.
+ * @return The sum, or 0 when nothing is published or no shallower depth learned a lead.
  */
 static uint64_t wake_latency_published_lead(uint64_t shallower, uint64_t published)
 {
-    if (published == KERNEL_WAKE_LATENCY_UNPUBLISHED)
+    if (published == KERNEL_WAKE_LATENCY_UNPUBLISHED || shallower == 0u)
         return 0u;
     return published > UINT64_MAX - shallower ? UINT64_MAX : shallower + published;
 }

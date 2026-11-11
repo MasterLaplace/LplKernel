@@ -47,6 +47,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <kernel/power/wake_latency.h>
 #include <kernel/power/wake_planner.h>
 
 #ifdef __cplusplus
@@ -63,7 +64,7 @@ extern "C" {
  */
 #define KERNEL_TICKLESS_MAX_SLEEP_MICROSECONDS 1000000u
 
-#define KERNEL_TICKLESS_PROBES                   4u  /**< Sleeps the first stop of the tick probes a depth with. */
+#define KERNEL_TICKLESS_PROBES                   4u  /**< Sleeps a probe of a depth takes. */
 #define KERNEL_TICKLESS_FIRST_PROBE_MICROSECONDS 16u /**< The first probe's length. */
 #define KERNEL_TICKLESS_PROBE_GROWTH             4u  /**< How many times longer each probe is than the one before. */
 
@@ -153,10 +154,10 @@ uint32_t kernel_tickless_microseconds_from_cycles(uint64_t cycles);
  *          taught, entered since by a change of depth, probes it first when its probe ends before the plan's next
  *          wake-up and the depth was not probed since the tick stopped
  *          (@ref kernel_tickless_probes_before_sleeping). Until a wake-up teaches it, a depth leads by the lead
- *          learned at a shallower depth plus the exit latency ACPI `_CST` publishes for it, or by half the longest
- *          probe's length when firmware publishes none (@ref kernel_wake_latency_assume_unlearned), never by zero;
- *          such sleeps are counted (@ref kernel_tickless_sleeps_on_a_published_lead,
- *          @ref kernel_tickless_sleeps_on_the_bound).
+ *          learned at a shallower depth plus the entry and exit latency ACPI `_CST` publishes for it, or by half the
+ *          longest probe's length when firmware publishes none or no shallower depth learned a lead
+ *          (@ref kernel_wake_latency_assume_unlearned), never by zero; the wake-ups planned so are counted
+ *          (@ref kernel_tickless_wakes_planned_on_a_published_lead, @ref kernel_tickless_wakes_planned_on_the_bound).
  *          A wake-up already due is served without sleeping, and one further than
  *          @ref KERNEL_TICKLESS_MAX_SLEEP_MICROSECONDS is cut to it. In TSC-deadline mode the armed cycle is
  *          the deadline, so the interrupt never comes before it; in count mode a count stands for it, through
@@ -198,9 +199,9 @@ uint32_t kernel_tickless_early_wakes(void);
 /**
  * @brief How many cycles before a window's latest a sleep at the current depth arms its wake-up: what the timer's
  *        wake-ups at that depth taught, the probe's first, over every session of this boot.
- * @return The lead: 0 before the depth's first probe or sleep; while the timer has ended neither a probe nor a sleep
- *         at that depth, the one assumed (@ref kernel_wake_latency_assume_unlearned), or half the longest probe's
- * length after a probe no sleep of which the timer ended; then what those wake-ups taught.
+ * @return The lead: 0 before the depth's first probe or sleep; half the longest probe's length after a probe no sleep
+ *         of which the timer ended, until a sleep at that depth assumes one
+ *         (@ref kernel_wake_latency_assume_unlearned); then what the timer's wake-ups taught.
  */
 uint64_t kernel_tickless_wake_lead_cycles(void);
 
@@ -229,18 +230,19 @@ uint64_t kernel_tickless_probe_cycles(void);
 bool kernel_tickless_probes_before_sleeping(bool probed, uint64_t until_the_wake, uint64_t probe_span);
 
 /**
- * @brief Sleeps armed at a depth no wake-up taught, on a shallower depth's lead plus the exit latency ACPI `_CST`
- *        publishes for it.
+ * @brief Wake-ups the plan chose at a depth no wake-up taught, on a shallower depth's lead plus the entry and exit
+ *        latency ACPI `_CST` publishes for it: one already due, served without sleeping, included.
  * @return The count, over every session of this boot.
  */
-uint32_t kernel_tickless_sleeps_on_a_published_lead(void);
+uint32_t kernel_tickless_wakes_planned_on_a_published_lead(void);
 
 /**
- * @brief Sleeps armed at a depth no wake-up taught and firmware publishes no latency for, on half the longest
- *        probe's length.
+ * @brief Wake-ups the plan chose at a depth no wake-up taught, on half the longest probe's length, firmware publishing
+ *        no latency for the depth or no shallower depth having learned a lead: one already due, served without
+ *        sleeping, included.
  * @return The count, over every session of this boot.
  */
-uint32_t kernel_tickless_sleeps_on_the_bound(void);
+uint32_t kernel_tickless_wakes_planned_on_the_bound(void);
 
 /**
  * @brief The nanoseconds @p cycles of the timestamp counter last, rounded down, whole seconds first so that the
@@ -261,6 +263,17 @@ uint64_t kernel_tickless_slept_microseconds(void);
  * @return Hertz, or 0 before any session.
  */
 uint32_t kernel_tickless_nominal_frequency_hz(void);
+
+#if defined(LPL_KERNEL_ENABLE_SMOKE_TESTS)
+/**
+ * @brief Exchanges the estimate sleeps at @p depth arm with for @p estimate, and forgets that the depth was probed
+ * since the tick stopped, so that a debug kernel's tests make a depth unlearned with a zeroed estimate, at the one
+ *        depth QEMU offers, then give it back the estimate they took out.
+ * @param depth    A hint index; one past PROCESSOR_SLEEP_HINT_MAX exchanges nothing.
+ * @param estimate The estimate to put in; receives the one taken out.
+ */
+void kernel_tickless_debug_exchange_depth_estimate(uint32_t depth, KernelWakeLatency_t *estimate);
+#endif
 
 #ifdef __cplusplus
 }
