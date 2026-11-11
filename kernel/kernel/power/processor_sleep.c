@@ -194,18 +194,12 @@ void kernel_processor_sleep_initialize(void)
 
     processor_sleep_monitor_available = false;
     processor_sleep_monitor_line = 0u;
-    processor_sleep_sleeps = 0u;
-    processor_sleep_skipped = 0u;
-    processor_sleep_halts = 0u;
-    processor_sleep_asleep = 0u;
-    processor_sleep_awake = 0u;
-    processor_sleep_last_wake = 0u;
     processor_sleep_available_hints = 0u;
     processor_sleep_hint = PROCESSOR_SLEEP_HINT_C1;
     processor_sleep_clamped = 0u;
     processor_sleep_interrupt_break = false;
     processor_sleep_published_duty = KERNEL_PROCESSOR_SLEEP_DUTY_UNMEASURED;
-    kernel_wakeup_accounting_reset();
+    kernel_processor_sleep_begin_accounting();
 
     if (!processor_sleep_read_monitor(&line, &ecx, &edx))
         return;
@@ -215,6 +209,17 @@ void kernel_processor_sleep_initialize(void)
     processor_sleep_interrupt_break = (ecx & PROCESSOR_SLEEP_CPUID_INTERRUPT_BREAK_BIT) != 0u;
     processor_sleep_available_hints = kernel_processor_sleep_usable_hints(
         kernel_processor_sleep_enumerated_hints(edx), advanced_pic_timer_backend_always_runs() != 0u);
+}
+
+void kernel_processor_sleep_begin_accounting(void)
+{
+    processor_sleep_sleeps = 0u;
+    processor_sleep_skipped = 0u;
+    processor_sleep_halts = 0u;
+    processor_sleep_asleep = 0u;
+    processor_sleep_awake = 0u;
+    processor_sleep_last_wake = 0u;
+    kernel_wakeup_accounting_reset();
 }
 
 bool kernel_processor_sleep_has_monitor(void) { return processor_sleep_monitor_available; }
@@ -320,5 +325,10 @@ bool kernel_processor_sleep_request_hint(uint32_t hint)
 }
 
 uint32_t kernel_processor_sleep_active_hint(void) { return processor_sleep_hint; }
+
+uint32_t kernel_processor_sleep_depth(void)
+{
+    return processor_sleep_monitor_available ? processor_sleep_hint : PROCESSOR_SLEEP_HINT_C1;
+}
 
 uint32_t kernel_processor_sleep_clamped_count(void) { return processor_sleep_clamped; }

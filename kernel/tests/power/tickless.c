@@ -158,24 +158,47 @@ KERNEL_TEST(stopping_the_tick_needs_a_plan_with_room_for_its_duty)
 }
 
 /**
- * @brief From the first stopped tick of the boot, a sleep arms its wake-up early: by the assumed lead before the timer
- *        has ended any sleep, then by what the timer's wake-ups taught. Placed before every other test that stops the
- *        tick, so that on a boot that runs this file first, the lead it reads is the assumed one.
+ * @brief The first stop of the tick in a boot probes the depth sleeps enter, before any duty sleeps: the lead is
+ *        measured, from KERNEL_TICKLESS_PROBES sleeps at most, which, when none was cut short, last at least the
+ *        probes' lengths; a later stop at the same depth probes it no more. Placed before every other test that stops
+ * the tick, so that on a boot that runs this file first, its stop is the one that probes.
  */
-KERNEL_TEST(a_stopped_tick_leads_its_wake_ups_from_the_first_one)
+KERNEL_TEST(the_first_stop_of_the_tick_probes_the_depth_sleeps_enter)
 {
     if (!tickless_test_can_stop_the_tick(test))
         return;
 
     (void) tickless_test_begin();
+    const uint32_t unprobed = kernel_tickless_wake_samples();
+    const uint64_t slept_before = kernel_tickless_slept_microseconds();
     const bool stopped = kernel_tickless_enable(true, &tickless_test_plan);
+    const uint64_t slept = kernel_tickless_slept_microseconds() - slept_before;
+    const uint32_t probed = kernel_tickless_wake_samples();
     const uint64_t lead = kernel_tickless_wake_lead_cycles();
+    const uint64_t probe = kernel_tickless_probe_cycles();
+    kernel_tickless_disable();
+    const bool again = kernel_tickless_enable(true, &tickless_test_plan);
+    const uint32_t probed_again = kernel_tickless_wake_samples();
     kernel_tickless_disable();
 
-    kernel_test_check(test, stopped, "the tick stops");
-    kernel_test_check(test, lead != 0u, "and the lead is already set, assumed or learned");
+    uint64_t lengths = 0u;
+    for (uint32_t index = 0u, length = KERNEL_TICKLESS_FIRST_PROBE_MICROSECONDS; index < KERNEL_TICKLESS_PROBES;
+         ++index, length *= KERNEL_TICKLESS_PROBE_GROWTH)
+        lengths += kernel_tickless_cycles_from_microseconds(length);
+
+    kernel_test_check(test, stopped && again, "the tick stops, twice");
+    kernel_test_check(test,
+                      unprobed != 0u || (probed >= 1u && probed <= KERNEL_TICKLESS_PROBES &&
+                                         (probed < KERNEL_TICKLESS_PROBES || probe >= lengths) &&
+                                         slept == kernel_tickless_microseconds_from_cycles(probe)),
+                      "a depth no session probed is probed by the first stop, its sleeps as long as the probes and "
+                      "counted as time with the tick stopped");
+    kernel_test_check(test, probed != 0u && lead != 0u, "so the lead is measured before any duty sleeps");
+    kernel_test_check(test, probed_again == probed, "and a later stop probes it no more");
     kernel_test_check(test, tickless_test_tick_runs(), "and the tick runs again");
-    kernel_test_measure(test, "wake_lead_us", kernel_tickless_microseconds_from_cycles(lead));
+    kernel_test_measure(test, "probe_samples", probed);
+    kernel_test_measure(test, "probe_ns", (uint32_t) kernel_tickless_nanoseconds_from_cycles(probe));
+    kernel_test_measure(test, "wake_lead_ns", (uint32_t) kernel_tickless_nanoseconds_from_cycles(lead));
 }
 
 /**
@@ -266,8 +289,8 @@ KERNEL_TEST(a_sleep_on_the_plan_serves_its_duty_when_its_window_is_due)
     kernel_test_check(test, tickless_test_tick_runs(), "and the tick runs again");
     kernel_test_measure(test, "sleeps", sleeps);
     kernel_test_measure(test, "slept_us", slept);
-    kernel_test_measure(test, "overshoot_us",
-                        kernel_tickless_microseconds_from_cycles(tickless_test_plan.latest_overshoot));
+    kernel_test_measure(test, "overshoot_ns",
+                        (uint32_t) kernel_tickless_nanoseconds_from_cycles(tickless_test_plan.latest_overshoot));
 }
 
 /**
@@ -359,10 +382,10 @@ KERNEL_TEST(a_deadline_wakes_the_core_by_the_interrupts_latency_after_it)
         return;
 
     const uint32_t duty = tickless_test_begin();
+    const bool stopped = kernel_tickless_enable(true, &tickless_test_plan);
     const uint32_t early_before = kernel_tickless_early_wakes();
     const uint32_t halts_before = kernel_processor_sleep_count();
     const uint32_t timer_before = kernel_wakeup_accounting_get_vector_count(TICKLESS_TEST_TIMER_VECTOR);
-    const bool stopped = kernel_tickless_enable(true, &tickless_test_plan);
     uint64_t error_sum = 0u;
     uint64_t error_max = 0u;
 
@@ -398,9 +421,9 @@ KERNEL_TEST(a_deadline_wakes_the_core_by_the_interrupts_latency_after_it)
                                   "the timer ended at most two sleeps per deadline, over the run");
     kernel_test_check(test, tickless_test_tick_runs(), "and the tick runs again");
     kernel_test_measure(test, "tsc_deadline", deadlines ? 1u : 0u);
-    kernel_test_measure(test, "wake_error_mean_us",
-                        kernel_tickless_microseconds_from_cycles(error_sum / TICKLESS_TEST_DEADLINES));
-    kernel_test_measure(test, "wake_error_max_us", kernel_tickless_microseconds_from_cycles(error_max));
+    kernel_test_measure(test, "wake_error_mean_ns",
+                        (uint32_t) kernel_tickless_nanoseconds_from_cycles(error_sum / TICKLESS_TEST_DEADLINES));
+    kernel_test_measure(test, "wake_error_max_ns", (uint32_t) kernel_tickless_nanoseconds_from_cycles(error_max));
     kernel_test_measure(test, "wasted_wakes", tickless_test_plan.wasted_wakes);
     kernel_test_measure(test, "early_wakes", early);
     kernel_test_measure(test, "sleeps", halts);
@@ -535,12 +558,12 @@ KERNEL_TEST(a_lead_learned_from_the_wake_ups_serves_wide_windows_by_their_latest
     kernel_test_measure(test, "late_wide", late_wide);
     kernel_test_measure(test, "late_narrow", late_narrow);
     kernel_test_measure(test, "timer_wakes_wide", timer_wide);
-    kernel_test_measure(test, "wake_lead_us", kernel_tickless_microseconds_from_cycles(lead));
-    kernel_test_measure(test, "lead_mean_us",
-                        kernel_tickless_microseconds_from_cycles(lead_sum / TICKLESS_TEST_LED_ROUNDS));
-    kernel_test_measure(test, "overshoot_wide_us", kernel_tickless_microseconds_from_cycles(overshoot_wide));
-    kernel_test_measure(test, "margin_mean_us",
-                        on_time != 0u ? kernel_tickless_microseconds_from_cycles(margin_sum / on_time) : 0u);
+    kernel_test_measure(test, "wake_lead_ns", (uint32_t) kernel_tickless_nanoseconds_from_cycles(lead));
+    kernel_test_measure(test, "lead_mean_ns",
+                        (uint32_t) kernel_tickless_nanoseconds_from_cycles(lead_sum / TICKLESS_TEST_LED_ROUNDS));
+    kernel_test_measure(test, "overshoot_wide_ns", (uint32_t) kernel_tickless_nanoseconds_from_cycles(overshoot_wide));
+    kernel_test_measure(test, "margin_mean_ns",
+                        on_time != 0u ? (uint32_t) kernel_tickless_nanoseconds_from_cycles(margin_sum / on_time) : 0u);
 }
 
 /**
@@ -589,5 +612,5 @@ KERNEL_TEST(a_sleep_another_interrupt_ends_teaches_the_lead_nothing)
     kernel_test_check(test, sent && early == 1u, "the interrupt ends the next sleep before its deadline");
     kernel_test_check(test, lead_before != 0u && lead_after == lead_before, "and that sleep leaves the lead as it was");
     kernel_test_check(test, tickless_test_tick_runs(), "and the tick runs again");
-    kernel_test_measure(test, "wake_lead_us", kernel_tickless_microseconds_from_cycles(lead_after));
+    kernel_test_measure(test, "wake_lead_ns", (uint32_t) kernel_tickless_nanoseconds_from_cycles(lead_after));
 }

@@ -194,6 +194,7 @@ bool kernel_satellite_app_run(uint32_t iterations, SatelliteReport_t *out)
     kernel_wake_planner_initialize(&satellite_plan);
     capture.duty = kernel_wake_planner_declare(&satellite_plan, satellite_serve_capture, &capture);
     (void) kernel_tickless_enable(true, &satellite_plan);
+    kernel_processor_sleep_begin_accounting();
     const uint32_t passes_before = kernel_reconciler_get_periodic_pass_count();
     capture.frame_cycles = kernel_tickless_cycles_from_microseconds(SATELLITE_FRAME_MICROSECONDS);
     satellite_probe_output_limiter(&report);
@@ -215,7 +216,8 @@ bool kernel_satellite_app_run(uint32_t iterations, SatelliteReport_t *out)
     report.late_services = satellite_plan.late_services;
     report.batched_wakes = satellite_plan.batched_wakes;
     report.overshoot_microseconds = kernel_tickless_microseconds_from_cycles(satellite_plan.latest_overshoot);
-    report.wake_lead_microseconds = kernel_tickless_microseconds_from_cycles(kernel_tickless_wake_lead_cycles());
+    report.wake_lead_nanoseconds =
+        (uint32_t) kernel_tickless_nanoseconds_from_cycles(kernel_tickless_wake_lead_cycles());
     report.reconciler_passes = kernel_reconciler_get_periodic_pass_count() - passes_before;
     report.sleeps = kernel_processor_sleep_count();
     report.sleeps_skipped = kernel_processor_sleep_skipped_count();

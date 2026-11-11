@@ -63,3 +63,10 @@ void kernel_wake_latency_assume(KernelWakeLatency_t *estimate, uint64_t lead)
         estimate->lead =
             lead > KERNEL_WAKE_LATENCY_LONGEST_CYCLES ? KERNEL_WAKE_LATENCY_LONGEST_CYCLES : (uint32_t) lead;
 }
+
+void kernel_wake_latency_learn_from_the_longest(KernelWakeLatency_t *estimate, const uint64_t *latencies,
+                                                uint32_t count)
+{
+    for (uint32_t index = count; index > 0u; --index)
+        kernel_wake_latency_learn(estimate, latencies[index - 1u]);
+}
