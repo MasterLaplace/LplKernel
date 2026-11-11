@@ -235,6 +235,28 @@ KERNEL_TEST(the_monitor_probe_arms_nothing)
 }
 
 /**
+ * @brief The hints this processor enumerates are those CPUID leaf 5 gives where the pair is implemented, and none
+ *        where it is not, every QEMU model (#818); reading them arms nothing.
+ */
+KERNEL_TEST(the_hints_this_processor_enumerates_are_read_without_arming_the_module)
+{
+    const uint32_t available = kernel_processor_sleep_available_hints();
+    const uint32_t hints = kernel_processor_sleep_hints_enumerated_by_this_processor();
+    uint32_t eax = 0u;
+    uint32_t ebx = 0u;
+    uint32_t ecx = 0u;
+    uint32_t edx = 0u;
+
+    asmutils_cpuid(5u, 0u, &eax, &ebx, &ecx, &edx);
+    kernel_test_check(
+        test,
+        hints == (kernel_processor_sleep_monitor_implemented() ? kernel_processor_sleep_enumerated_hints(edx) : 0u),
+        "the hints are leaf 5's where the pair is implemented, none otherwise");
+    kernel_test_check(test, kernel_processor_sleep_available_hints() == available, "the read adopts no hint");
+    kernel_test_measure(test, "enumerated_hints", hints);
+}
+
+/**
  * @brief A wait on a word that already moved is skipped, one on a word that did not really sleeps,
  *        and whatever ended that sleep is named.
  *

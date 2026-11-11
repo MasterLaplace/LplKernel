@@ -150,6 +150,15 @@ uint32_t kernel_processor_sleep_monitor_line_bytes(void);
 uint32_t kernel_processor_sleep_enumerated_hints(uint32_t leaf5_edx);
 
 /**
+ * @brief Which MWAIT hints this processor enumerates, read from CPUID without arming the module: every sleep keeps
+ *        the instruction it had.
+ *
+ * @return What @ref kernel_processor_sleep_enumerated_hints gives CPUID leaf 5's EDX when the pair is implemented, as
+ *         @ref kernel_processor_sleep_monitor_implemented says; zero otherwise.
+ */
+uint32_t kernel_processor_sleep_hints_enumerated_by_this_processor(void);
+
+/**
  * @brief Which of the enumerated hints a sleep may take: every one where the local timer always runs, and C1's
  *        alone where it may stop.
  *

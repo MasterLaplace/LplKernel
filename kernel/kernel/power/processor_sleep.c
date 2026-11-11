@@ -234,6 +234,15 @@ bool kernel_processor_sleep_monitor_implemented(void)
     return processor_sleep_read_monitor(&line, &ecx, &edx);
 }
 
+uint32_t kernel_processor_sleep_hints_enumerated_by_this_processor(void)
+{
+    uint32_t line = 0u;
+    uint32_t ecx = 0u;
+    uint32_t edx = 0u;
+
+    return processor_sleep_read_monitor(&line, &ecx, &edx) ? kernel_processor_sleep_enumerated_hints(edx) : 0u;
+}
+
 uint32_t kernel_processor_sleep_monitor_line_bytes(void) { return processor_sleep_monitor_line; }
 
 ProcessorSleepMode_t processor_sleep_until_write(const volatile uint32_t *watched, uint32_t expected)
