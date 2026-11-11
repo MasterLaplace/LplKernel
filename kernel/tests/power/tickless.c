@@ -713,7 +713,7 @@ KERNEL_TEST(a_depth_entered_with_the_tick_stopped_is_probed_at_its_first_sleep)
 /** @name Windows armed at a depth made to have learned nothing, from the arming, in microseconds
  *  @{ */
 #define TICKLESS_TEST_NEAR_OPENS_MICROSECONDS  100u   /**< A near one opens. */
-#define TICKLESS_TEST_NEAR_CLOSES_MICROSECONDS 1000u  /**< It closes, the bound's wake-up nearer than a probe ends. */
+#define TICKLESS_TEST_NEAR_CLOSES_MICROSECONDS 3000u  /**< It closes, the bound's wake-up nearer than a probe ends. */
 #define TICKLESS_TEST_FAR_OPENS_MICROSECONDS   20000u /**< A far one opens, past any probe. */
 #define TICKLESS_TEST_FAR_CLOSES_MICROSECONDS  22000u /**< It closes. */
 #define TICKLESS_TEST_DUE_CLOSES_MICROSECONDS  100u   /**< One open from the arming closes nearer than the bound. */
@@ -804,6 +804,9 @@ static TicklessTestUnlearned_t tickless_test_serve_at_an_unlearned_depth(uint32_
  * @brief A window whose wake-up, a bound before its latest, comes before a probe would end is served at a depth that
  *        learned nothing without a probe, its wake-up planned on the bound, the shallowest depth having no shallower
  *        lead, and the depth learns from that sleep; what the sleeps return is the time counted slept.
+ *
+ * @details The window closes 3000 us after its arming: its wake-up comes 2488 us after it, short of the 3408 us a
+ *          probe may take, and long after the 1260 us TCG took to plan a window that closed at 1000 us (#834).
  */
 KERNEL_TEST(a_near_window_at_a_depth_that_learned_nothing_is_planned_on_the_bound_without_a_probe)
 {
@@ -815,6 +818,7 @@ KERNEL_TEST(a_near_window_at_a_depth_that_learned_nothing_is_planned_on_the_boun
 
     kernel_test_check(test, seen.stopped && seen.served, "the tick stops and the window is served");
     kernel_test_check(test, seen.probes == 0u, "no probe, which would end after the wake-up");
+    kernel_test_check(test, seen.sleeps >= 1u, "the window is slept on, not found due once its wake-up is planned");
     kernel_test_check(test, seen.on_the_bound >= 1u && seen.on_a_published == 0u,
                       "the wake-up is planned on the bound, never on a published latency alone");
     kernel_test_check(test, seen.samples >= 1u || seen.on_the_bound > 1u,
@@ -822,6 +826,8 @@ KERNEL_TEST(a_near_window_at_a_depth_that_learned_nothing_is_planned_on_the_boun
     kernel_test_check(test, seen.returned == seen.slept, "what the sleeps return is the time counted slept");
     kernel_test_measure(test, "near_wakes_on_bound", seen.on_the_bound);
     kernel_test_measure(test, "near_samples", seen.samples);
+    kernel_test_measure(test, "near_sleeps", seen.sleeps);
+    kernel_test_measure(test, "near_slept_us", (uint32_t) seen.slept);
 }
 
 /**
