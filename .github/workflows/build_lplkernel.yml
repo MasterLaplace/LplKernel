@@ -216,6 +216,12 @@ jobs:
     - name: The rule the slack oracle compares acpiexec's two runs by
       run: python3 -I -B tools/acpi/oracles/acpiexec_slack.py --self-test
 
+    - name: The rules the oracle of each MWAIT hint's latency and residency takes from Linux
+      run: python3 -I -B tools/acpi/oracles/linux_idle_hints.py --self-test
+
+    - name: The measure that chose the residency rule against intel_idle's tables
+      run: python3 -I -B tools/acpi/oracles/against_intel_idle_tables.py --self-test
+
     - name: The rule a real machine's C-states are compared with Linux's cpuidle by
       run: python3 -I -B tools/acpi/oracles/against_linux_cpuidle.py --self-test
 

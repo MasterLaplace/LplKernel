@@ -1336,6 +1336,91 @@ KERNEL_TEST(an_mwait_hint_takes_the_longest_latency_of_the_states_that_enter_its
 }
 
 /**
+ * @brief Whether hint @p hint of @p idle resides @p expected, or, with @p expected NULL, has no residency, its output
+ *        then untouched.
+ */
+static bool idle_residency_is(const AdvancedConfigurationAndPowerInterfaceProcessorIdle_t *idle, uint32_t hint,
+                              const uint32_t *expected)
+{
+    const uint32_t untouched = 0xA5A5A5A5u;
+    uint32_t residency = untouched;
+    const bool found = advanced_configuration_and_power_interface_processor_idle_residency(idle, hint, &residency);
+
+    return expected != NULL ? found && residency == *expected : !found && residency == untouched;
+}
+
+/**
+ * @brief The residency an MWAIT hint takes, from the states that enter its C-state as its latency reads them: a C1
+ *        state's latency, three times the latency of a deeper one, as Linux's intel_idle derives it from _CST
+ *        (`intel_idle_init_cstates_acpi`, drivers/idle/intel_idle.c, v6.12); several states give the longest
+ *        residency, which need not be the one of the longest latency; a product past a double word is the largest
+ *        one; a hint no state enters has none.
+ */
+KERNEL_TEST(an_mwait_hint_resides_as_long_as_the_longest_residency_linux_derives_from_its_states)
+{
+    static AdvancedConfigurationAndPowerInterfaceProcessorIdle_t idle;
+    static const uint32_t c1 = 2u, sub_states = 450u, deeper_rule = 15u, zero = 0u, largest = 0xFFFFFFFFu;
+    const IdleState_t halt = {.entry = {.space = IDLE_FIXED_HARDWARE}, .type = 1u, .latency = 1u, .power = 1000u};
+
+    memset(&idle, 0, sizeof(idle));
+    idle.processor = 0x10u;
+    idle.count = 5u;
+    idle.states[0] = halt;
+    idle.states[1] = idle_monitor_wait(0x00u, 1u, 2u, 900u);
+    idle.states[2] = idle_monitor_wait(0x21u, 3u, 150u, 100u);
+    idle.states[3] = idle_monitor_wait(0x20u, 3u, 133u, 120u);
+    idle.states[4] = idle_port(0x414u, 1u, 2u, 70u, 300u);
+    idle.states[5] = idle_monitor_wait(0x30u, 3u, 400u, 50u);
+
+    kernel_test_check(test, idle_residency_is(&idle, 0u, &c1), "C1 resides as long as its longer latency, 2 us");
+    kernel_test_check(test, idle_residency_is(&idle, 2u, &sub_states), "hint 2 resides three times 150 us");
+    kernel_test_check(test, idle_residency_is(&idle, 1u, NULL), "C2 is an I/O port read only: hint 1 has none");
+    kernel_test_check(test, idle_residency_is(&idle, 3u, NULL), "hint 3's state lies past the count: none");
+
+    idle.count = 2u;
+    idle.states[0] = idle_monitor_wait(0x00u, 1u, 10u, 900u);
+    idle.states[1] = idle_monitor_wait(0x01u, 2u, 5u, 800u);
+    kernel_test_check(test, idle_residency_is(&idle, 0u, &deeper_rule),
+                      "a C2-type sub-state of C1 of 5 us resides 15 us, longer than the 10 us of the C1 of 10 us");
+
+    idle.count = 1u;
+    idle.states[0] = idle_monitor_wait(0x10u, 2u, 0u, 500u);
+    kernel_test_check(test, idle_residency_is(&idle, 1u, &zero), "a latency of zero resides zero, a residency");
+    idle.states[0].latency = 0x55555556u;
+    kernel_test_check(test, idle_residency_is(&idle, 1u, &largest),
+                      "three times 0x55555556 passes a double word and resides the largest one");
+    idle.states[0] = idle_monitor_wait(0x00u, 1u, largest, 500u);
+    kernel_test_check(test, idle_residency_is(&idle, 0u, &largest), "a C1 of the largest latency resides as long");
+
+    idle.count = 0u;
+    kernel_test_check(test, idle_residency_is(&idle, 0u, NULL), "a slot that publishes nothing gives no residency");
+}
+
+/**
+ * @brief The hints a slot publishes are those its states enter as the latency reads them: C1 for a state of type 1,
+ *        the C-state of an MWAIT of class 2 for the others; an I/O port read of C2 and a state past the count add
+ *        none.
+ */
+KERNEL_TEST(the_hints_a_slot_publishes_are_the_c_states_its_states_enter)
+{
+    static AdvancedConfigurationAndPowerInterfaceProcessorIdle_t idle;
+    const IdleState_t halt = {.entry = {.space = IDLE_FIXED_HARDWARE}, .type = 1u, .latency = 1u, .power = 1000u};
+
+    memset(&idle, 0, sizeof(idle));
+    idle.count = 3u;
+    idle.states[0] = halt;
+    idle.states[1] = idle_port(0x414u, 1u, 2u, 70u, 300u);
+    idle.states[2] = idle_monitor_wait(0x51u, 3u, 400u, 50u);
+    idle.states[3] = idle_monitor_wait(0x20u, 3u, 133u, 120u);
+
+    kernel_test_check(test, advanced_configuration_and_power_interface_processor_idle_hints(&idle) == 0x21u,
+                      "C1 by its halt and hint 5 by its MWAIT, not C2's port nor hint 2 past the count");
+    idle.count = 0u;
+    kernel_test_check(test, advanced_configuration_and_power_interface_processor_idle_hints(&idle) == 0u,
+                      "a slot that publishes nothing publishes no hint");
+}
+
+/**
  * @brief A processor finds the C-states of the CPU slot whose local APIC ID is its own, whatever the slot's place; an
  *        ID no slot has, or one only a slot past the table's count has, finds none.
  */

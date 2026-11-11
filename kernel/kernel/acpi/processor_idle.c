@@ -30,6 +30,7 @@
 #define PROCESSOR_IDLE_C1             1u   /**< The type of C1, which HLT enters whatever its register. */
 #define PROCESSOR_IDLE_HINT_SHIFT     4u   /**< Where MWAIT's hint holds its target C-state less one. */
 #define PROCESSOR_IDLE_HINT_MASK      0xFu /**< Its width. */
+#define PROCESSOR_IDLE_DEEPER_FACTOR  3u   /**< A deeper state's residency over its latency, as intel_idle reads it. */
 
 typedef AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t ProcessorIdleStatus_t;
 typedef AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t ProcessorIdleLoad_t;
@@ -50,6 +51,26 @@ static bool processor_idle_state_enters_hint(const ProcessorIdleState_t *state, 
     if (state->entry.space == PROCESSOR_IDLE_FIXED_HARDWARE && state->entry.bit_offset == PROCESSOR_IDLE_NATIVE_C_STATE)
         return ((state->entry.address >> PROCESSOR_IDLE_HINT_SHIFT) & PROCESSOR_IDLE_HINT_MASK) == hint;
     return hint == 0u && state->type == PROCESSOR_IDLE_C1;
+}
+
+/**
+ * @brief The residency Linux's intel_idle gives a _CST state: its latency for a C1, three times it otherwise, the
+ *        largest double word past it.
+ */
+static uint32_t processor_idle_state_residency(const ProcessorIdleState_t *state)
+{
+    if (state->type == PROCESSOR_IDLE_C1)
+        return state->latency;
+    return state->latency > UINT32_MAX / PROCESSOR_IDLE_DEEPER_FACTOR ? UINT32_MAX :
+                                                                        state->latency * PROCESSOR_IDLE_DEEPER_FACTOR;
+}
+
+/**
+ * @brief The states of @p idle a reader may read: its count, bounded by the states a slot holds.
+ */
+static uint32_t processor_idle_published_count(const ProcessorIdle_t *idle)
+{
+    return idle->count < PROCESSOR_IDLE_MAX_STATES ? idle->count : PROCESSOR_IDLE_MAX_STATES;
 }
 
 /**
@@ -615,7 +636,7 @@ const ProcessorIdle_t *advanced_configuration_and_power_interface_processor_idle
 bool advanced_configuration_and_power_interface_processor_idle_latency(const ProcessorIdle_t *idle, uint32_t hint,
                                                                        uint32_t *out_microseconds)
 {
-    const uint32_t count = idle->count < PROCESSOR_IDLE_MAX_STATES ? idle->count : PROCESSOR_IDLE_MAX_STATES;
+    const uint32_t count = processor_idle_published_count(idle);
     bool found = false;
     uint32_t longest = 0u;
 
@@ -629,6 +650,39 @@ bool advanced_configuration_and_power_interface_processor_idle_latency(const Pro
     if (found)
         *out_microseconds = longest;
     return found;
+}
+
+bool advanced_configuration_and_power_interface_processor_idle_residency(const ProcessorIdle_t *idle, uint32_t hint,
+                                                                         uint32_t *out_microseconds)
+{
+    const uint32_t count = processor_idle_published_count(idle);
+    bool found = false;
+    uint32_t longest = 0u;
+
+    for (uint32_t state = 0u; state < count; ++state)
+    {
+        if (!processor_idle_state_enters_hint(&idle->states[state], hint))
+            continue;
+        const uint32_t residency = processor_idle_state_residency(&idle->states[state]);
+        if (!found || residency > longest)
+            longest = residency;
+        found = true;
+    }
+    if (found)
+        *out_microseconds = longest;
+    return found;
+}
+
+uint32_t advanced_configuration_and_power_interface_processor_idle_hints(const ProcessorIdle_t *idle)
+{
+    const uint32_t count = processor_idle_published_count(idle);
+    uint32_t hints = 0u;
+
+    for (uint32_t state = 0u; state < count; ++state)
+        for (uint32_t hint = 0u; hint <= PROCESSOR_IDLE_HINT_MASK; ++hint)
+            if (processor_idle_state_enters_hint(&idle->states[state], hint))
+                hints |= 1u << hint;
+    return hints;
 }
 
 const char *advanced_configuration_and_power_interface_idle_control_name(uint32_t control)

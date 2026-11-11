@@ -190,6 +190,35 @@ extern bool advanced_configuration_and_power_interface_processor_idle_latency(
     const AdvancedConfigurationAndPowerInterfaceProcessorIdle_t *idle, uint32_t hint, uint32_t *out_microseconds);
 
 /**
+ * @brief The target residency of the C-state an MWAIT hint targets, derived from the states one CPU slot publishes:
+ *        how long a sleep must last for that state to save energy, before any measure of it.
+ *
+ * @details The states are those @ref advanced_configuration_and_power_interface_processor_idle_latency reads for the
+ *          hint. Each resides as long as its latency when its type is C1, three times its latency otherwise, the rule
+ *          Linux's intel_idle derives from _CST (`intel_idle_init_cstates_acpi`, drivers/idle/intel_idle.c, v6.12),
+ *          which _CST needs since it publishes no residency (ACPI 6.6 §8.4.1.1). Several states of the same target
+ *          give the longest residency, and a residency past 32 bits is the largest one.
+ *
+ * @param idle             The states one CPU slot publishes.
+ * @param hint             The C-state less one, bits 7:4 of MWAIT's EAX: 0 for C1.
+ * @param out_microseconds Receives the residency, in microseconds, when a state targets that C-state; untouched
+ *                         otherwise. Zero is a residency, that of a latency of zero.
+ * @return Whether a published state targets that C-state.
+ */
+extern bool advanced_configuration_and_power_interface_processor_idle_residency(
+    const AdvancedConfigurationAndPowerInterfaceProcessorIdle_t *idle, uint32_t hint, uint32_t *out_microseconds);
+
+/**
+ * @brief The MWAIT hints the states one CPU slot publishes target, as
+ *        @ref advanced_configuration_and_power_interface_processor_idle_latency reads them.
+ *
+ * @param idle The states one CPU slot publishes.
+ * @return Bit h set when a state targets hint h; zero when none does.
+ */
+extern uint32_t advanced_configuration_and_power_interface_processor_idle_hints(
+    const AdvancedConfigurationAndPowerInterfaceProcessorIdle_t *idle);
+
+/**
  * @brief The name the telemetry gives how step 8 handed _CST to the operating system.
  *
  * @param control An ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_IDLE_CONTROL_* value.
