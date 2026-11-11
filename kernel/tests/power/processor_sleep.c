@@ -443,3 +443,50 @@ KERNEL_TEST(each_sleep_enables_interrupts_right_before_it_halts_or_waits)
                                       monitor_wait, sizeof(monitor_wait)),
         "STI is right before MWAIT");
 }
+
+/**
+ * @brief Without a local timer that always runs, a sleep takes no hint past C1's, whatever CPUID enumerates; with one,
+ *        it takes every enumerated hint, gaps included.
+ */
+KERNEL_TEST(without_an_always_running_timer_no_hint_goes_past_c1)
+{
+    kernel_test_check(test,
+                      kernel_processor_sleep_usable_hints(0x7Fu, true) == 0x7Fu &&
+                          kernel_processor_sleep_usable_hints(0x11u, true) == 0x11u,
+                      "with it, every enumerated hint, gaps staying gaps");
+    kernel_test_check(test, kernel_processor_sleep_usable_hints(0x7Fu, false) == 0x01u,
+                      "without it, C1's alone of seven");
+    kernel_test_check(test, kernel_processor_sleep_usable_hints(0x7Eu, false) == 0u,
+                      "and none when C1 itself is not enumerated");
+    kernel_test_check(test,
+                      kernel_processor_sleep_usable_hints(0u, false) == 0u &&
+                          kernel_processor_sleep_usable_hints(0u, true) == 0u,
+                      "nothing enumerated, nothing usable");
+}
+
+/**
+ * @brief The hints an initialisation adopts are the usable ones of those CPUID enumerates, for the local timer this
+ *        processor has. Skipped where the kernel cannot use MONITOR, every QEMU model (#818), where both sides would be
+ *        zero and prove nothing.
+ */
+KERNEL_TEST(an_initialisation_adopts_the_usable_hints)
+{
+    kernel_processor_sleep_initialize();
+    if (!kernel_processor_sleep_has_monitor())
+    {
+        kernel_test_skip(test, "the kernel cannot use MONITOR on this processor, so it adopts no hint (#818)");
+        return;
+    }
+
+    uint32_t eax = 0u;
+    uint32_t ebx = 0u;
+    uint32_t ecx = 0u;
+    uint32_t edx = 0u;
+    asmutils_cpuid(5u, 0u, &eax, &ebx, &ecx, &edx);
+    const uint32_t expected = kernel_processor_sleep_usable_hints(kernel_processor_sleep_enumerated_hints(edx),
+                                                                  advanced_pic_timer_backend_always_runs() != 0u);
+
+    kernel_test_check(test, kernel_processor_sleep_available_hints() == expected,
+                      "the hints adopted are the enumerated ones the timer allows");
+    kernel_test_measure(test, "available_hints", kernel_processor_sleep_available_hints());
+}
