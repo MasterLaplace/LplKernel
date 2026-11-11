@@ -729,14 +729,17 @@ Notifies queued since. A table loaded during step 8 or step 9 that gives a proce
 - **The table is published per CPU,** as plain data the idle path reads, with one `[LPLTLM] acpi.cst` line per CPU.
   A Notify 0x81 re-evaluates it (§3.8 step 9).
 - **Each MWAIT hint is read from the states that enter its C-state:** an FFixedHW state of class 2 whose hint's bits
-  7:4 name that C-state, any sub-state, as Linux reads it (v6.12 `acpi_processor_ffh_cstate_probe`), and for C1 every
-  state of type 1, which HLT enters. A hint takes the longest latency of them, and the longest residency, since
-  `_CST` publishes none: the latency for a C1, three times it otherwise, the rule Linux's intel_idle derives from
-  `_CST` (v6.12 `intel_idle_init_cstates_acpi`). Against the residencies intel_idle tunes by hand, that rule is
+  7:4 name that C-state, any sub-state and any type, as Linux reads it (v6.12 `acpi_processor_ffh_cstate_probe`), and
+  for C1 every other state of type 1, which HLT enters. A hint takes the longest latency of them, and the longest
+  residency, since `_CST` publishes none: a state's latency, three times it when its type is past C1, the rule Linux's
+  intel_idle derives from `_CST` (v6.12 `intel_idle_init_cstates_acpi`), which gives a type 0, one ACPI forbids, its
+  latency. Against the residencies intel_idle tunes by hand, that rule is
   closer than acpi_idle's twice the latency (`tools/acpi/oracles/against_intel_idle_tables.py`). Once they are read, the
   residency `_LPI` publishes, and above it the one the energy counters measure (#310), will take its place. The boot prints one
-  `[LPLTLM] cstates` line, then one `[LPLTLM] cstate` line per hint the boot processor's slot targets, and
-  `tools/acpi/corpus.sh idle` compares each hint with `tools/acpi/oracles/linux_idle_hints.py`.
+  `[LPLTLM] cstates` line, then one `[LPLTLM] cstate` line per hint the boot processor's slot targets;
+  `tools/acpi/corpus.sh idle` compares each hint with `tools/acpi/oracles/linux_idle_hints.py`, and
+  `tools/acpi/boot-cst.sh` checks those lines on a boot under QEMU, which places a made-up `_CST` given by
+  `-acpitable` where the kernel finds it.
 
 ### 3.11 What `_PRT` publishes
 

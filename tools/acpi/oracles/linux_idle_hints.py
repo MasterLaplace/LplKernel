@@ -11,11 +11,12 @@ order: `aml idle hint <slot> <hint> latency=<us> residency=<us>`. The rules are 
   - a state of FFixedHW (space 0x7F) whose class, the register's bit offset, is 2 is entered by MWAIT with its address
     as the hint (`acpi_processor_ffh_cstate_probe`, arch/x86/kernel/acpi/cstate.c), and targets the C-state in that
     hint's bits 7:4 (`MWAIT_HINT2CSTATE`, arch/x86/include/asm/mwait.h);
-  - a state of type 1 is C1, hint 0, whatever its register: Linux enters a C1 of FFixedHW whose MWAIT it refuses by HLT
-    (`acpi_processor_evaluate_cst`, drivers/acpi/acpi_processor.c), and the kernel enters C1 by HLT or MWAIT 0;
-  - a state resides as long as its latency when its type is 1, three times its latency otherwise
-    (`intel_idle_init_cstates_acpi`, drivers/idle/intel_idle.c); a residency past 32 bits is taken as the largest one,
-    where Linux's unsigned int would wrap;
+  - any other state of type 1 is C1, hint 0, whatever its register: Linux enters a C1 of FFixedHW whose MWAIT it
+    refuses by HLT (`acpi_processor_evaluate_cst`, drivers/acpi/acpi_processor.c), and the kernel enters C1 by HLT or
+    MWAIT 0; a state of type 1 that MWAIT enters at a deeper hint targets that hint alone;
+  - a state resides as long as its latency, three times its latency when its type is past 1
+    (`intel_idle_init_cstates_acpi`, drivers/idle/intel_idle.c), a type 0, which ACPI forbids, residing its latency; a
+    residency past 32 bits is taken as the largest one, where Linux's unsigned int would wrap;
   - a hint several states target takes the longest latency and the longest residency of them.
 
 --self-test checks those rules on made-up slots, each expected line written by hand, and exits 1 when one differs.
@@ -42,7 +43,7 @@ def target(kind, space, offset, address):
 
 def residency(kind, latency):
     """The residency intel_idle gives a _CST state."""
-    return latency if kind == C1 else min(latency * DEEPER_FACTOR, LARGEST)
+    return latency if kind <= C1 else min(latency * DEEPER_FACTOR, LARGEST)
 
 
 def hint_lines(slot, states):
@@ -100,6 +101,8 @@ def self_test():
          [state(3, 1, 2, 0x55555556, ffh, 2, 0x10)], ["aml idle hint 3 1 latency=1431655766 residency=4294967295"]),
         ("a deeper MWAIT state of type 1 targets its hint alone", [state(4, 1, 1, 4, ffh, 2, 0x20)],
          ["aml idle hint 4 2 latency=4 residency=4"]),
+        ("a state of type 0, which ACPI forbids, resides its latency", [state(5, 1, 0, 10, ffh, 2, 0x30)],
+         ["aml idle hint 5 3 latency=10 residency=10"]),
         ("a slot of no state targets no hint", [], []),
     ]
     failures = 0

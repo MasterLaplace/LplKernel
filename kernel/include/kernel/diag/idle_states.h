@@ -37,6 +37,9 @@ extern "C" {
  * @details Keys of `cstates`, each mask a bit per hint, bit h for hint h, which targets C(h+1):
  *          - `slot`: the processor's CPU slot in the MADT, `none` when the local APIC does not run or no slot has its
  *            ID;
+ *          - `monitor`: 1 when the processor implements MONITOR and MWAIT, so that an `enumerated` of 0 tells a pair
+ *            that is absent from a leaf 5 that lists no hint, as AMD processors have left it (Linux commit
+ *            5209654a46ee);
  *          - `enumerated`: the hints CPUID leaf 5 lists where the pair is implemented, 0 otherwise;
  *          - `usable`: those a sleep may take, every one where the local timer always runs and C1's alone where it may
  *            stop;
@@ -47,9 +50,7 @@ extern "C" {
  *          - `latency_us`: the worst-case latency to enter and leave the state, the longest its states publish;
  *          - `residency_us`: how long a sleep must last for the state to save energy;
  *          - `residency_source`: where that residency comes from: `rule`, derived from the latency as Linux's
- *            intel_idle derives it from _CST;
- *          - `unread`, alone after `hint`, in place of the three keys above: the hint's latency or residency found
- *            no state though the mask found one, which says the two read different states.
+ *            intel_idle derives it from _CST.
  *
  *          Called once the local timer is set up, since `usable` reads whether it always runs.
  *

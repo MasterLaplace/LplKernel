@@ -235,8 +235,27 @@ KERNEL_TEST(the_monitor_probe_arms_nothing)
 }
 
 /**
- * @brief The hints this processor enumerates are those CPUID leaf 5 gives where the pair is implemented, and none
- *        where it is not, every QEMU model (#818); reading them arms nothing.
+ * @brief The hints CPUID's leaves enumerate are leaf 5's only where leaf 1 advertises the pair, ECX bit 3, and leaf 5
+ *        gives a line size, EBX bits 15:0; on words no QEMU model gives (#818).
+ *
+ * @details Leaf 5's EDX of 0x2220 lists sub-states of C1, C2 and C3, so hints 0, 1 and 2.
+ */
+KERNEL_TEST(the_hints_of_the_cpuid_leaves_are_leaf_5_s_where_the_pair_is_implemented)
+{
+    kernel_test_check(test, kernel_processor_sleep_hints_of_cpuid_leaves(0x8u, 0x40u, 0x2220u) == 0x7u,
+                      "the pair advertised with a line size of 64 bytes gives hints 0, 1 and 2");
+    kernel_test_check(test, kernel_processor_sleep_hints_of_cpuid_leaves(0x0u, 0x40u, 0x2220u) == 0u,
+                      "a leaf 5 that lists hints gives none where leaf 1 does not advertise the pair");
+    kernel_test_check(test, kernel_processor_sleep_hints_of_cpuid_leaves(0x8u, 0x0u, 0x2220u) == 0u,
+                      "nor where leaf 5 gives no line size");
+    kernel_test_check(test, kernel_processor_sleep_hints_of_cpuid_leaves(0x8u, 0x400000u, 0x2220u) == 0u,
+                      "the line size is bits 15:0 alone");
+    kernel_test_check(test, kernel_processor_sleep_hints_of_cpuid_leaves(0x8u, 0x40u, 0u) == 0u,
+                      "the pair with a leaf 5 that lists no hint gives none");
+}
+
+/**
+ * @brief The hints this processor enumerates are what its CPUID leaves give, and reading them arms nothing.
  */
 KERNEL_TEST(the_hints_this_processor_enumerates_are_read_without_arming_the_module)
 {
@@ -244,14 +263,14 @@ KERNEL_TEST(the_hints_this_processor_enumerates_are_read_without_arming_the_modu
     const uint32_t hints = kernel_processor_sleep_hints_enumerated_by_this_processor();
     uint32_t eax = 0u;
     uint32_t ebx = 0u;
+    uint32_t leaf1_ecx = 0u;
     uint32_t ecx = 0u;
     uint32_t edx = 0u;
 
+    asmutils_cpuid(1u, 0u, &eax, &ebx, &leaf1_ecx, &edx);
     asmutils_cpuid(5u, 0u, &eax, &ebx, &ecx, &edx);
-    kernel_test_check(
-        test,
-        hints == (kernel_processor_sleep_monitor_implemented() ? kernel_processor_sleep_enumerated_hints(edx) : 0u),
-        "the hints are leaf 5's where the pair is implemented, none otherwise");
+    kernel_test_check(test, hints == kernel_processor_sleep_hints_of_cpuid_leaves(leaf1_ecx, ebx, edx),
+                      "the hints are those of this processor's leaves 1 and 5");
     kernel_test_check(test, kernel_processor_sleep_available_hints() == available, "the read adopts no hint");
     kernel_test_measure(test, "enumerated_hints", hints);
 }

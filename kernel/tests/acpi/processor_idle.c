@@ -1336,30 +1336,37 @@ KERNEL_TEST(an_mwait_hint_takes_the_longest_latency_of_the_states_that_enter_its
 }
 
 /**
- * @brief Whether hint @p hint of @p idle resides @p expected, or, with @p expected NULL, has no residency, its output
- *        then untouched.
+ * @brief Whether hint @p hint of @p idle costs @p expected, or, with @p expected NULL, has no costs, its output then
+ *        untouched.
  */
-static bool idle_residency_is(const AdvancedConfigurationAndPowerInterfaceProcessorIdle_t *idle, uint32_t hint,
-                              const uint32_t *expected)
+static bool idle_costs_are(const AdvancedConfigurationAndPowerInterfaceProcessorIdle_t *idle, uint32_t hint,
+                           const AdvancedConfigurationAndPowerInterfaceIdleCosts_t *expected)
 {
-    const uint32_t untouched = 0xA5A5A5A5u;
-    uint32_t residency = untouched;
-    const bool found = advanced_configuration_and_power_interface_processor_idle_residency(idle, hint, &residency);
+    const AdvancedConfigurationAndPowerInterfaceIdleCosts_t untouched = {.latency = 0xA5A5A5A5u,
+                                                                         .residency = 0x5A5A5A5Au};
+    AdvancedConfigurationAndPowerInterfaceIdleCosts_t costs = untouched;
+    const bool found = advanced_configuration_and_power_interface_processor_idle_costs(idle, hint, &costs);
 
-    return expected != NULL ? found && residency == *expected : !found && residency == untouched;
+    if (expected == NULL)
+        return !found && costs.latency == untouched.latency && costs.residency == untouched.residency;
+    return found && costs.latency == expected->latency && costs.residency == expected->residency;
 }
 
 /**
- * @brief The residency an MWAIT hint takes, from the states that enter its C-state as its latency reads them: a C1
- *        state's latency, three times the latency of a deeper one, as Linux's intel_idle derives it from _CST
- *        (`intel_idle_init_cstates_acpi`, drivers/idle/intel_idle.c, v6.12); several states give the longest
- *        residency, which need not be the one of the longest latency; a product past a double word is the largest
- *        one; a hint no state enters has none.
+ * @brief The costs of an MWAIT hint come from the states that enter its C-state as its latency reads them: the longest
+ *        latency, and the longest residency, a state residing its latency, three times it when its type is past C1,
+ *        as Linux's intel_idle derives it from _CST (`intel_idle_init_cstates_acpi`, drivers/idle/intel_idle.c,
+ *        v6.12), which gives a type 0, one ACPI forbids, its latency; the longest residency need not be that of the
+ *        longest latency; a product past a double word is the largest one; a hint no state enters has no costs.
  */
-KERNEL_TEST(an_mwait_hint_resides_as_long_as_the_longest_residency_linux_derives_from_its_states)
+KERNEL_TEST(an_mwait_hint_costs_the_longest_latency_and_residency_linux_derives_from_its_states)
 {
     static AdvancedConfigurationAndPowerInterfaceProcessorIdle_t idle;
-    static const uint32_t c1 = 2u, sub_states = 450u, deeper_rule = 15u, zero = 0u, largest = 0xFFFFFFFFu;
+    static const AdvancedConfigurationAndPowerInterfaceIdleCosts_t c1 = {2u, 2u}, sub_states = {150u, 450u},
+                                                                   deeper_rule = {10u, 15u}, zero = {0u, 0u},
+                                                                   saturated = {0x55555556u, 0xFFFFFFFFu},
+                                                                   largest = {0xFFFFFFFFu, 0xFFFFFFFFu},
+                                                                   forbidden_type = {10u, 10u};
     const IdleState_t halt = {.entry = {.space = IDLE_FIXED_HARDWARE}, .type = 1u, .latency = 1u, .power = 1000u};
 
     memset(&idle, 0, sizeof(idle));
@@ -1372,52 +1379,48 @@ KERNEL_TEST(an_mwait_hint_resides_as_long_as_the_longest_residency_linux_derives
     idle.states[4] = idle_port(0x414u, 1u, 2u, 70u, 300u);
     idle.states[5] = idle_monitor_wait(0x30u, 3u, 400u, 50u);
 
-    kernel_test_check(test, idle_residency_is(&idle, 0u, &c1), "C1 resides as long as its longer latency, 2 us");
-    kernel_test_check(test, idle_residency_is(&idle, 2u, &sub_states), "hint 2 resides three times 150 us");
-    kernel_test_check(test, idle_residency_is(&idle, 1u, NULL), "C2 is an I/O port read only: hint 1 has none");
-    kernel_test_check(test, idle_residency_is(&idle, 3u, NULL), "hint 3's state lies past the count: none");
+    kernel_test_check(test, idle_costs_are(&idle, 0u, &c1), "C1 costs its longer latency, 2 us, and resides as long");
+    kernel_test_check(test, idle_costs_are(&idle, 2u, &sub_states), "hint 2 costs 150 us and resides three times it");
+    kernel_test_check(test, idle_costs_are(&idle, 1u, NULL), "C2 is an I/O port read only: hint 1 has no costs");
+    kernel_test_check(test, idle_costs_are(&idle, 3u, NULL), "hint 3's state lies past the count: no costs");
 
     idle.count = 2u;
     idle.states[0] = idle_monitor_wait(0x00u, 1u, 10u, 900u);
     idle.states[1] = idle_monitor_wait(0x01u, 2u, 5u, 800u);
-    kernel_test_check(test, idle_residency_is(&idle, 0u, &deeper_rule),
+    kernel_test_check(test, idle_costs_are(&idle, 0u, &deeper_rule),
                       "a C2-type sub-state of C1 of 5 us resides 15 us, longer than the 10 us of the C1 of 10 us");
 
     idle.count = 1u;
     idle.states[0] = idle_monitor_wait(0x10u, 2u, 0u, 500u);
-    kernel_test_check(test, idle_residency_is(&idle, 1u, &zero), "a latency of zero resides zero, a residency");
+    kernel_test_check(test, idle_costs_are(&idle, 1u, &zero), "a latency of zero resides zero, a residency");
     idle.states[0].latency = 0x55555556u;
-    kernel_test_check(test, idle_residency_is(&idle, 1u, &largest),
+    kernel_test_check(test, idle_costs_are(&idle, 1u, &saturated),
                       "three times 0x55555556 passes a double word and resides the largest one");
-    idle.states[0] = idle_monitor_wait(0x00u, 1u, largest, 500u);
-    kernel_test_check(test, idle_residency_is(&idle, 0u, &largest), "a C1 of the largest latency resides as long");
+    idle.states[0] = idle_monitor_wait(0x00u, 1u, 0xFFFFFFFFu, 500u);
+    kernel_test_check(test, idle_costs_are(&idle, 0u, &largest), "a C1 of the largest latency resides as long");
+    idle.states[0] = idle_monitor_wait(0x30u, 0u, 10u, 50u);
+    kernel_test_check(test, idle_costs_are(&idle, 3u, &forbidden_type),
+                      "a state of type 0, which ACPI forbids, resides its latency, as intel_idle gives it");
 
     idle.count = 0u;
-    kernel_test_check(test, idle_residency_is(&idle, 0u, NULL), "a slot that publishes nothing gives no residency");
+    kernel_test_check(test, idle_costs_are(&idle, 0u, NULL), "a slot that publishes nothing gives no costs");
 }
 
 /**
- * @brief The hints a slot publishes are those its states enter as the latency reads them: C1 for a state of type 1,
- *        the C-state of an MWAIT of class 2 for the others; an I/O port read of C2 and a state past the count add
- *        none.
+ * @brief A state that FFixedHW class 2 enters counts for its hint's C-state alone, whatever its type: a type-1 MWAIT
+ *        of C3's hint gives C3 its costs and C1 none, which only the other states of type 1 give.
  */
-KERNEL_TEST(the_hints_a_slot_publishes_are_the_c_states_its_states_enter)
+KERNEL_TEST(a_c1_type_mwait_of_a_deeper_hint_costs_that_hint_alone)
 {
     static AdvancedConfigurationAndPowerInterfaceProcessorIdle_t idle;
-    const IdleState_t halt = {.entry = {.space = IDLE_FIXED_HARDWARE}, .type = 1u, .latency = 1u, .power = 1000u};
+    static const AdvancedConfigurationAndPowerInterfaceIdleCosts_t c3 = {4u, 4u};
 
     memset(&idle, 0, sizeof(idle));
-    idle.count = 3u;
-    idle.states[0] = halt;
-    idle.states[1] = idle_port(0x414u, 1u, 2u, 70u, 300u);
-    idle.states[2] = idle_monitor_wait(0x51u, 3u, 400u, 50u);
-    idle.states[3] = idle_monitor_wait(0x20u, 3u, 133u, 120u);
+    idle.count = 1u;
+    idle.states[0] = idle_monitor_wait(0x20u, 1u, 4u, 500u);
 
-    kernel_test_check(test, advanced_configuration_and_power_interface_processor_idle_hints(&idle) == 0x21u,
-                      "C1 by its halt and hint 5 by its MWAIT, not C2's port nor hint 2 past the count");
-    idle.count = 0u;
-    kernel_test_check(test, advanced_configuration_and_power_interface_processor_idle_hints(&idle) == 0u,
-                      "a slot that publishes nothing publishes no hint");
+    kernel_test_check(test, idle_costs_are(&idle, 2u, &c3), "the type-1 MWAIT 0x20 costs hint 2 its latency");
+    kernel_test_check(test, idle_costs_are(&idle, 0u, NULL), "and gives C1 nothing");
 }
 
 /**

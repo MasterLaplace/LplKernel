@@ -1,6 +1,6 @@
 """How far the residencies a rule derives from a state's exit latency fall from those Linux's intel_idle tunes by hand,
 state by state: the measure that chose the rule the layer applies to _CST
-(`advanced_configuration_and_power_interface_processor_idle_residency`).
+(`advanced_configuration_and_power_interface_processor_idle_costs`).
 
 Usage: python3 -I tools/acpi/oracles/against_intel_idle_tables.py <intel_idle.c>
        python3 -I tools/acpi/oracles/against_intel_idle_tables.py --self-test

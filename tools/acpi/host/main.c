@@ -993,22 +993,12 @@ static const char *harness_handshake(AdvancedConfigurationAndPowerInterfaceMachi
  */
 static void harness_print_idle_hints(uint32_t slot, const AdvancedConfigurationAndPowerInterfaceProcessorIdle_t *idle)
 {
-    const uint32_t hints = advanced_configuration_and_power_interface_processor_idle_hints(idle);
-
-    for (uint32_t hint = 0u; hint < 32u; ++hint)
+    for (uint32_t hint = 0u; hint < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_PROCESSOR_IDLE_HINTS; ++hint)
     {
-        uint32_t latency = 0u;
-        uint32_t residency = 0u;
+        AdvancedConfigurationAndPowerInterfaceIdleCosts_t costs;
 
-        if (((hints >> hint) & 1u) == 0u)
-            continue;
-        if (!advanced_configuration_and_power_interface_processor_idle_latency(idle, hint, &latency) ||
-            !advanced_configuration_and_power_interface_processor_idle_residency(idle, hint, &residency))
-        {
-            printf("aml idle hint %u %u unread\n", slot, hint);
-            continue;
-        }
-        printf("aml idle hint %u %u latency=%u residency=%u\n", slot, hint, latency, residency);
+        if (advanced_configuration_and_power_interface_processor_idle_costs(idle, hint, &costs))
+            printf("aml idle hint %u %u latency=%u residency=%u\n", slot, hint, costs.latency, costs.residency);
     }
 }
 

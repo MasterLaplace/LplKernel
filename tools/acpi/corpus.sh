@@ -148,7 +148,8 @@ pinned commit into build/acpi-corpus/, never committed and never put in an image
 
 Exit status: 0 when every machine agrees, 1 when one does not or its dump or decoded tables are
 missing, 2 on a usage error. records-cost also exits 1 when valgrind is missing or xmake cannot build its
-harness, and 2 when RECORDS_TOLERANCE is no decimal number. Every mode also exits 1 when a sanitizer stopped
+harness, and 2 when RECORDS_TOLERANCE is no decimal number. idle also exits 1 when no MWAIT hint was compared,
+so that a list of machines without one checks nothing silently. Every mode also exits 1 when a sanitizer stopped
 the harness, whatever the mode made of that run, and lists the arguments of the runs it stopped.
 USAGE
 }
@@ -814,6 +815,7 @@ idle_check() {
     rm -rf "$ours" "$theirs" "$madt" "$tables"
     echo "# idle: $agree of $((number - stopped)) agree with acpiexec, $slots CPU slots, $states states and $hints hints," \
         "$none publishing none on both sides; acpiexec stops before the evaluations it was given on $stopped"
+    [[ "$hints" -gt 0 ]] || echo "idle: no MWAIT hint compared, so no latency nor residency was checked"
     [[ "$agree" -eq $((number - stopped)) ]] && [[ "$hints" -gt 0 ]]
 }
 

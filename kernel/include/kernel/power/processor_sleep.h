@@ -150,11 +150,25 @@ uint32_t kernel_processor_sleep_monitor_line_bytes(void);
 uint32_t kernel_processor_sleep_enumerated_hints(uint32_t leaf5_edx);
 
 /**
+ * @brief Which MWAIT hints CPUID leaves 1 and 5 enumerate, as a bit per hint, read as
+ *        @ref kernel_processor_sleep_initialize reads them: none unless leaf 1 advertises the pair and leaf 5 gives a
+ *        non-zero line size.
+ *
+ * @details Pure, like @ref kernel_processor_sleep_enumerated_hints, so that a test hands it what no emulator gives.
+ *
+ * @param leaf1_ecx What CPUID leaf 1 returned in ECX, whose bit 3 advertises MONITOR and MWAIT.
+ * @param leaf5_ebx What CPUID leaf 5 returned in EBX, whose bits 15:0 are the largest line the monitor watches.
+ * @param leaf5_edx What CPUID leaf 5 returned in EDX.
+ * @return What @ref kernel_processor_sleep_enumerated_hints gives @p leaf5_edx where the pair is implemented; zero
+ *         otherwise.
+ */
+uint32_t kernel_processor_sleep_hints_of_cpuid_leaves(uint32_t leaf1_ecx, uint32_t leaf5_ebx, uint32_t leaf5_edx);
+
+/**
  * @brief Which MWAIT hints this processor enumerates, read from CPUID without arming the module: every sleep keeps
  *        the instruction it had.
  *
- * @return What @ref kernel_processor_sleep_enumerated_hints gives CPUID leaf 5's EDX when the pair is implemented, as
- *         @ref kernel_processor_sleep_monitor_implemented says; zero otherwise.
+ * @return What @ref kernel_processor_sleep_hints_of_cpuid_leaves gives this processor's leaves 1 and 5.
  */
 uint32_t kernel_processor_sleep_hints_enumerated_by_this_processor(void);
 
