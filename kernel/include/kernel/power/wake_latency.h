@@ -118,6 +118,16 @@ void kernel_wake_latency_learn_from_the_longest(KernelWakeLatency_t *estimate, c
 void kernel_wake_latency_assume(KernelWakeLatency_t *estimate, uint64_t lead);
 
 /**
+ * @brief The lead learned at the deepest depth shallower than @p depth that learned a wake-up: the depth's latency
+ *        is at least that one's, since a deeper C-state leaves no faster.
+ *
+ * @param estimates One estimate per depth, from the shallowest; at least @p depth of them.
+ * @param depth     The depth.
+ * @return That lead, in cycles, or 0 when no shallower depth learned a wake-up.
+ */
+uint64_t kernel_wake_latency_shallower_lead(const KernelWakeLatency_t *estimates, uint32_t depth);
+
+/**
  * @brief Gives the estimate of a depth no wake-up taught the lead a sleep there arms with until one does: the lead
  *        learned at a shallower depth plus the exit latency firmware publishes for this one, or the bound.
  *

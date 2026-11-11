@@ -84,6 +84,14 @@ void kernel_wake_latency_learn_from_the_longest(KernelWakeLatency_t *estimate, c
         kernel_wake_latency_learn(estimate, latencies[index - 1u]);
 }
 
+uint64_t kernel_wake_latency_shallower_lead(const KernelWakeLatency_t *estimates, uint32_t depth)
+{
+    for (uint32_t shallower = depth; shallower > 0u; --shallower)
+        if (estimates[shallower - 1u].samples != 0u)
+            return kernel_wake_latency_lead(&estimates[shallower - 1u]);
+    return 0u;
+}
+
 KernelWakeLeadSource_t kernel_wake_latency_assume_unlearned(KernelWakeLatency_t *estimate, uint64_t shallower,
                                                             uint64_t published, uint64_t bound)
 {

@@ -601,6 +601,17 @@ uint32_t advanced_configuration_and_power_interface_processor_idle_fold(const Pr
     return fold;
 }
 
+const ProcessorIdle_t *advanced_configuration_and_power_interface_processor_idle_of_processor(
+    const ProcessorIdleTable_t *table, const AdvancedConfigurationAndPowerInterfaceMadtState_t *madt, uint32_t apic_id)
+{
+    const uint32_t slots = table->slot_count < PROCESSOR_IDLE_MAX_SLOTS ? table->slot_count : PROCESSOR_IDLE_MAX_SLOTS;
+
+    for (uint32_t slot = 0u; slot < slots; ++slot)
+        if (madt->processors[slot].apic_id == apic_id)
+            return &table->slots[slot];
+    return NULL;
+}
+
 bool advanced_configuration_and_power_interface_processor_idle_latency(const ProcessorIdle_t *idle, uint32_t hint,
                                                                        uint32_t *out_microseconds)
 {

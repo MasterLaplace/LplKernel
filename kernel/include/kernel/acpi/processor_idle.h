@@ -156,6 +156,19 @@ extern uint32_t advanced_configuration_and_power_interface_processor_idle_fold(
     const AdvancedConfigurationAndPowerInterfaceProcessorIdleTable_t *table);
 
 /**
+ * @brief The C-states the CPU slot of a processor publishes, found by its local APIC ID in the MADT.
+ *
+ * @param table   The published table.
+ * @param madt    The MADT's CPU slots, in the table's slot order.
+ * @param apic_id The processor's local APIC ID, or its x2APIC ID.
+ * @return The slot's states, or NULL when none of the table's slots has that ID.
+ */
+extern const AdvancedConfigurationAndPowerInterfaceProcessorIdle_t *
+advanced_configuration_and_power_interface_processor_idle_of_processor(
+    const AdvancedConfigurationAndPowerInterfaceProcessorIdleTable_t *table,
+    const AdvancedConfigurationAndPowerInterfaceMadtState_t *madt, uint32_t apic_id);
+
+/**
  * @brief The worst-case latency to enter and leave the C-state an MWAIT hint targets, as the states one CPU slot
  *        publishes give it.
  *

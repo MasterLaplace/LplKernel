@@ -287,3 +287,23 @@ KERNEL_TEST(a_sum_past_the_longest_latency_leads_by_the_longest)
     kernel_test_check(test, kernel_wake_latency_lead(&estimate) == KERNEL_WAKE_LATENCY_LONGEST_CYCLES,
                       "the sum is held to the longest latency");
 }
+
+/**
+ * @brief The shallower lead a depth takes is the deepest learned below it: a depth that learned nothing between is
+ *        passed over, the depth itself and the ones below it are not read, and the shallowest has none.
+ */
+KERNEL_TEST(the_shallower_lead_is_the_one_learned_at_the_deepest_depth_below)
+{
+    KernelWakeLatency_t estimates[4] = {{0}};
+
+    kernel_wake_latency_learn(&estimates[0], 800u);
+    kernel_wake_latency_learn(&estimates[2], 1250u);
+    kernel_wake_latency_learn(&estimates[3], 9000u);
+
+    kernel_test_check(test, kernel_wake_latency_shallower_lead(estimates, 3u) == 5000u,
+                      "depth 3 takes depth 2's lead, four times 1250, not its own");
+    kernel_test_check(test, kernel_wake_latency_shallower_lead(estimates, 2u) == 3200u,
+                      "depth 2 passes over depth 1, which learned nothing, to depth 0's four times 800");
+    kernel_test_check(test, kernel_wake_latency_shallower_lead(estimates, 1u) == 3200u, "depth 1 takes depth 0's");
+    kernel_test_check(test, kernel_wake_latency_shallower_lead(estimates, 0u) == 0u, "the shallowest has none");
+}

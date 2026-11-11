@@ -160,35 +160,18 @@ static uint64_t tickless_probe_span_cycles(void)
  */
 static uint64_t tickless_published_latency_cycles(uint32_t depth)
 {
-    const AdvancedConfigurationAndPowerInterfaceProcessorIdleTable_t *const table =
-        advanced_configuration_and_power_interface_processor_idle();
-    const AdvancedConfigurationAndPowerInterfaceMadtState_t *const madt =
-        advanced_configuration_and_power_interface_madt();
     uint32_t microseconds = 0u;
 
     if (!apic_is_running())
         return KERNEL_WAKE_LATENCY_UNPUBLISHED;
-    const uint32_t apic_id = apic_get_id();
-    for (uint32_t slot = 0u; slot < table->slot_count; ++slot)
-        if (madt->processors[slot].apic_id == apic_id)
-            return advanced_configuration_and_power_interface_processor_idle_latency(&table->slots[slot], depth,
-                                                                                     &microseconds) ?
-                       kernel_tickless_cycles_from_microseconds(microseconds) :
-                       KERNEL_WAKE_LATENCY_UNPUBLISHED;
-    return KERNEL_WAKE_LATENCY_UNPUBLISHED;
-}
-
-/**
- * @brief The lead learned at the deepest depth shallower than @p depth that learned one.
- * @param depth A hint index.
- * @return Cycles, or 0 when no shallower depth learned a wake-up.
- */
-static uint64_t tickless_lead_of_a_shallower_depth(uint32_t depth)
-{
-    for (uint32_t shallower = depth; shallower > 0u; --shallower)
-        if (tickless_wake_latency[shallower - 1u].samples != 0u)
-            return kernel_wake_latency_lead(&tickless_wake_latency[shallower - 1u]);
-    return 0u;
+    const AdvancedConfigurationAndPowerInterfaceProcessorIdle_t *const idle =
+        advanced_configuration_and_power_interface_processor_idle_of_processor(
+            advanced_configuration_and_power_interface_processor_idle(),
+            advanced_configuration_and_power_interface_madt(), apic_get_id());
+    return idle != NULL &&
+                   advanced_configuration_and_power_interface_processor_idle_latency(idle, depth, &microseconds) ?
+               kernel_tickless_cycles_from_microseconds(microseconds) :
+               KERNEL_WAKE_LATENCY_UNPUBLISHED;
 }
 
 /**
@@ -199,7 +182,7 @@ static uint64_t tickless_lead_of_a_shallower_depth(uint32_t depth)
 static KernelWakeLeadSource_t tickless_assume_a_lead(uint32_t depth)
 {
     return kernel_wake_latency_assume_unlearned(&tickless_wake_latency[depth],
-                                                tickless_lead_of_a_shallower_depth(depth),
+                                                kernel_wake_latency_shallower_lead(tickless_wake_latency, depth),
                                                 tickless_published_latency_cycles(depth), tickless_bound_cycles());
 }
 

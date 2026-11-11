@@ -1334,3 +1334,35 @@ KERNEL_TEST(an_mwait_hint_takes_the_longest_latency_of_the_states_that_enter_its
     idle.states[0].latency = largest;
     kernel_test_check(test, idle_latency_is(&idle, 0u, &largest), "so is the largest a double word holds");
 }
+
+/**
+ * @brief A processor finds the C-states of the CPU slot whose local APIC ID is its own, whatever the slot's place; an
+ *        ID no slot has, or one only a slot past the table's count has, finds none.
+ */
+KERNEL_TEST(a_processor_finds_the_c_states_of_the_slot_of_its_apic_id)
+{
+    static AdvancedConfigurationAndPowerInterfaceProcessorIdleTable_t table;
+    static AdvancedConfigurationAndPowerInterfaceMadtState_t madt;
+
+    memset(&table, 0, sizeof(table));
+    memset(&madt, 0, sizeof(madt));
+    table.slot_count = 2u;
+    madt.processors[0].apic_id = 4u;
+    madt.processors[1].apic_id = 7u;
+    madt.processors[2].apic_id = 9u;
+
+    kernel_test_check(test,
+                      advanced_configuration_and_power_interface_processor_idle_of_processor(&table, &madt, 7u) ==
+                          &table.slots[1],
+                      "APIC ID 7 finds the second slot");
+    kernel_test_check(test,
+                      advanced_configuration_and_power_interface_processor_idle_of_processor(&table, &madt, 4u) ==
+                          &table.slots[0],
+                      "APIC ID 4 finds the first");
+    kernel_test_check(test,
+                      advanced_configuration_and_power_interface_processor_idle_of_processor(&table, &madt, 5u) == NULL,
+                      "an ID no slot has finds none");
+    kernel_test_check(test,
+                      advanced_configuration_and_power_interface_processor_idle_of_processor(&table, &madt, 9u) == NULL,
+                      "nor one only a slot past the count has");
+}
