@@ -260,6 +260,59 @@ static uint32_t tickless_sleep_until_any_interrupt(KernelWakePlan_t *plan)
     return 0u;
 }
 
+/**
+ * @brief Sleeps once on @p plan with the tick stopped, armed @p latency's lead before the plan's next wake-up, then
+ *        serves the plan at the wake-up; a wake-up the timer ended teaches @p latency.
+ * @param plan    The session's plan.
+ * @param latency The estimate of the depth the sleep enters.
+ * @return The microseconds slept.
+ */
+__attribute__((always_inline)) static inline uint32_t tickless_sleep_at(KernelWakePlan_t *plan,
+                                                                        KernelWakeLatency_t *latency)
+{
+    const uint64_t before = asmutils_read_timestamp_counter();
+    const uint64_t planned = kernel_wake_planner_next_wake(plan, kernel_wake_latency_lead(latency));
+    if (planned <= before)
+    {
+        (void) kernel_wake_planner_serve(plan, before);
+        return 0u;
+    }
+
+    const uint64_t longest = before + tickless_longest_sleep_cycles;
+    const uint64_t armed = planned < longest ? planned : longest;
+    uint64_t after = armed;
+    const TicklessWake_t wake = tickless_sleep_until(armed, &after);
+    if (wake == TICKLESS_WAKE_UNARMED)
+        return tickless_sleep_until_any_interrupt(plan);
+    if (wake == TICKLESS_WAKE_EARLY)
+        ++tickless_early_wakes;
+    else
+        kernel_wake_latency_learn(latency, after > armed ? after - armed : 0u);
+
+    const uint32_t elapsed = tickless_microseconds_from_cycles(
+        after - before, advanced_pic_timer_backend_get_calibrated_timestamp_counter_frequency_hz());
+    tickless_slept_microseconds += elapsed;
+    tickless_count_ticks_avoided(elapsed);
+
+    (void) kernel_wake_planner_serve(plan, after);
+    return elapsed;
+}
+
+/**
+ * @brief Sleeps once on @p plan at @p depth, which no wake-up taught: readies the depth, probing it first when the
+ *        probe fits, then sleeps on the lead it has.
+ * @param plan  The session's plan.
+ * @param depth The depth the sleep enters.
+ * @return The microseconds the probe and the sleep took.
+ */
+__attribute__((cold, noinline)) static uint32_t tickless_sleep_at_an_unlearned_depth(KernelWakePlan_t *plan,
+                                                                                     uint32_t depth)
+{
+    const uint32_t probed = tickless_ready_an_unlearned_depth(plan, depth);
+
+    return probed + tickless_sleep_at(plan, &tickless_wake_latency[depth]);
+}
+
 bool kernel_tickless_enable(bool no_world_instantiated, KernelWakePlan_t *plan)
 {
     if (!no_world_instantiated || tickless_permitted || plan == NULL)
@@ -331,34 +384,9 @@ uint32_t kernel_tickless_sleep_on(KernelWakePlan_t *plan)
         return 0u;
 
     const uint32_t depth = kernel_processor_sleep_depth();
-    KernelWakeLatency_t *const latency = &tickless_wake_latency[depth];
-    const uint32_t probed_microseconds = latency->samples == 0u ? tickless_ready_an_unlearned_depth(plan, depth) : 0u;
-    const uint64_t before = asmutils_read_timestamp_counter();
-    const uint64_t planned = kernel_wake_planner_next_wake(plan, kernel_wake_latency_lead(latency));
-    if (planned <= before)
-    {
-        (void) kernel_wake_planner_serve(plan, before);
-        return probed_microseconds;
-    }
-
-    const uint64_t longest = before + tickless_longest_sleep_cycles;
-    const uint64_t armed = planned < longest ? planned : longest;
-    uint64_t after = armed;
-    const TicklessWake_t wake = tickless_sleep_until(armed, &after);
-    if (wake == TICKLESS_WAKE_UNARMED)
-        return probed_microseconds + tickless_sleep_until_any_interrupt(plan);
-    if (wake == TICKLESS_WAKE_EARLY)
-        ++tickless_early_wakes;
-    else
-        kernel_wake_latency_learn(latency, after > armed ? after - armed : 0u);
-
-    const uint32_t elapsed = tickless_microseconds_from_cycles(
-        after - before, advanced_pic_timer_backend_get_calibrated_timestamp_counter_frequency_hz());
-    tickless_slept_microseconds += elapsed;
-    tickless_count_ticks_avoided(elapsed);
-
-    (void) kernel_wake_planner_serve(plan, after);
-    return probed_microseconds + elapsed;
+    if (tickless_wake_latency[depth].samples == 0u)
+        return tickless_sleep_at_an_unlearned_depth(plan, depth);
+    return tickless_sleep_at(plan, &tickless_wake_latency[depth]);
 }
 
 uint32_t kernel_tickless_ticks_avoided(void) { return tickless_ticks_avoided; }
