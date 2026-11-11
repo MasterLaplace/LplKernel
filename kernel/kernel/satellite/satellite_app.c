@@ -180,6 +180,8 @@ bool kernel_satellite_app_run(uint32_t iterations, SatelliteReport_t *out)
         return false;
 
     SatelliteReport_t report = {0};
+    const uint32_t published_wakes_before = kernel_tickless_wakes_planned_on_a_published_lead();
+    const uint32_t bound_wakes_before = kernel_tickless_wakes_planned_on_the_bound();
 
     kernel_processor_sleep_initialize();
     (void) kernel_processor_sleep_request_hint(PROCESSOR_SLEEP_HINT_MAX);
@@ -218,6 +220,9 @@ bool kernel_satellite_app_run(uint32_t iterations, SatelliteReport_t *out)
     report.overshoot_microseconds = kernel_tickless_microseconds_from_cycles(satellite_plan.latest_overshoot);
     report.wake_lead_nanoseconds =
         (uint32_t) kernel_tickless_nanoseconds_from_cycles(kernel_tickless_wake_lead_cycles());
+    report.wakes_planned_on_a_published_lead =
+        kernel_tickless_wakes_planned_on_a_published_lead() - published_wakes_before;
+    report.wakes_planned_on_the_bound = kernel_tickless_wakes_planned_on_the_bound() - bound_wakes_before;
     report.reconciler_passes = kernel_reconciler_get_periodic_pass_count() - passes_before;
     report.sleeps = kernel_processor_sleep_count();
     report.sleeps_skipped = kernel_processor_sleep_skipped_count();

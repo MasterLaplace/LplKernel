@@ -350,6 +350,8 @@ KERNEL_TEST(the_capture_keeps_its_own_deadline_where_nothing_interrupts)
     kernel_test_measure(test, "late_services", report->late_services);
     kernel_test_measure(test, "overshoot_microseconds", report->overshoot_microseconds);
     kernel_test_measure(test, "wake_lead_ns", report->wake_lead_nanoseconds);
+    kernel_test_measure(test, "wakes_planned_on_published_lead", report->wakes_planned_on_a_published_lead);
+    kernel_test_measure(test, "wakes_planned_on_bound", report->wakes_planned_on_the_bound);
 }
 
 /**

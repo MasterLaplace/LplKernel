@@ -57,16 +57,18 @@ typedef struct {
     uint32_t batched_wakes;          /**< Wake-ups that served two duties or more. */
     uint32_t overshoot_microseconds; /**< The most a duty ran past its latest. */
     uint32_t wake_lead_nanoseconds;  /**< The timer's lead at the session's end, probed then learned. */
-    uint32_t reconciler_passes;      /**< Reconciler passes the session's wake-ups carried with the tick stopped. */
-    uint32_t sleeps;                 /**< Times the processor was actually put to sleep. */
-    uint32_t sleeps_skipped;         /**< Times a sleep was unnecessary — the watch had fired. */
-    uint32_t halts;                  /**< Sleeps that fell back to HLT for want of MONITOR. */
-    uint32_t duty_permille;          /**< Share of accounted cycles spent awake. */
-    uint32_t ticks_avoided;          /**< Periodic interrupts the profile did not take. */
-    uint32_t monitor_available;      /**< 1 when the processor implements MONITOR/MWAIT. */
-    uint32_t scaling_available;      /**< 1 when it can actually change its clock. */
-    uint32_t scaling_refused;        /**< Performance-state requests the hardware could not honour. */
-    uint32_t governed_state;         /**< The state the governor asked for. */
+    uint32_t wakes_planned_on_a_published_lead; /**< Wake-ups planned at a depth no wake-up taught, on `_CST`. */
+    uint32_t wakes_planned_on_the_bound;        /**< Wake-ups planned at a depth no wake-up taught, on the bound. */
+    uint32_t reconciler_passes;  /**< Reconciler passes the session's wake-ups carried with the tick stopped. */
+    uint32_t sleeps;             /**< Times the processor was actually put to sleep. */
+    uint32_t sleeps_skipped;     /**< Times a sleep was unnecessary — the watch had fired. */
+    uint32_t halts;              /**< Sleeps that fell back to HLT for want of MONITOR. */
+    uint32_t duty_permille;      /**< Share of accounted cycles spent awake. */
+    uint32_t ticks_avoided;      /**< Periodic interrupts the profile did not take. */
+    uint32_t monitor_available;  /**< 1 when the processor implements MONITOR/MWAIT. */
+    uint32_t scaling_available;  /**< 1 when it can actually change its clock. */
+    uint32_t scaling_refused;    /**< Performance-state requests the hardware could not honour. */
+    uint32_t governed_state;     /**< The state the governor asked for. */
     uint32_t effective_permille; /**< Clock actually delivered over the run, or KERNEL_FREQUENCY_SCALING_NO_FEEDBACK. */
     uint32_t audio_present;      /**< 1 when a codec was found AND can be driven. */
     uint32_t output_ceiling;     /**< Loudest sample this kernel will ever emit. */

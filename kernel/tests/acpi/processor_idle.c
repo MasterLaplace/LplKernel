@@ -1274,3 +1274,95 @@ KERNEL_TEST(a_package_element_holding_a_name_reads_what_it_names)
     advanced_configuration_and_power_interface_machine_language_value_release(&idle_load.heap, &idle_load.space, &root);
     idle_close(test);
 }
+
+/**
+ * @brief Whether hint @p hint of @p idle takes latency @p expected, or, with @p expected NULL, none, its output then
+ *        untouched.
+ */
+static bool idle_latency_is(const AdvancedConfigurationAndPowerInterfaceProcessorIdle_t *idle, uint32_t hint,
+                            const uint32_t *expected)
+{
+    const uint32_t untouched = 0xA5A5A5A5u;
+    uint32_t latency = untouched;
+    const bool found = advanced_configuration_and_power_interface_processor_idle_latency(idle, hint, &latency);
+
+    return expected != NULL ? found && latency == *expected : !found && latency == untouched;
+}
+
+/**
+ * @brief The latency an MWAIT hint takes: the longest of the states FFixedHW class 2 enters at that hint's C-state,
+ *        whatever their sub-state; C1 also takes the states of type 1 entered otherwise, by HLT or a halt after an I/O
+ *        read; a state past the count, an I/O port read of C2 and a hint no state targets give none, which is not a
+ *        latency of zero.
+ *
+ * @details Hint 2 targets C3 of MWAIT's numbering: 0x20 and 0x21 are its sub-states 0 and 1 (Intel Processor
+ *          Vendor-Specific ACPI Interface Specification, revision 007, §3.3, table 4).
+ */
+KERNEL_TEST(an_mwait_hint_takes_the_longest_latency_of_the_states_that_enter_its_c_state)
+{
+    static AdvancedConfigurationAndPowerInterfaceProcessorIdle_t idle;
+    static const uint32_t sub_states = 150u, c1 = 2u, after_input = 3u, zero = 0u, largest = 0xFFFFFFFFu;
+    const IdleState_t halt = {.entry = {.space = IDLE_FIXED_HARDWARE}, .type = 1u, .latency = 1u, .power = 1000u};
+
+    memset(&idle, 0, sizeof(idle));
+    idle.processor = 0x10u;
+    idle.count = 5u;
+    idle.states[0] = halt;
+    idle.states[1] = idle_monitor_wait(0x00u, 1u, 2u, 900u);
+    idle.states[2] = idle_monitor_wait(0x21u, 3u, 150u, 100u);
+    idle.states[3] = idle_monitor_wait(0x20u, 3u, 133u, 120u);
+    idle.states[4] = idle_port(0x414u, 1u, 2u, 70u, 300u);
+    idle.states[5] = idle_monitor_wait(0x30u, 3u, 400u, 50u);
+
+    kernel_test_check(test, idle_latency_is(&idle, 2u, &sub_states), "hint 2 takes the longer of its two sub-states");
+    kernel_test_check(test, idle_latency_is(&idle, 0u, &c1), "C1 takes the longer of its halt and its MWAIT");
+    kernel_test_check(test, idle_latency_is(&idle, 1u, NULL), "C2 is an I/O port read only: hint 1 has no latency");
+    kernel_test_check(test, idle_latency_is(&idle, 3u, NULL), "hint 3's state lies past the count: no latency");
+
+    idle.count = 0u;
+    kernel_test_check(test, idle_latency_is(&idle, 0u, NULL), "a slot that publishes nothing gives no latency");
+
+    idle.count = 1u;
+    idle.states[0] = idle_monitor_wait(0x414u, 1u, 3u, 300u);
+    idle.states[0].entry.bit_offset = 1u;
+    kernel_test_check(test, idle_latency_is(&idle, 0u, &after_input),
+                      "a C1 of class 1, a halt after an I/O read of port 0x414, gives its latency to hint 0");
+    kernel_test_check(test, idle_latency_is(&idle, 1u, NULL),
+                      "its port's bits 7:4 name no MWAIT hint: class 1 is not MWAIT");
+    idle.states[0].latency = 0u;
+    kernel_test_check(test, idle_latency_is(&idle, 0u, &zero), "a published latency of zero is a latency");
+    idle.states[0].latency = largest;
+    kernel_test_check(test, idle_latency_is(&idle, 0u, &largest), "so is the largest a double word holds");
+}
+
+/**
+ * @brief A processor finds the C-states of the CPU slot whose local APIC ID is its own, whatever the slot's place; an
+ *        ID no slot has, or one only a slot past the table's count has, finds none.
+ */
+KERNEL_TEST(a_processor_finds_the_c_states_of_the_slot_of_its_apic_id)
+{
+    static AdvancedConfigurationAndPowerInterfaceProcessorIdleTable_t table;
+    static AdvancedConfigurationAndPowerInterfaceMadtState_t madt;
+
+    memset(&table, 0, sizeof(table));
+    memset(&madt, 0, sizeof(madt));
+    table.slot_count = 2u;
+    madt.processors[0].apic_id = 4u;
+    madt.processors[1].apic_id = 7u;
+    madt.processors[2].apic_id = 9u;
+
+    kernel_test_check(test,
+                      advanced_configuration_and_power_interface_processor_idle_of_processor(&table, &madt, 7u) ==
+                          &table.slots[1],
+                      "APIC ID 7 finds the second slot");
+    kernel_test_check(test,
+                      advanced_configuration_and_power_interface_processor_idle_of_processor(&table, &madt, 4u) ==
+                          &table.slots[0],
+                      "APIC ID 4 finds the first");
+    kernel_test_check(test,
+                      advanced_configuration_and_power_interface_processor_idle_of_processor(&table, &madt, 5u) == NULL,
+                      "an ID no slot has finds none");
+    kernel_test_check(test,
+                      advanced_configuration_and_power_interface_processor_idle_of_processor(&table, &madt, 9u) == NULL,
+                      "nor one only a slot past the count has");
+}

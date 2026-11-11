@@ -187,8 +187,9 @@ bool kernel_processor_sleep_has_interrupt_break(void);
  *          the deepest usable hint below it and counted, rather than passed through to raise a fault, to land
  *          somewhere unintended, or to stop the timer that wakes the core. What a hint costs in wake latency is
  *          NOT in CPUID: it lives in ACPI `_CST`, which the ACPI layer publishes per CPU
- *          (kernel/acpi/processor_idle.h) and no sleep reads yet (#298), so choosing a depth stays a decision of
- *          the caller that knows its own deadline, never a derivation.
+ *          (kernel/acpi/processor_idle.h) and a tickless sleep reads as the lead of a depth it has not learned yet
+ *          (kernel/power/tickless.h); choosing a depth against a deadline stays a decision of the caller that knows
+ *          it (#298), never a derivation.
  *
  * @param hint Desired hint index; @ref PROCESSOR_SLEEP_HINT_C1 is the floor.
  * @return true when the request was granted exactly as asked.

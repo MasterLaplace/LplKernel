@@ -614,3 +614,253 @@ KERNEL_TEST(a_sleep_another_interrupt_ends_teaches_the_lead_nothing)
     kernel_test_check(test, tickless_test_tick_runs(), "and the tick runs again");
     kernel_test_measure(test, "wake_lead_ns", (uint32_t) kernel_tickless_nanoseconds_from_cycles(lead_after));
 }
+
+/** @name The decision to probe a depth before a sleep, in cycles
+ *  @{ */
+#define TICKLESS_TEST_PROBE_SPAN 5000u  /**< A probe's span. */
+#define TICKLESS_TEST_FAR_WAKE   10000u /**< A wake-up the probe ends well before. */
+/** @} */
+
+/** How far the window a changed depth's first sleep serves opens after the arming, past any probe: microseconds. */
+#define TICKLESS_TEST_CHANGED_DEPTH_OPENS_MICROSECONDS 20000u
+
+/**
+ * @brief A sleep at a depth no wake-up taught probes it first only when it was not probed since the tick stopped and
+ *        its probe ends before the plan's next wake-up, one ending on that wake-up included.
+ */
+KERNEL_TEST(a_depth_is_probed_before_a_sleep_once_and_only_when_the_probe_fits)
+{
+    kernel_test_check(test,
+                      kernel_tickless_probes_before_sleeping(false, TICKLESS_TEST_FAR_WAKE, TICKLESS_TEST_PROBE_SPAN),
+                      "an unprobed depth whose probe ends before the wake-up is probed");
+    kernel_test_check(test,
+                      kernel_tickless_probes_before_sleeping(false, TICKLESS_TEST_PROBE_SPAN, TICKLESS_TEST_PROBE_SPAN),
+                      "a probe that ends on the wake-up still fits");
+    kernel_test_check(test,
+                      !kernel_tickless_probes_before_sleeping(true, TICKLESS_TEST_FAR_WAKE, TICKLESS_TEST_PROBE_SPAN),
+                      "a depth probed since the tick stopped is not probed again");
+    kernel_test_check(
+        test, !kernel_tickless_probes_before_sleeping(false, TICKLESS_TEST_PROBE_SPAN - 1u, TICKLESS_TEST_PROBE_SPAN),
+        "a probe that would end a cycle past the wake-up is not taken");
+    kernel_test_check(test, !kernel_tickless_probes_before_sleeping(false, 0u, TICKLESS_TEST_PROBE_SPAN),
+                      "nor before a wake-up already due");
+}
+
+/**
+ * @brief Picks a depth this processor offers, other than @p first, that no wake-up taught, and enters it.
+ * @param first The depth the session entered first.
+ * @return That depth, or @p first, entered again, when every other one learned a wake-up earlier in the boot.
+ */
+static uint32_t tickless_test_enter_an_unlearned_depth(uint32_t first)
+{
+    const uint32_t hints = kernel_processor_sleep_available_hints();
+
+    for (uint32_t hint = PROCESSOR_SLEEP_HINT_C1; hint <= PROCESSOR_SLEEP_HINT_MAX; ++hint)
+        if (hint != first && ((hints >> hint) & 1u) != 0u && kernel_processor_sleep_request_hint(hint) &&
+            kernel_tickless_wake_samples() == 0u)
+            return hint;
+    (void) kernel_processor_sleep_request_hint(first);
+    return first;
+}
+
+/**
+ * @brief A depth entered with the tick stopped, which no wake-up taught, is probed at its first sleep, whose window
+ *        opens past any probe, so that its lead is measured rather than assumed; skipped where the processor offers
+ *        one depth.
+ */
+KERNEL_TEST(a_depth_entered_with_the_tick_stopped_is_probed_at_its_first_sleep)
+{
+    if (!tickless_test_can_stop_the_tick(test))
+        return;
+    const uint32_t hints = kernel_processor_sleep_available_hints();
+    if ((hints & (hints - 1u)) == 0u)
+    {
+        kernel_test_skip(test, "the processor offers one depth: no QEMU model lets the kernel use MONITOR (#818)");
+        return;
+    }
+
+    const uint32_t duty = tickless_test_begin();
+    const uint32_t first = kernel_processor_sleep_active_hint();
+    const bool stopped = kernel_tickless_enable(true, &tickless_test_plan);
+    const uint32_t entered = stopped ? tickless_test_enter_an_unlearned_depth(first) : first;
+    if (stopped && entered == first)
+    {
+        kernel_tickless_disable();
+        kernel_test_skip(test, "every other depth learned a wake-up earlier in this boot");
+        return;
+    }
+
+    const uint64_t probe_before = kernel_tickless_probe_cycles();
+    const uint64_t opens = asmutils_read_timestamp_counter() +
+                           kernel_tickless_cycles_from_microseconds(TICKLESS_TEST_CHANGED_DEPTH_OPENS_MICROSECONDS);
+    const bool served =
+        stopped &&
+        tickless_test_serve_window(duty, opens,
+                                   opens + kernel_tickless_cycles_from_microseconds(TICKLESS_TEST_WINDOW_MICROSECONDS));
+    const uint32_t samples = kernel_tickless_wake_samples();
+    const uint64_t probe = kernel_tickless_probe_cycles();
+    (void) kernel_processor_sleep_request_hint(first);
+    kernel_tickless_disable();
+
+    kernel_test_check(test, stopped && served, "the tick stops and the window is served");
+    kernel_test_check(test, probe != probe_before, "the depth entered is probed at its first sleep");
+    kernel_test_check(test, samples >= 1u, "so its lead is learned");
+    kernel_test_measure(test, "entered_hint", entered);
+    kernel_test_measure(test, "probe_samples", samples);
+    kernel_test_measure(test, "probe_ns", (uint32_t) kernel_tickless_nanoseconds_from_cycles(probe));
+}
+
+/** @name Windows armed at a depth made to have learned nothing, from the arming, in microseconds
+ *  @{ */
+#define TICKLESS_TEST_NEAR_OPENS_MICROSECONDS  100u   /**< A near one opens. */
+#define TICKLESS_TEST_NEAR_CLOSES_MICROSECONDS 1000u  /**< It closes, the bound's wake-up nearer than a probe ends. */
+#define TICKLESS_TEST_FAR_OPENS_MICROSECONDS   20000u /**< A far one opens, past any probe. */
+#define TICKLESS_TEST_FAR_CLOSES_MICROSECONDS  22000u /**< It closes. */
+#define TICKLESS_TEST_DUE_CLOSES_MICROSECONDS  100u   /**< One open from the arming closes nearer than the bound. */
+/** @} */
+
+/**
+ * @struct TicklessTestUnlearned_t
+ * @brief What serving windows taught, each at a depth made to have learned nothing.
+ */
+typedef struct {
+    bool stopped;            /**< The tick stopped. */
+    bool served;             /**< Every window was served. */
+    uint32_t on_the_bound;   /**< Wake-ups planned on the bound meanwhile. */
+    uint32_t on_a_published; /**< Wake-ups planned on a published lead meanwhile. */
+    uint32_t sleeps;         /**< Times the processor slept meanwhile. */
+    uint32_t samples;        /**< Wake-ups the depth learned by the last window's end. */
+    uint32_t probes;         /**< Windows before which the depth was probed. */
+    uint64_t returned;       /**< Microseconds the sleeps on the plan returned. */
+    uint64_t slept;          /**< Microseconds counted with the tick stopped meanwhile. */
+} TicklessTestUnlearned_t;
+
+/**
+ * @brief Serves one window of the test's duty, from @p opens to @p closes microseconds after the arming, at a depth
+ *        that learned nothing, and adds to @p seen what it taught.
+ * @param duty   The test's duty.
+ * @param opens  When the window opens.
+ * @param closes When it closes.
+ * @param seen   What the windows taught so far.
+ */
+static void tickless_test_serve_round(uint32_t duty, uint32_t opens, uint32_t closes, TicklessTestUnlearned_t *seen)
+{
+    const uint32_t bound_before = kernel_tickless_wakes_planned_on_the_bound();
+    const uint32_t published_before = kernel_tickless_wakes_planned_on_a_published_lead();
+    const uint32_t sleeps_before = kernel_processor_sleep_count();
+    const uint64_t probe_before = kernel_tickless_probe_cycles();
+    const uint64_t slept_before = kernel_tickless_slept_microseconds();
+    const uint32_t runs = tickless_test_runs;
+    const uint64_t armed = asmutils_read_timestamp_counter();
+
+    (void) kernel_wake_planner_arm(&tickless_test_plan, duty, armed + kernel_tickless_cycles_from_microseconds(opens),
+                                   armed + kernel_tickless_cycles_from_microseconds(closes));
+    for (uint32_t sleeps = 0u; tickless_test_runs == runs && sleeps < TICKLESS_TEST_SLEEPS; ++sleeps)
+        seen->returned += kernel_tickless_sleep_on(&tickless_test_plan);
+    seen->served = seen->served && tickless_test_runs != runs;
+    seen->samples = kernel_tickless_wake_samples();
+    seen->on_the_bound += kernel_tickless_wakes_planned_on_the_bound() - bound_before;
+    seen->on_a_published += kernel_tickless_wakes_planned_on_a_published_lead() - published_before;
+    seen->sleeps += kernel_processor_sleep_count() - sleeps_before;
+    seen->probes += kernel_tickless_probe_cycles() != probe_before ? 1u : 0u;
+    seen->slept += kernel_tickless_slept_microseconds() - slept_before;
+}
+
+/**
+ * @brief Stops the tick and serves @p rounds windows from @p opens to @p closes microseconds after their arming, the
+ *        depth sleeps enter made to have learned nothing before each, then gives the depth back its estimate and
+ *        starts the tick again.
+ * @param opens  When each window opens.
+ * @param closes When it closes.
+ * @param rounds How many windows.
+ * @return What serving them taught.
+ */
+static TicklessTestUnlearned_t tickless_test_serve_at_an_unlearned_depth(uint32_t opens, uint32_t closes,
+                                                                         uint32_t rounds)
+{
+    TicklessTestUnlearned_t seen = {.served = true};
+    const uint32_t duty = tickless_test_begin();
+
+    seen.stopped = kernel_tickless_enable(true, &tickless_test_plan);
+    if (!seen.stopped)
+        return seen;
+
+    const uint32_t depth = kernel_processor_sleep_depth();
+    KernelWakeLatency_t held = {0};
+    kernel_tickless_debug_exchange_depth_estimate(depth, &held);
+    for (uint32_t round = 0u; round < rounds; ++round)
+    {
+        KernelWakeLatency_t forgotten = {0};
+        if (round > 0u)
+            kernel_tickless_debug_exchange_depth_estimate(depth, &forgotten);
+        tickless_test_serve_round(duty, opens, closes, &seen);
+    }
+    kernel_tickless_debug_exchange_depth_estimate(depth, &held);
+    kernel_tickless_disable();
+    return seen;
+}
+
+/**
+ * @brief A window whose wake-up, a bound before its latest, comes before a probe would end is served at a depth that
+ *        learned nothing without a probe, its wake-up planned on the bound, the shallowest depth having no shallower
+ *        lead, and the depth learns from that sleep; what the sleeps return is the time counted slept.
+ */
+KERNEL_TEST(a_near_window_at_a_depth_that_learned_nothing_is_planned_on_the_bound_without_a_probe)
+{
+    if (!tickless_test_can_stop_the_tick(test))
+        return;
+
+    const TicklessTestUnlearned_t seen = tickless_test_serve_at_an_unlearned_depth(
+        TICKLESS_TEST_NEAR_OPENS_MICROSECONDS, TICKLESS_TEST_NEAR_CLOSES_MICROSECONDS, 1u);
+
+    kernel_test_check(test, seen.stopped && seen.served, "the tick stops and the window is served");
+    kernel_test_check(test, seen.probes == 0u, "no probe, which would end after the wake-up");
+    kernel_test_check(test, seen.on_the_bound >= 1u && seen.on_a_published == 0u,
+                      "the wake-up is planned on the bound, never on a published latency alone");
+    kernel_test_check(test, seen.samples >= 1u || seen.on_the_bound > 1u,
+                      "the depth learns from its sleep, or plans the next on the bound again");
+    kernel_test_check(test, seen.returned == seen.slept, "what the sleeps return is the time counted slept");
+    kernel_test_measure(test, "near_wakes_on_bound", seen.on_the_bound);
+    kernel_test_measure(test, "near_samples", seen.samples);
+}
+
+/**
+ * @brief A window whose wake-up comes after a probe would end is served at a depth that learned nothing once the depth
+ *        is probed, its wake-up then planned on the lead the probe taught, and a depth made to learn nothing again in
+ *        the same session is probed again; what the sleeps return, the probes included, is the time counted slept.
+ */
+KERNEL_TEST(a_far_window_at_a_depth_that_learned_nothing_is_planned_after_probing_it)
+{
+    if (!tickless_test_can_stop_the_tick(test))
+        return;
+
+    const TicklessTestUnlearned_t seen = tickless_test_serve_at_an_unlearned_depth(
+        TICKLESS_TEST_FAR_OPENS_MICROSECONDS, TICKLESS_TEST_FAR_CLOSES_MICROSECONDS, 2u);
+
+    kernel_test_check(test, seen.stopped && seen.served, "the tick stops and both windows are served");
+    kernel_test_check(test, seen.probes == 2u, "the depth is probed before each, forgotten in between");
+    kernel_test_check(test, seen.samples >= 2u && seen.on_the_bound == 0u && seen.on_a_published == 0u,
+                      "so each wake-up is planned on the lead the probe taught, and the sleep teaches it more");
+    kernel_test_check(test, seen.returned == seen.slept,
+                      "what the sleeps return, the probes included, is the time counted slept");
+    kernel_test_measure(test, "far_samples", seen.samples);
+}
+
+/**
+ * @brief A window already due at a depth that learned nothing is served without sleeping or probing, and the wake-up
+ *        the plan chose for it, on the bound, is counted all the same.
+ */
+KERNEL_TEST(a_window_already_due_at_a_depth_that_learned_nothing_is_served_without_sleeping_and_counted)
+{
+    if (!tickless_test_can_stop_the_tick(test))
+        return;
+
+    const TicklessTestUnlearned_t seen =
+        tickless_test_serve_at_an_unlearned_depth(0u, TICKLESS_TEST_DUE_CLOSES_MICROSECONDS, 1u);
+
+    kernel_test_check(test, seen.stopped && seen.served, "the tick stops and the window is served");
+    kernel_test_check(test, seen.sleeps == 0u && seen.probes == 0u && seen.samples == 0u,
+                      "without sleeping, probing or learning");
+    kernel_test_check(test, seen.on_the_bound == 1u, "its one wake-up planned on the bound is counted");
+    kernel_test_measure(test, "due_wakes_on_bound", seen.on_the_bound);
+}

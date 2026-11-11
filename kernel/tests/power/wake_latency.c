@@ -208,3 +208,109 @@ KERNEL_TEST(sleeps_of_increasing_length_are_learned_from_the_longest)
     kernel_test_check(test, longest_first.samples == 4u, "each is learned once");
     kernel_test_measure(test, "lead_cycles", (uint32_t) kernel_wake_latency_lead(&longest_first));
 }
+
+#define WAKE_LATENCY_TEST_SHALLOWER 1000u  /**< A shallower depth's learned lead, in cycles. */
+#define WAKE_LATENCY_TEST_PUBLISHED 3000u  /**< A deeper depth's published entry and exit latency, in cycles. */
+#define WAKE_LATENCY_TEST_BOUND     50000u /**< The bound a depth with nothing published takes, in cycles. */
+
+/**
+ * @brief A depth no wake-up taught leads by a shallower depth's lead plus the entry and exit latency firmware publishes
+ * for it, never zero, and its first wake-up is bounded by twice that, as by any assumed lead.
+ */
+KERNEL_TEST(a_depth_that_learned_nothing_leads_by_a_shallower_lead_plus_its_published_latency)
+{
+    KernelWakeLatency_t estimate = {0};
+
+    const KernelWakeLeadSource_t source = kernel_wake_latency_assume_unlearned(
+        &estimate, WAKE_LATENCY_TEST_SHALLOWER, WAKE_LATENCY_TEST_PUBLISHED, WAKE_LATENCY_TEST_BOUND);
+
+    kernel_test_check(test, source == KERNEL_WAKE_LEAD_PUBLISHED, "the lead comes from what firmware publishes");
+    kernel_test_check(test, kernel_wake_latency_lead(&estimate) == 4000u, "1000 cycles learned plus 3000 published");
+    kernel_test_check(test, estimate.samples == 0u, "assuming a lead learns nothing");
+    kernel_wake_latency_learn(&estimate, 1000000u);
+    kernel_test_check(test, kernel_wake_latency_lead(&estimate) == 4u * 8000u,
+                      "a first wake-up held for 1000000 cycles counts as twice the 4000 assumed, so leads by four "
+                      "times 8000");
+}
+
+/**
+ * @brief A depth firmware publishes nothing for takes the bound, and so does one no shallower depth of which learned a
+ *        lead, whatever it publishes: its latency alone leaves out the timer's, and zero is the lead the defect armed
+ *        with.
+ */
+KERNEL_TEST(a_depth_with_nothing_published_or_no_shallower_lead_leads_by_the_bound)
+{
+    KernelWakeLatency_t unpublished = {0};
+    KernelWakeLatency_t alone = {0};
+    KernelWakeLatency_t zero = {0};
+
+    kernel_test_check(test,
+                      kernel_wake_latency_assume_unlearned(&unpublished, WAKE_LATENCY_TEST_SHALLOWER,
+                                                           KERNEL_WAKE_LATENCY_UNPUBLISHED,
+                                                           WAKE_LATENCY_TEST_BOUND) == KERNEL_WAKE_LEAD_BOUND &&
+                          kernel_wake_latency_lead(&unpublished) == WAKE_LATENCY_TEST_BOUND,
+                      "nothing published: the bound, whatever was learned at a shallower depth");
+    kernel_test_check(test,
+                      kernel_wake_latency_assume_unlearned(&alone, 0u, WAKE_LATENCY_TEST_PUBLISHED,
+                                                           WAKE_LATENCY_TEST_BOUND) == KERNEL_WAKE_LEAD_BOUND &&
+                          kernel_wake_latency_lead(&alone) == WAKE_LATENCY_TEST_BOUND,
+                      "3000 published and no shallower lead: the bound, not the published latency alone");
+    kernel_test_check(test,
+                      kernel_wake_latency_assume_unlearned(&zero, 0u, 0u, WAKE_LATENCY_TEST_BOUND) ==
+                              KERNEL_WAKE_LEAD_BOUND &&
+                          kernel_wake_latency_lead(&zero) == WAKE_LATENCY_TEST_BOUND,
+                      "zero published and nothing learned: the bound, not a lead of zero");
+}
+
+/**
+ * @brief A depth that learned a wake-up keeps its lead whatever firmware publishes, and says so.
+ */
+KERNEL_TEST(a_depth_that_learned_keeps_its_lead_whatever_is_published)
+{
+    KernelWakeLatency_t estimate = {0};
+
+    kernel_wake_latency_learn(&estimate, WAKE_LATENCY_TEST_STEADY);
+    const uint64_t learned = kernel_wake_latency_lead(&estimate);
+
+    kernel_test_check(test,
+                      kernel_wake_latency_assume_unlearned(&estimate, WAKE_LATENCY_TEST_SHALLOWER,
+                                                           WAKE_LATENCY_TEST_PUBLISHED,
+                                                           WAKE_LATENCY_TEST_BOUND) == KERNEL_WAKE_LEAD_LEARNED,
+                      "the lead comes from the depth's own wake-ups");
+    kernel_test_check(test, learned == 4u * WAKE_LATENCY_TEST_STEADY && kernel_wake_latency_lead(&estimate) == learned,
+                      "the lead learned, four times 800 cycles, stays");
+}
+
+/**
+ * @brief A shallower lead and a published latency that add past the longest latency lead by the longest, as any
+ *        assumed lead does, rather than wrapping around.
+ */
+KERNEL_TEST(a_sum_past_the_longest_latency_leads_by_the_longest)
+{
+    KernelWakeLatency_t estimate = {0};
+
+    (void) kernel_wake_latency_assume_unlearned(&estimate, KERNEL_WAKE_LATENCY_LONGEST_CYCLES, UINT64_MAX - 1u,
+                                                WAKE_LATENCY_TEST_BOUND);
+    kernel_test_check(test, kernel_wake_latency_lead(&estimate) == KERNEL_WAKE_LATENCY_LONGEST_CYCLES,
+                      "the sum is held to the longest latency");
+}
+
+/**
+ * @brief The shallower lead a depth takes is the deepest learned below it: a depth that learned nothing between is
+ *        passed over, the depth itself and the ones below it are not read, and the shallowest has none.
+ */
+KERNEL_TEST(the_shallower_lead_is_the_one_learned_at_the_deepest_depth_below)
+{
+    KernelWakeLatency_t estimates[4] = {{0}};
+
+    kernel_wake_latency_learn(&estimates[0], 800u);
+    kernel_wake_latency_learn(&estimates[2], 1250u);
+    kernel_wake_latency_learn(&estimates[3], 9000u);
+
+    kernel_test_check(test, kernel_wake_latency_shallower_lead(estimates, 3u) == 5000u,
+                      "depth 3 takes depth 2's lead, four times 1250, not its own");
+    kernel_test_check(test, kernel_wake_latency_shallower_lead(estimates, 2u) == 3200u,
+                      "depth 2 passes over depth 1, which learned nothing, to depth 0's four times 800");
+    kernel_test_check(test, kernel_wake_latency_shallower_lead(estimates, 1u) == 3200u, "depth 1 takes depth 0's");
+    kernel_test_check(test, kernel_wake_latency_shallower_lead(estimates, 0u) == 0u, "the shallowest has none");
+}
