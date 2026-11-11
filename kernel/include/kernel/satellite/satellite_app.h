@@ -57,6 +57,8 @@ typedef struct {
     uint32_t batched_wakes;          /**< Wake-ups that served two duties or more. */
     uint32_t overshoot_microseconds; /**< The most a duty ran past its latest. */
     uint32_t wake_lead_nanoseconds;  /**< The timer's lead at the session's end, probed then learned. */
+    uint32_t published_lead_sleeps;  /**< Sleeps armed at a depth no wake-up taught, on a lead `_CST` gave. */
+    uint32_t bound_lead_sleeps;      /**< Sleeps armed at a depth no wake-up taught nor `_CST` described. */
     uint32_t reconciler_passes;      /**< Reconciler passes the session's wake-ups carried with the tick stopped. */
     uint32_t sleeps;                 /**< Times the processor was actually put to sleep. */
     uint32_t sleeps_skipped;         /**< Times a sleep was unnecessary — the watch had fired. */

@@ -57,6 +57,17 @@ extern "C" {
 #define KERNEL_WAKE_LATENCY_DEVIATIONS     6u          /**< Mean deviations the lead adds: RFC 6298 takes four. */
 #define KERNEL_WAKE_LATENCY_CLIP_IN_LEADS  2u          /**< The most a sample counts for, in leads. */
 #define KERNEL_WAKE_LATENCY_LONGEST_CYCLES (1u << 27u) /**< The most a latency counts for: 45 ms at 3 GHz. */
+#define KERNEL_WAKE_LATENCY_UNPUBLISHED    UINT64_MAX  /**< The exit latency of a depth firmware publishes none for. */
+
+/**
+ * @enum KernelWakeLeadSource_t
+ * @brief Where the lead a sleep arms with comes from.
+ */
+typedef enum {
+    KERNEL_WAKE_LEAD_LEARNED = 0,   /**< The depth's own wake-ups. */
+    KERNEL_WAKE_LEAD_PUBLISHED = 1, /**< A shallower depth's lead plus the exit latency firmware publishes. */
+    KERNEL_WAKE_LEAD_BOUND = 2,     /**< The bound, when firmware publishes nothing for the depth. */
+} KernelWakeLeadSource_t;
 
 /**
  * @struct KernelWakeLatency_t
@@ -105,6 +116,27 @@ void kernel_wake_latency_learn_from_the_longest(KernelWakeLatency_t *estimate, c
  * @param lead     The lead to assume, in cycles; counted at most as @ref KERNEL_WAKE_LATENCY_LONGEST_CYCLES.
  */
 void kernel_wake_latency_assume(KernelWakeLatency_t *estimate, uint64_t lead);
+
+/**
+ * @brief Gives the estimate of a depth no wake-up taught the lead a sleep there arms with until one does: the lead
+ *        learned at a shallower depth plus the exit latency firmware publishes for this one, or the bound.
+ *
+ * @details The published latency is the worst case of entering and leaving the C-state (ACPI 6.6 §8.4.1.1, table
+ *          8.2), which leaves out what every depth pays, the timer's interrupt and a hypervisor's delay, and the lead
+ *          of a shallower depth counts those. A depth firmware publishes nothing for, and one whose sum is zero, take
+ *          the bound: a lead of zero arms at the window's latest and wakes a latency after it, and disables the clip
+ *          of the first wake-up learned. The lead is set as @ref kernel_wake_latency_assume sets one, so that the first
+ *          wake-up learned replaces it.
+ *
+ * @param estimate  The depth's estimate; left as it is once it learned a wake-up.
+ * @param shallower The lead learned at the deepest shallower depth that learned one, in cycles, or 0.
+ * @param published The exit latency firmware publishes for the depth, in cycles, or
+ *                  @ref KERNEL_WAKE_LATENCY_UNPUBLISHED.
+ * @param bound     The lead to assume when firmware publishes nothing, in cycles; never zero.
+ * @return Where the lead the estimate gives now comes from.
+ */
+KernelWakeLeadSource_t kernel_wake_latency_assume_unlearned(KernelWakeLatency_t *estimate, uint64_t shallower,
+                                                            uint64_t published, uint64_t bound);
 
 /**
  * @brief How many cycles before a window's latest to arm its wake-up: the smoothed latency plus

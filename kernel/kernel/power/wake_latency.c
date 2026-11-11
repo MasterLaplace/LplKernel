@@ -34,6 +34,19 @@ static uint32_t wake_latency_envelope(const KernelWakeLatency_t *estimate)
     return (estimate->smoothed_eighths >> 3u) + (estimate->deviation_quarters * KERNEL_WAKE_LATENCY_DEVIATIONS) / 4u;
 }
 
+/**
+ * @brief The lead a shallower depth's lead and a published exit latency give: their sum, saturated.
+ * @param shallower The lead learned at a shallower depth, or 0.
+ * @param published The published exit latency, or KERNEL_WAKE_LATENCY_UNPUBLISHED.
+ * @return The sum, or 0 when nothing is published.
+ */
+static uint64_t wake_latency_published_lead(uint64_t shallower, uint64_t published)
+{
+    if (published == KERNEL_WAKE_LATENCY_UNPUBLISHED)
+        return 0u;
+    return published > UINT64_MAX - shallower ? UINT64_MAX : shallower + published;
+}
+
 void kernel_wake_latency_learn(KernelWakeLatency_t *estimate, uint64_t latency)
 {
     const uint32_t sample = wake_latency_sample(estimate->lead, latency);
@@ -69,4 +82,20 @@ void kernel_wake_latency_learn_from_the_longest(KernelWakeLatency_t *estimate, c
 {
     for (uint32_t index = count; index > 0u; --index)
         kernel_wake_latency_learn(estimate, latencies[index - 1u]);
+}
+
+KernelWakeLeadSource_t kernel_wake_latency_assume_unlearned(KernelWakeLatency_t *estimate, uint64_t shallower,
+                                                            uint64_t published, uint64_t bound)
+{
+    if (estimate->samples != 0u)
+        return KERNEL_WAKE_LEAD_LEARNED;
+
+    const uint64_t lead = wake_latency_published_lead(shallower, published);
+    if (lead == 0u)
+    {
+        kernel_wake_latency_assume(estimate, bound);
+        return KERNEL_WAKE_LEAD_BOUND;
+    }
+    kernel_wake_latency_assume(estimate, lead);
+    return KERNEL_WAKE_LEAD_PUBLISHED;
 }

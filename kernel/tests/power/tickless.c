@@ -614,3 +614,98 @@ KERNEL_TEST(a_sleep_another_interrupt_ends_teaches_the_lead_nothing)
     kernel_test_check(test, tickless_test_tick_runs(), "and the tick runs again");
     kernel_test_measure(test, "wake_lead_ns", (uint32_t) kernel_tickless_nanoseconds_from_cycles(lead_after));
 }
+
+/** @name The decision to probe a depth before a sleep, in cycles
+ *  @{ */
+#define TICKLESS_TEST_PROBE_SPAN 5000u  /**< A probe's span. */
+#define TICKLESS_TEST_FAR_WAKE   10000u /**< A wake-up the probe ends well before. */
+/** @} */
+
+/** How far the window a changed depth's first sleep serves opens after the arming, past any probe: microseconds. */
+#define TICKLESS_TEST_CHANGED_DEPTH_OPENS_MICROSECONDS 20000u
+
+/**
+ * @brief A sleep at a depth no wake-up taught probes it first only when it was not probed since the tick stopped and
+ *        its probe ends before the plan's next wake-up, one ending on that wake-up included.
+ */
+KERNEL_TEST(a_depth_is_probed_before_a_sleep_once_and_only_when_the_probe_fits)
+{
+    kernel_test_check(test,
+                      kernel_tickless_probes_before_sleeping(false, TICKLESS_TEST_FAR_WAKE, TICKLESS_TEST_PROBE_SPAN),
+                      "an unprobed depth whose probe ends before the wake-up is probed");
+    kernel_test_check(test,
+                      kernel_tickless_probes_before_sleeping(false, TICKLESS_TEST_PROBE_SPAN, TICKLESS_TEST_PROBE_SPAN),
+                      "a probe that ends on the wake-up still fits");
+    kernel_test_check(test,
+                      !kernel_tickless_probes_before_sleeping(true, TICKLESS_TEST_FAR_WAKE, TICKLESS_TEST_PROBE_SPAN),
+                      "a depth probed since the tick stopped is not probed again");
+    kernel_test_check(
+        test, !kernel_tickless_probes_before_sleeping(false, TICKLESS_TEST_PROBE_SPAN - 1u, TICKLESS_TEST_PROBE_SPAN),
+        "a probe that would end a cycle past the wake-up is not taken");
+    kernel_test_check(test, !kernel_tickless_probes_before_sleeping(false, 0u, TICKLESS_TEST_PROBE_SPAN),
+                      "nor before a wake-up already due");
+}
+
+/**
+ * @brief Picks a depth this processor offers, other than @p first, that no wake-up taught, and enters it.
+ * @param first The depth the session entered first.
+ * @return That depth, or @p first, entered again, when every other one learned a wake-up earlier in the boot.
+ */
+static uint32_t tickless_test_enter_an_unlearned_depth(uint32_t first)
+{
+    const uint32_t hints = kernel_processor_sleep_available_hints();
+
+    for (uint32_t hint = PROCESSOR_SLEEP_HINT_C1; hint <= PROCESSOR_SLEEP_HINT_MAX; ++hint)
+        if (hint != first && ((hints >> hint) & 1u) != 0u && kernel_processor_sleep_request_hint(hint) &&
+            kernel_tickless_wake_samples() == 0u)
+            return hint;
+    (void) kernel_processor_sleep_request_hint(first);
+    return first;
+}
+
+/**
+ * @brief A depth entered with the tick stopped, which no wake-up taught, is probed at its first sleep, whose window
+ *        opens past any probe, so that its lead is measured rather than assumed; skipped where the processor offers
+ *        one depth.
+ */
+KERNEL_TEST(a_depth_entered_with_the_tick_stopped_is_probed_at_its_first_sleep)
+{
+    if (!tickless_test_can_stop_the_tick(test))
+        return;
+    const uint32_t hints = kernel_processor_sleep_available_hints();
+    if ((hints & (hints - 1u)) == 0u)
+    {
+        kernel_test_skip(test, "the processor offers one depth: no QEMU model lets the kernel use MONITOR (#818)");
+        return;
+    }
+
+    const uint32_t duty = tickless_test_begin();
+    const uint32_t first = kernel_processor_sleep_active_hint();
+    const bool stopped = kernel_tickless_enable(true, &tickless_test_plan);
+    const uint32_t entered = stopped ? tickless_test_enter_an_unlearned_depth(first) : first;
+    if (stopped && entered == first)
+    {
+        kernel_tickless_disable();
+        kernel_test_skip(test, "every other depth learned a wake-up earlier in this boot");
+        return;
+    }
+
+    const uint64_t probe_before = kernel_tickless_probe_cycles();
+    const uint64_t opens = asmutils_read_timestamp_counter() +
+                           kernel_tickless_cycles_from_microseconds(TICKLESS_TEST_CHANGED_DEPTH_OPENS_MICROSECONDS);
+    const bool served =
+        stopped &&
+        tickless_test_serve_window(duty, opens,
+                                   opens + kernel_tickless_cycles_from_microseconds(TICKLESS_TEST_WINDOW_MICROSECONDS));
+    const uint32_t samples = kernel_tickless_wake_samples();
+    const uint64_t probe = kernel_tickless_probe_cycles();
+    (void) kernel_processor_sleep_request_hint(first);
+    kernel_tickless_disable();
+
+    kernel_test_check(test, stopped && served, "the tick stops and the window is served");
+    kernel_test_check(test, probe != probe_before, "the depth entered is probed at its first sleep");
+    kernel_test_check(test, samples >= 1u, "so its lead is learned");
+    kernel_test_measure(test, "entered_hint", entered);
+    kernel_test_measure(test, "probe_samples", samples);
+    kernel_test_measure(test, "probe_ns", (uint32_t) kernel_tickless_nanoseconds_from_cycles(probe));
+}

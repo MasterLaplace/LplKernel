@@ -156,6 +156,27 @@ extern uint32_t advanced_configuration_and_power_interface_processor_idle_fold(
     const AdvancedConfigurationAndPowerInterfaceProcessorIdleTable_t *table);
 
 /**
+ * @brief The worst-case latency to enter and leave the C-state an MWAIT hint targets, as the states one CPU slot
+ *        publishes give it.
+ *
+ * @details A state is entered by MWAIT when its register is FFixedHW of class 2, the Native C State encoding, whose
+ *          address is the hint given in EAX (Intel Processor Vendor-Specific ACPI Interface Specification, revision
+ *          007, §3.3, table 4), and its target is the C-state in that hint's bits 7:4, whatever its sub-state, as
+ *          Linux reads it (`acpi_processor_ffh_cstate_probe`, arch/x86/kernel/acpi/cstate.c). C1, hint 0, is also
+ *          entered by HLT, so every C1 state counts for it, as Linux enters by HLT a C1 the MWAIT probe refuses
+ *          (`acpi_processor_evaluate_cst`, drivers/acpi/acpi_processor.c). A state of another space, an I/O port
+ *          read, says nothing of a hint. Several states of the same target give the longest of their latencies.
+ *
+ * @param idle             The states one CPU slot publishes.
+ * @param hint             The C-state less one, bits 7:4 of MWAIT's EAX: 0 for C1.
+ * @param out_microseconds Receives the latency, in microseconds, when a state targets that C-state; untouched
+ *                         otherwise. Any 32-bit value, zero included, is a latency firmware may give.
+ * @return Whether a published state targets that C-state.
+ */
+extern bool advanced_configuration_and_power_interface_processor_idle_latency(
+    const AdvancedConfigurationAndPowerInterfaceProcessorIdle_t *idle, uint32_t hint, uint32_t *out_microseconds);
+
+/**
  * @brief The name the telemetry gives how step 8 handed _CST to the operating system.
  *
  * @param control An ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_IDLE_CONTROL_* value.

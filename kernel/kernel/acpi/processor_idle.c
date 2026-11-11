@@ -25,6 +25,11 @@
 #define PROCESSOR_IDLE_ABSENT         ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_MACHINE_LANGUAGE_NODE_IDLE_ABSENT
 #define PROCESSOR_IDLE_FOLD_OFFSET    0x811C9DC5u /**< FNV-1a's offset basis. */
 #define PROCESSOR_IDLE_FOLD_PRIME     0x01000193u /**< FNV-1a's prime. */
+#define PROCESSOR_IDLE_FIXED_HARDWARE 0x7Fu       /**< FFixedHW: a register only the processor's vendor defines. */
+#define PROCESSOR_IDLE_NATIVE_C_STATE 2u   /**< The FFixedHW class of a state MWAIT enters, the hint its address. */
+#define PROCESSOR_IDLE_C1             1u   /**< The type of C1, which HLT enters whatever its register. */
+#define PROCESSOR_IDLE_HINT_SHIFT     4u   /**< Where MWAIT's hint holds its target C-state less one. */
+#define PROCESSOR_IDLE_HINT_MASK      0xFu /**< Its width. */
 
 typedef AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t ProcessorIdleStatus_t;
 typedef AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t ProcessorIdleLoad_t;
@@ -35,6 +40,17 @@ typedef AdvancedConfigurationAndPowerInterfaceInitializationMachine_t ProcessorI
 typedef AdvancedConfigurationAndPowerInterfaceProcessorIdleTable_t ProcessorIdleTable_t;
 typedef AdvancedConfigurationAndPowerInterfaceProcessorIdle_t ProcessorIdle_t;
 typedef AdvancedConfigurationAndPowerInterfaceIdleState_t ProcessorIdleState_t;
+
+/**
+ * @brief Whether a published state is entered at the C-state an MWAIT hint targets: by MWAIT given a hint of that
+ *        target, any sub-state, or by HLT for C1.
+ */
+static bool processor_idle_state_enters_hint(const ProcessorIdleState_t *state, uint32_t hint)
+{
+    if (state->entry.space == PROCESSOR_IDLE_FIXED_HARDWARE && state->entry.bit_offset == PROCESSOR_IDLE_NATIVE_C_STATE)
+        return ((state->entry.address >> PROCESSOR_IDLE_HINT_SHIFT) & PROCESSOR_IDLE_HINT_MASK) == hint;
+    return hint == 0u && state->type == PROCESSOR_IDLE_C1;
+}
 
 /**
  * @brief Folds the @p width low bytes of @p value, little-endian, into @p fold with FNV-1a.
@@ -583,6 +599,25 @@ uint32_t advanced_configuration_and_power_interface_processor_idle_fold(const Pr
         }
     }
     return fold;
+}
+
+bool advanced_configuration_and_power_interface_processor_idle_latency(const ProcessorIdle_t *idle, uint32_t hint,
+                                                                       uint32_t *out_microseconds)
+{
+    const uint32_t count = idle->count < PROCESSOR_IDLE_MAX_STATES ? idle->count : PROCESSOR_IDLE_MAX_STATES;
+    bool found = false;
+    uint32_t longest = 0u;
+
+    for (uint32_t state = 0u; state < count; ++state)
+        if (processor_idle_state_enters_hint(&idle->states[state], hint) &&
+            (!found || idle->states[state].latency > longest))
+        {
+            longest = idle->states[state].latency;
+            found = true;
+        }
+    if (found)
+        *out_microseconds = longest;
+    return found;
 }
 
 const char *advanced_configuration_and_power_interface_idle_control_name(uint32_t control)
