@@ -129,11 +129,13 @@ extern uint32_t kernel_processor_park_target(const ProcessorSleepLadder_t *ladde
 extern void kernel_processor_park(void) __attribute__((noreturn));
 
 /**
- * @brief Tells every parked processor to look at its target again, after the TSC rate or a verdict changed.
+ * @brief Tells every parked processor to look at its target again, after a verdict of the bootstrap processor's probe
+ *        changed.
  *
- * @details Called on the bootstrap processor. Publishes the cycles of KERNEL_PROCESSOR_PARK_QUICK_MICROSECONDS at the
- *          calibrated rate, then sends every other processor an interrupt on a vector of its own, allocated by the
- *          first call; a processor that is not parked takes it and goes on.
+ * @details Called on the bootstrap processor, by the probe once it judged a port depth (kernel/power/tickless.h).
+ *          Publishes the cycles of KERNEL_PROCESSOR_PARK_QUICK_MICROSECONDS at the calibrated rate, which a probe
+ *          needs too, then sends every other processor an interrupt on a vector of its own, allocated by the first
+ *          call; a processor that is not parked takes it and goes on.
  */
 extern void kernel_processor_park_reconsider(void);
 

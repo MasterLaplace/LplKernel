@@ -243,7 +243,8 @@ bool kernel_processor_sleep_has_monitor(void);
  *        module: every sleep keeps the instruction it had.
  *
  * @return What kernel_processor_sleep_has_monitor answers once kernel_processor_sleep_initialize has
- *         run: true when CPUID leaf 1 advertises the pair and leaf 5 gives a non-zero line size.
+ *         run: true when CPUID leaf 1 advertises the pair and leaf 5 gives a non-zero line size that
+ *         @ref kernel_processor_sleep_monitor_line_fits.
  */
 bool kernel_processor_sleep_monitor_implemented(void);
 
@@ -294,7 +295,7 @@ uint32_t kernel_processor_sleep_enumerated_hints(uint32_t leaf5_edx);
 /**
  * @brief Which MWAIT hints CPUID leaves 1 and 5 enumerate, as a bit per hint, read as
  *        @ref kernel_processor_sleep_initialize reads them: none unless leaf 1 advertises the pair and leaf 5 gives a
- *        non-zero line size.
+ *        non-zero line size that @ref kernel_processor_sleep_monitor_line_fits.
  *
  * @details Pure, like @ref kernel_processor_sleep_enumerated_hints, so that a test hands it what no emulator gives.
  *

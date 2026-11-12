@@ -255,6 +255,10 @@ KERNEL_TEST(the_hints_of_the_cpuid_leaves_are_leaf_5_s_where_the_pair_is_impleme
                       "the line size is bits 15:0 alone");
     kernel_test_check(test, kernel_processor_sleep_hints_of_cpuid_leaves(0x8u, 0x40u, 0u) == 0u,
                       "the pair with a leaf 5 that lists no hint gives none");
+    kernel_test_check(test,
+                      kernel_processor_sleep_hints_of_cpuid_leaves(0x8u, 2u * kernel_processor_sleep_idle_line_bytes(),
+                                                                   0x2220u) == 0u,
+                      "nor where the monitor's line is larger than the idle line");
 }
 
 /**

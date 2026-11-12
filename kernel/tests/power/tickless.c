@@ -1,10 +1,13 @@
 #include <kernel/core/reconciler.h>
+#include <kernel/cpu/apic.h>
 #include <kernel/cpu/apic_ipi.h>
 #include <kernel/cpu/apic_timer.h>
 #include <kernel/cpu/cpu_identity.h>
+#include <kernel/cpu/cpu_topology.h>
 #include <kernel/cpu/device_interrupt.h>
 #include <kernel/cpu/irq.h>
 #include <kernel/lib/asmutils.h>
+#include <kernel/power/processor_park.h>
 #include <kernel/power/processor_sleep.h>
 #include <kernel/power/tickless.h>
 #include <kernel/power/wakeup_accounting.h>
@@ -912,14 +915,55 @@ KERNEL_TEST(a_probe_judges_a_port_depth_by_its_longest_sleeps)
 /** The port the made-up depth reads: nothing decodes it on QEMU's q35, whose ICH9 power management lies at 0x600. */
 #define TICKLESS_TEST_UNDECODED_PORT 0x414u
 
+#define TICKLESS_TEST_RECONSIDER_MICROSECONDS 100000u /**< How long a parked processor may take to be reached. */
+
+/**
+ * @brief How many times the parks' reconsider reached the processor of @p slot so far.
+ */
+static uint32_t tickless_test_reconsiders_of(uint32_t slot)
+{
+    const uint8_t vector = kernel_processor_park_reconsider_vector();
+
+    return vector == 0u ? 0u : device_interrupt_count(vector, slot);
+}
+
+/**
+ * @brief Waits, boundedly, until every other online processor was reached by the parks' reconsider more often than
+ *        @p before records.
+ * @return How many were; @p out_others receives how many there are.
+ */
+static uint32_t tickless_test_reconsiders_since(const uint32_t *before, uint32_t *out_others)
+{
+    const uint32_t here = cpu_topology_get_slot_for_apic_id(apic_get_id());
+    InterruptRequestDeadline_t deadline;
+    uint32_t reached = 0u;
+
+    *out_others = 0u;
+    for (uint32_t slot = 0u; slot < CPU_TOPOLOGY_MAX_LOGICAL_CPUS_PUBLIC; ++slot)
+    {
+        if (slot == here || !cpu_topology_is_logical_slot_online(slot))
+            continue;
+        ++*out_others;
+        interrupt_request_deadline_start(&deadline, TICKLESS_TEST_RECONSIDER_MICROSECONDS);
+        while (tickless_test_reconsiders_of(slot) <= before[slot] && !interrupt_request_deadline_passed(&deadline))
+            asmutils_pause();
+        reached += tickless_test_reconsiders_of(slot) > before[slot] ? 1u : 0u;
+    }
+    return reached;
+}
+
 /**
  * @brief Under a hypervisor, a port depth that reads a port nothing decodes is refused at the first stop of the tick,
  *        before any session counts its sleeps: its probe's reads return at once with no interrupt; the tick stops at
- *        the depth below instead, the refusal is counted, and the depth is taught nothing. Skipped on a real
- *        processor, whose port may stop it.
+ *        the depth below instead, the refusal is counted, and the depth is taught nothing. The refusal is published,
+ *        and every other processor told to look at its target again. Skipped on a real processor, whose port may stop
+ *        it.
  */
 KERNEL_TEST(a_port_depth_whose_read_does_not_stop_is_refused_at_the_first_stop_of_the_tick)
 {
+    uint32_t reconsiders[CPU_TOPOLOGY_MAX_LOGICAL_CPUS_PUBLIC];
+    uint32_t verdicts[PROCESSOR_SLEEP_PORT_VERDICTS];
+    uint32_t others = 0u;
     static ProcessorSleepLadder_t ladder;
     CpuIdentity_t identity;
     KernelWakeLatency_t held = {0};
@@ -943,6 +987,8 @@ KERNEL_TEST(a_port_depth_whose_read_does_not_stop_is_refused_at_the_first_stop_o
     const bool granted = kernel_processor_sleep_request_depth(1u);
     kernel_tickless_debug_exchange_depth_estimate(1u, &held);
     const uint32_t refused_before = kernel_processor_sleep_refused_depth_count();
+    for (uint32_t slot = 0u; slot < CPU_TOPOLOGY_MAX_LOGICAL_CPUS_PUBLIC; ++slot)
+        reconsiders[slot] = tickless_test_reconsiders_of(slot);
 
     (void) tickless_test_begin();
     const bool stopped = kernel_tickless_enable(true, &tickless_test_plan);
@@ -952,6 +998,8 @@ KERNEL_TEST(a_port_depth_whose_read_does_not_stop_is_refused_at_the_first_stop_o
     const uint32_t unstopped = kernel_tickless_unstopped_probe_ranks_at(1u);
     const uint32_t taught = kernel_tickless_wake_samples_at(1u);
     kernel_tickless_disable();
+    kernel_processor_sleep_port_verdicts(verdicts);
+    const uint32_t reached = tickless_test_reconsiders_since(reconsiders, &others);
     kernel_tickless_debug_exchange_depth_estimate(1u, &held);
     kernel_processor_sleep_initialize();
 
@@ -962,7 +1010,11 @@ KERNEL_TEST(a_port_depth_whose_read_does_not_stop_is_refused_at_the_first_stop_o
                       "for reads that did not stop");
     kernel_test_check(test, taught == 0u,
                       "and the refused depth is taught nothing, so that its next adoption is probed again");
+    kernel_test_check(test, verdicts[0] == (TICKLESS_TEST_UNDECODED_PORT | PROCESSOR_SLEEP_PORT_VERDICT_REFUSED),
+                      "the refusal is published for the parked processors");
+    kernel_test_check(test, reached == others, "and each other processor is told to look at its target again");
     kernel_test_measure(test, "unstopped_ranks", unstopped);
+    kernel_test_measure(test, "others_reached", reached);
 }
 
 /**

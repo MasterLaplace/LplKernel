@@ -77,13 +77,15 @@ static void processor_sleep_charge_asleep_since(uint64_t before)
 
 /**
  * @brief The line size the monitor watches, as CPUID leaves 1 and 5 give it: zero when leaf 1 does not advertise the
- *        pair.
+ *        pair, or when that line is larger than the idle line, which it would then share with other data.
  */
 static uint32_t processor_sleep_monitor_line_of(uint32_t leaf1_ecx, uint32_t leaf5_ebx)
 {
-    if ((leaf1_ecx & PROCESSOR_SLEEP_CPUID_MONITOR_BIT) == 0u)
+    const uint32_t line = leaf5_ebx & PROCESSOR_SLEEP_MONITOR_LINE_BITS;
+
+    if ((leaf1_ecx & PROCESSOR_SLEEP_CPUID_MONITOR_BIT) == 0u || !kernel_processor_sleep_monitor_line_fits(line))
         return 0u;
-    return leaf5_ebx & PROCESSOR_SLEEP_MONITOR_LINE_BITS;
+    return line;
 }
 
 /**
@@ -106,7 +108,7 @@ static bool processor_sleep_read_monitor(uint32_t *out_line, uint32_t *out_ecx, 
         return false;
     asmutils_cpuid(PROCESSOR_SLEEP_MONITOR_LEAF, 0u, &eax, &ebx, out_ecx, out_edx);
     *out_line = processor_sleep_monitor_line_of(leaf1_ecx, ebx);
-    return *out_line != 0u && kernel_processor_sleep_monitor_line_fits(*out_line);
+    return *out_line != 0u;
 }
 
 /**

@@ -332,6 +332,7 @@ KERNEL_TEST(a_parked_processor_refuses_a_validated_port_whose_read_does_not_stop
     uint32_t refused = 0u;
     uint32_t inherited = 0u;
     uint32_t judged = 0u;
+    uint32_t held = 0u;
 
     cpu_identity_read(&identity);
     if (!identity.hypervisor)
@@ -372,6 +373,19 @@ KERNEL_TEST(a_parked_processor_refuses_a_validated_port_whose_read_does_not_stop
         refused += processor_park_test_wait_for_a_refusal(slot, &record) ? 1u : 0u;
         judged += record.quick >= KERNEL_PROCESSOR_PARK_QUICK_LIMIT && record.port_reads >= record.quick ? 1u : 0u;
         judged_record = record;
+        turns[slot] = record.turns;
+    }
+    kernel_processor_park_reconsider();
+    for (uint32_t slot = 0u; slot < CPU_TOPOLOGY_MAX_LOGICAL_CPUS_PUBLIC; ++slot)
+    {
+        if (slot == here || !cpu_topology_is_logical_slot_online(slot) ||
+            !kernel_processor_park_record(slot, &record) || record.inherited == 0u)
+            continue;
+        const uint32_t reads = record.port_reads;
+        held += processor_park_test_wait_for_turns(slot, turns[slot], 0u) &&
+                        kernel_processor_park_record(slot, &record) && record.port_reads == reads ?
+                    1u :
+                    0u;
     }
     kernel_processor_sleep_initialize();
     kernel_processor_park_reconsider();
@@ -380,6 +394,7 @@ KERNEL_TEST(a_parked_processor_refuses_a_validated_port_whose_read_does_not_stop
     kernel_test_check(test, inherited != 0u, "one at least took the validated port");
     kernel_test_check(test, judged == inherited, "each that took it judged at least eight quick reads");
     kernel_test_check(test, refused == inherited, "and refused it, and sleeps by no port read");
+    kernel_test_check(test, held == inherited, "the refusal holds: woken again, it reads the port no more");
     kernel_test_measure(test, "applications", applications);
     kernel_test_measure(test, "inherited", inherited);
     kernel_test_measure(test, "quick", judged_record.quick);
