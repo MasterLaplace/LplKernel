@@ -1318,6 +1318,9 @@ KERNEL_TEST(the_bus_master_check_demotes_a_c3_to_the_deepest_allowed_depth_below
                       kernel_processor_sleep_depth_after_the_bus_master_check(&ladder, 0xFu, PROCESSOR_SLEEP_DEPTHS,
                                                                               active) == PROCESSOR_SLEEP_DEPTHS,
                       "a depth past the ladder is given back as it is");
+    ladder.depths[0].bus_master_check = true;
+    kernel_test_check(test, kernel_processor_sleep_depth_after_the_bus_master_check(&ladder, 0xFu, 0u, active) == 0u,
+                      "and C1, even with the check, has nothing below it");
 }
 
 /**
@@ -1473,4 +1476,45 @@ KERNEL_TEST(the_check_clears_bus_master_status_where_it_finds_it_set)
         test, kernel_processor_sleep_read_bus_master_status(&host.host, &ladder) == 0xFFEFu && host.access_count == 4u,
         "and a read alone writes nothing either");
     advanced_configuration_and_power_interface_simulated_host_close(&host);
+}
+
+/**
+ * @brief Under KVM, a sleep the bus-master check demotes to a C1 that MWAIT enters arms the monitor for that C1, so
+ *        that its MWAIT sleeps rather than returning at once: it enters by MWAIT, and no unarmed wait is counted. KVM
+ *        runs MONITOR and MWAIT as no-operations where CPUID hides them, so the instructions run on the bench; skipped
+ *        elsewhere, where MWAIT may fault or a made-up port stop the processor.
+ */
+KERNEL_TEST(a_sleep_demoted_to_an_mwait_c1_arms_its_monitor)
+{
+    static ProcessorSleepLadder_t ladder;
+    CpuIdentity_t identity;
+    uint8_t vector = 0u;
+    uint64_t quarter_tick = 0u;
+
+    cpu_identity_read(&identity);
+    if (!identity.hypervisor || memcmp(identity.hypervisor_signature, "KVMKVMKVM", sizeof("KVMKVMKVM")) != 0)
+    {
+        kernel_test_skip(test, "not KVM: MWAIT may fault, a made-up port may stop the processor");
+        return;
+    }
+    if (!processor_sleep_test_take_a_vector(test, &vector, &quarter_tick))
+        return;
+
+    processor_sleep_test_checked_ladder(&ladder, PROCESSOR_SLEEP_TEST_UNDECODED_PORT);
+    ladder.available = 0x5u;
+    ladder.depths[0].entry = PROCESSOR_SLEEP_ENTRY_MONITOR_WAIT;
+    kernel_processor_sleep_debug_adopt_ladder(&ladder);
+    (void) kernel_processor_sleep_request_depth(2u);
+    kernel_processor_sleep_begin_probe();
+    kernel_processor_sleep_end_probe(true);
+    const uint32_t unarmed_before = kernel_processor_sleep_unarmed_wait_count();
+    const ProcessorSleepOutcome_t demoted = processor_sleep_test_sleep_on_a_pending(vector);
+    const uint32_t unarmed = kernel_processor_sleep_unarmed_wait_count() - unarmed_before;
+    device_interrupt_release(vector);
+    kernel_processor_sleep_initialize();
+
+    kernel_test_check(test, demoted.depth == 0u, "BM_STS set: the sleep falls to C1");
+    kernel_test_check(test, demoted.mode == PROCESSOR_SLEEP_MONITOR && unarmed == 0u,
+                      "and enters it by MWAIT, its monitor armed");
+    kernel_test_check(test, demoted.interrupted, "and handles its pending interrupt");
 }

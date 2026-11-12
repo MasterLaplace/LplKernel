@@ -100,10 +100,20 @@ typedef struct ProcessorParkRecord {
 } ProcessorParkRecord_t;
 
 /**
+ * @brief Whether a port read did not stop the processor: it returned sooner than @p quick_cycles with no interrupt
+ *        requested and no bus master seen.
+ *
+ * @param read         What the processor saw when the read returned.
+ * @param quick_cycles The length under which such a read did not stop the processor.
+ * @return true for a quick read, which the guard and the park's record both count.
+ */
+extern bool kernel_processor_park_read_is_quick(const ProcessorParkRead_t *read, uint64_t quick_cycles);
+
+/**
  * @brief Judges one read of a port depth's port, and says whether it refuses the depth.
  *
- * @details A read is quick when it returned sooner than @p quick_cycles with no interrupt requested and no bus master
- *          seen; stuck when its interrupt was still requested once interrupts were enabled.
+ * @details A read is quick as @ref kernel_processor_park_read_is_quick says; stuck when its interrupt was still
+ *          requested once interrupts were enabled.
  *
  * @param judge        The streaks of this depth, updated.
  * @param read         What the processor saw when the read returned.

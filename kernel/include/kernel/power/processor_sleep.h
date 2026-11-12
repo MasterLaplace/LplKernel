@@ -185,7 +185,9 @@ typedef struct ProcessorSleepLadder {
  *
  * @details Intel's from family 0x10, or of family 6 from model 0x0F; Centaur's past family 6, or of family 6 model
  *          0x0F from stepping 0x0E; Zhaoxin's; AMD's from family 0x17. Hygon's is not: Linux v6.12 tests AMD's vendor
- *          alone. Linux also sets bm_check on a uniprocessor whatever its vendor; the kernel does not.
+ *          alone. Linux also sets bm_check on a uniprocessor whatever its vendor, and leaves bm_control clear on any
+ *          Intel processor whose FADT gives no PM2_CNT (v6.12 drivers/acpi/acpi_processor.c,
+ * `acpi_processor_get_info`), NetBurst and the P6 family before model 0x0F among them; the kernel takes neither (#849).
  *
  * @param identity The processor's vendor and its displayed family, model and stepping.
  * @return true for those processors.
@@ -504,6 +506,13 @@ uint32_t kernel_processor_sleep_check_bus_masters(const struct AdvancedConfigura
  * @return The count.
  */
 uint32_t kernel_processor_sleep_bus_master_demotion_count(void);
+
+/**
+ * @brief Sleeps at an MWAIT depth whose monitor was not armed, entered by HLT instead, since the accounting began: an
+ *        MWAIT that follows no MONITOR returns at once (Intel SDM vol. 2B, MWAIT), so that the sleep would spin.
+ * @return The count, 0 unless a path enters a depth it did not arm the monitor for.
+ */
+uint32_t kernel_processor_sleep_unarmed_wait_count(void);
 
 /**
  * @brief Can an unmasked interrupt break an MWAIT on this processor?

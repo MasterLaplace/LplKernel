@@ -118,10 +118,21 @@ static bool processor_park_read_port(const ProcessorSleepLadder_t *ladder, const
     read.still_requested = read.requested && apic_interrupt_requested();
 
     ++record->port_reads;
-    record->quick += !read.requested && read.cycles < quick_cycles ? 1u : 0u;
+    record->quick += kernel_processor_park_read_is_quick(&read, quick_cycles) ? 1u : 0u;
     record->stuck += read.still_requested ? 1u : 0u;
     record->bus_mastered += read.bus_mastered ? 1u : 0u;
     return kernel_processor_park_judge(judge, &read, quick_cycles);
+}
+
+/**
+ * @brief The deepest depth @p allowed names, C1 when it names no other.
+ */
+static uint32_t processor_park_deepest_of(uint32_t allowed)
+{
+    for (uint32_t depth = PROCESSOR_SLEEP_DEPTH_DEEPEST; depth > PROCESSOR_SLEEP_DEPTH_C1; --depth)
+        if (((allowed >> depth) & 1u) != 0u)
+            return depth;
+    return PROCESSOR_SLEEP_DEPTH_C1;
 }
 
 /**
@@ -160,8 +171,7 @@ static uint32_t processor_park_turn(const ProcessorSleepLadder_t *ladder, Proces
     const uint32_t inherited = processor_park_inherited_now(ladder);
     const uint32_t refused = refused_before & inherited;
     const uint32_t allowed = kernel_processor_park_allowed_depths(ladder, inherited, refused, quick_cycles != 0u);
-    const uint32_t depth = processor_park_checked_depth(
-        ladder, allowed, kernel_processor_park_target(ladder, inherited, refused, quick_cycles != 0u), record);
+    const uint32_t depth = processor_park_checked_depth(ladder, allowed, processor_park_deepest_of(allowed), record);
     const ProcessorSleepDepth_t *entered = &ladder->depths[depth];
 
     record->depth = depth;
@@ -179,9 +189,14 @@ static uint32_t processor_park_turn(const ProcessorSleepLadder_t *ladder, Proces
                                                                                              refused;
 }
 
+bool kernel_processor_park_read_is_quick(const ProcessorParkRead_t *read, uint64_t quick_cycles)
+{
+    return !read->requested && !read->bus_mastered && read->cycles < quick_cycles;
+}
+
 bool kernel_processor_park_judge(ProcessorParkJudge_t *judge, const ProcessorParkRead_t *read, uint64_t quick_cycles)
 {
-    const bool quick = !read->requested && !read->bus_mastered && read->cycles < quick_cycles;
+    const bool quick = kernel_processor_park_read_is_quick(read, quick_cycles);
     const bool stuck = read->requested && read->still_requested;
 
     judge->quick = quick ? judge->quick + 1u : 0u;
@@ -225,12 +240,7 @@ uint32_t kernel_processor_park_allowed_depths(const ProcessorSleepLadder_t *ladd
 uint32_t kernel_processor_park_target(const ProcessorSleepLadder_t *ladder, uint32_t inherited, uint32_t refused,
                                       bool clock_known)
 {
-    const uint32_t allowed = kernel_processor_park_allowed_depths(ladder, inherited, refused, clock_known);
-
-    for (uint32_t depth = PROCESSOR_SLEEP_DEPTH_DEEPEST; depth > PROCESSOR_SLEEP_DEPTH_C1; --depth)
-        if (((allowed >> depth) & 1u) != 0u)
-            return depth;
-    return PROCESSOR_SLEEP_DEPTH_C1;
+    return processor_park_deepest_of(kernel_processor_park_allowed_depths(ladder, inherited, refused, clock_known));
 }
 
 void kernel_processor_park(void)

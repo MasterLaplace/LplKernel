@@ -325,6 +325,7 @@ KERNEL_TEST(the_idle_loop_sleeps_under_its_ceiling)
     kernel_test_measure(test, "sleep_depths_refused", kernel_processor_sleep_refused_depth_count());
     kernel_test_measure(test, "port_sleeps", kernel_processor_sleep_port_sleep_count());
     kernel_test_measure(test, "bus_master_demotions", kernel_processor_sleep_bus_master_demotion_count());
+    kernel_test_measure(test, "unarmed_waits", kernel_processor_sleep_unarmed_wait_count());
     kernel_test_measure(test, "bus_master_reload", kernel_processor_sleep_bus_master_reload());
     kernel_test_measure(test, "parks", parks.parked);
     kernel_test_measure(test, "parks_past_c1", parks.past_c1);

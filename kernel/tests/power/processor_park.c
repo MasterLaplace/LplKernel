@@ -146,6 +146,24 @@ KERNEL_TEST(a_quick_read_a_bus_master_ended_is_no_quick_read)
 }
 
 /**
+ * @brief A read is quick when it returned sooner than the threshold with nothing requested and no bus master seen, and
+ *        not otherwise: an interrupt requested, a bus master seen, or a read as long as the threshold.
+ */
+KERNEL_TEST(a_read_is_quick_only_when_it_returned_soon_with_nothing_requested_and_no_bus_master)
+{
+    const uint64_t threshold = PROCESSOR_PARK_TEST_QUICK_CYCLES;
+    const ProcessorParkRead_t quick = {.cycles = threshold - 1u};
+    const ProcessorParkRead_t slow = {.cycles = threshold};
+    const ProcessorParkRead_t requested = {.cycles = 0u, .requested = true};
+    const ProcessorParkRead_t bus_mastered = {.cycles = 0u, .bus_mastered = true};
+
+    kernel_test_check(test, kernel_processor_park_read_is_quick(&quick, threshold), "soon, nothing seen: quick");
+    kernel_test_check(test, !kernel_processor_park_read_is_quick(&slow, threshold), "as long as the threshold: not");
+    kernel_test_check(test, !kernel_processor_park_read_is_quick(&requested, threshold), "an interrupt: not");
+    kernel_test_check(test, !kernel_processor_park_read_is_quick(&bus_mastered, threshold), "a bus master: not");
+}
+
+/**
  * @brief Without a clock no read is quick, so the guard refuses nothing on time alone.
  */
 KERNEL_TEST(without_a_threshold_no_read_is_quick)
