@@ -174,6 +174,7 @@ kernel/power/wakeup_accounting.o \
 kernel/power/wake_planner.o \
 kernel/power/wake_latency.o \
 kernel/satellite/satellite_app.o \
+kernel/diag/idle_states.o \
 kernel/diag/machine.o \
 kernel/diag/sysmon.o \
 kernel/diag/telemetry.o \

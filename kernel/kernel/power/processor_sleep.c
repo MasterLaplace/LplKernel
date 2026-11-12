@@ -11,6 +11,9 @@
 /** CPUID leaf 5, EBX low 16 bits: the largest line the monitor watches. */
 #define PROCESSOR_SLEEP_MONITOR_LEAF 5u
 
+/** The bits of leaf 5's EBX that hold that line size. */
+#define PROCESSOR_SLEEP_MONITOR_LINE_BITS 0xFFFFu
+
 /**
  * MWAIT extension bit 0: treat interrupts as break events even when MASKED.
  *
@@ -60,6 +63,17 @@ static void processor_sleep_charge_asleep_since(uint64_t before)
 }
 
 /**
+ * @brief The line size the monitor watches, as CPUID leaves 1 and 5 give it: zero when leaf 1 does not advertise the
+ *        pair.
+ */
+static uint32_t processor_sleep_monitor_line_of(uint32_t leaf1_ecx, uint32_t leaf5_ebx)
+{
+    if ((leaf1_ecx & PROCESSOR_SLEEP_CPUID_MONITOR_BIT) == 0u)
+        return 0u;
+    return leaf5_ebx & PROCESSOR_SLEEP_MONITOR_LINE_BITS;
+}
+
+/**
  * @brief Reads CPUID for the monitor/wait pair, and arms nothing.
  *
  * @param out_line Receives the line size CPUID leaf 5 gives.
@@ -71,14 +85,14 @@ static bool processor_sleep_read_monitor(uint32_t *out_line, uint32_t *out_ecx, 
 {
     uint32_t eax = 0u;
     uint32_t ebx = 0u;
-    uint32_t ecx = 0u;
+    uint32_t leaf1_ecx = 0u;
     uint32_t edx = 0u;
 
-    asmutils_cpuid(1u, 0u, &eax, &ebx, &ecx, &edx);
-    if ((ecx & PROCESSOR_SLEEP_CPUID_MONITOR_BIT) == 0u)
+    asmutils_cpuid(1u, 0u, &eax, &ebx, &leaf1_ecx, &edx);
+    if ((leaf1_ecx & PROCESSOR_SLEEP_CPUID_MONITOR_BIT) == 0u)
         return false;
     asmutils_cpuid(PROCESSOR_SLEEP_MONITOR_LEAF, 0u, &eax, &ebx, out_ecx, out_edx);
-    *out_line = ebx & 0xFFFFu;
+    *out_line = processor_sleep_monitor_line_of(leaf1_ecx, ebx);
     return *out_line != 0u;
 }
 
@@ -232,6 +246,26 @@ bool kernel_processor_sleep_monitor_implemented(void)
     uint32_t edx = 0u;
 
     return processor_sleep_read_monitor(&line, &ecx, &edx);
+}
+
+uint32_t kernel_processor_sleep_hints_of_cpuid_leaves(uint32_t leaf1_ecx, uint32_t leaf5_ebx, uint32_t leaf5_edx)
+{
+    if (processor_sleep_monitor_line_of(leaf1_ecx, leaf5_ebx) == 0u)
+        return 0u;
+    return kernel_processor_sleep_enumerated_hints(leaf5_edx);
+}
+
+uint32_t kernel_processor_sleep_hints_enumerated_by_this_processor(void)
+{
+    uint32_t eax = 0u;
+    uint32_t ebx = 0u;
+    uint32_t leaf1_ecx = 0u;
+    uint32_t ecx = 0u;
+    uint32_t edx = 0u;
+
+    asmutils_cpuid(1u, 0u, &eax, &ebx, &leaf1_ecx, &edx);
+    asmutils_cpuid(PROCESSOR_SLEEP_MONITOR_LEAF, 0u, &eax, &ebx, &ecx, &edx);
+    return kernel_processor_sleep_hints_of_cpuid_leaves(leaf1_ecx, ebx, edx);
 }
 
 uint32_t kernel_processor_sleep_monitor_line_bytes(void) { return processor_sleep_monitor_line; }

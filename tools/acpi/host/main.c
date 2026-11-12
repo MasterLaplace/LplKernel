@@ -988,8 +988,23 @@ static const char *harness_handshake(AdvancedConfigurationAndPowerInterfaceMachi
 }
 
 /**
+ * @brief Prints, for each MWAIT hint a state of @p idle targets, in increasing order, the latency and the residency
+ *        the layer gives that hint.
+ */
+static void harness_print_idle_hints(uint32_t slot, const AdvancedConfigurationAndPowerInterfaceProcessorIdle_t *idle)
+{
+    for (uint32_t hint = 0u; hint < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_PROCESSOR_IDLE_HINTS; ++hint)
+    {
+        AdvancedConfigurationAndPowerInterfaceIdleCosts_t costs;
+
+        if (advanced_configuration_and_power_interface_processor_idle_costs(idle, hint, &costs))
+            printf("aml idle hint %u %u latency=%u residency=%u\n", slot, hint, costs.latency, costs.residency);
+    }
+}
+
+/**
  * @brief Prints what steps 8 and 9 counted, then each CPU slot whose _CST was evaluated, by its processor
- *        object's path, and each state it published.
+ *        object's path, each state it published, and each hint those states target.
  */
 static void harness_print_idle(AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
                                const AdvancedConfigurationAndPowerInterfaceInitialization_t *counts)
@@ -1030,6 +1045,7 @@ static void harness_print_idle(AdvancedConfigurationAndPowerInterfaceMachineLang
                    idle->states[state].entry.space, idle->states[state].entry.bit_width,
                    idle->states[state].entry.bit_offset, idle->states[state].entry.access_size,
                    (unsigned long long) idle->states[state].entry.address);
+        harness_print_idle_hints(slot, idle);
     }
 }
 
