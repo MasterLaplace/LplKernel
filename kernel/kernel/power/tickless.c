@@ -1,5 +1,6 @@
 #include <kernel/power/tickless.h>
 
+#include <kernel/acpi/tables.h>
 #include <kernel/core/reconciler.h>
 #include <kernel/cpu/apic_timer.h>
 #include <kernel/cpu/irq.h>
@@ -385,13 +386,43 @@ __attribute__((cold, noinline)) static uint32_t tickless_sleep_at_an_unlearned_d
 
 /**
  * @brief Probes the depth awaiting a probe, and each one the active depth falls to while it awaits one, until the
- *        active depth is validated; then the depth sleeps enter, while no wake-up taught it.
+ *        active depth is validated.
  */
-static void tickless_probe_the_depth_sleeps_enter(void)
+static void tickless_probe_until_the_active_depth_is_validated(void)
 {
     for (uint32_t awaiting = kernel_processor_sleep_depth_awaiting_probe(); awaiting != PROCESSOR_SLEEP_NO_DEPTH;
          awaiting = kernel_processor_sleep_depth_awaiting_probe())
         (void) tickless_probe(awaiting);
+}
+
+/**
+ * @brief Probes, as the active depth for a while, the depth the bus-master check demotes @p depth to, the deepest
+ *        available below it without the check, so that a demotion lands there once it stops the processor rather
+ *        than on C1, as ACPI demotes C3 to C2 (ACPI 6.6 §8.1.4); then makes @p depth active again.
+ * @param depth The active depth, validated.
+ */
+static void tickless_probe_where_the_check_demotes(uint32_t depth)
+{
+    const uint32_t demoted = kernel_processor_sleep_depth_after_the_bus_master_check(
+        kernel_processor_sleep_ladder(), kernel_processor_sleep_available_depths(), depth,
+        ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_BUS_MASTER_STATUS);
+
+    if (demoted == depth)
+        return;
+    (void) kernel_processor_sleep_request_depth(demoted);
+    tickless_probe_until_the_active_depth_is_validated();
+    (void) kernel_processor_sleep_request_depth(depth);
+}
+
+/**
+ * @brief Probes the depth awaiting a probe, and each one the active depth falls to while it awaits one, until the
+ *        active depth is validated; then the depth the bus-master check demotes it to; then the depth sleeps enter,
+ *        while no wake-up taught it.
+ */
+static void tickless_probe_the_depth_sleeps_enter(void)
+{
+    tickless_probe_until_the_active_depth_is_validated();
+    tickless_probe_where_the_check_demotes(kernel_processor_sleep_depth());
 
     const uint32_t depth = kernel_processor_sleep_depth();
     if (tickless_wake_latency[depth].samples == 0u)

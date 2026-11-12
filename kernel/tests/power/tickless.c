@@ -1151,3 +1151,51 @@ KERNEL_TEST(a_sleep_the_bus_master_check_demoted_is_learned_at_the_depth_it_ente
     kernel_test_measure(test, "demotions", demotions);
     kernel_test_measure(test, "halt_taught", halt_taught);
 }
+
+/**
+ * @brief Under a hypervisor, the first stop of the tick probes the depth the bus-master check demotes a validated
+ *        depth to, so that a demotion lands on C2 rather than C1 once C2 stops the processor, as ACPI demotes C3
+ *        (ACPI 6.6 §8.1.4): with HLT behind the check at depth 2 and a port nothing decodes at depth 1, depth 1 is
+ *        probed, and refused, while sleeps stay at depth 2. Skipped on a real processor, whose port may stop it.
+ */
+KERNEL_TEST(the_first_stop_of_the_tick_probes_where_the_check_demotes)
+{
+    static ProcessorSleepLadder_t ladder;
+    CpuIdentity_t identity;
+
+    cpu_identity_read(&identity);
+    if (!identity.hypervisor)
+    {
+        kernel_test_skip(test, "a real processor: the made-up port may well stop it");
+        return;
+    }
+    if (!tickless_test_can_stop_the_tick(test))
+        return;
+
+    ladder = *kernel_processor_sleep_ladder();
+    ladder.available |= 0x6u;
+    ladder.depths[1] = (ProcessorSleepDepth_t){.entry = PROCESSOR_SLEEP_ENTRY_PORT,
+                                               .port = TICKLESS_TEST_UNDECODED_PORT,
+                                               .latency_published = true,
+                                               .latency = 18u};
+    ladder.depths[2] = (ProcessorSleepDepth_t){.entry = PROCESSOR_SLEEP_ENTRY_HALT,
+                                               .latency_published = true,
+                                               .latency = 350u,
+                                               .bus_master_check = true};
+    kernel_processor_sleep_debug_adopt_ladder(&ladder);
+    (void) kernel_processor_sleep_request_depth(2u);
+    const uint32_t refused_before = kernel_processor_sleep_refused_depth_count();
+
+    (void) tickless_test_begin();
+    const bool stopped = kernel_tickless_enable(true, &tickless_test_plan);
+    const uint32_t depth = kernel_processor_sleep_depth();
+    const uint32_t unstopped = kernel_tickless_unstopped_probe_ranks_at(1u);
+    const uint32_t refused = kernel_processor_sleep_refused_depth_count() - refused_before;
+    kernel_tickless_disable();
+    kernel_processor_sleep_initialize();
+
+    kernel_test_check(test, stopped, "the tick stops");
+    kernel_test_check(test, refused == 1u && unstopped != 0u, "depth 1, where the check would demote, is probed");
+    kernel_test_check(test, depth == 2u, "and the sleeps stay at depth 2");
+    kernel_test_measure(test, "unstopped_ranks", unstopped);
+}
