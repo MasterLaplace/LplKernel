@@ -76,7 +76,9 @@ pinned commit into build/acpi-corpus/, never committed and never put in an image
          decoded MADT, their states from the _CST acpiexec evaluates after the same handshake, given the
          tables the initialisation ended with and the same presets, and the latency and residency of each MWAIT
          hint those states target with those tools/acpi/oracles/linux_idle_hints.py derives from acpiexec's states
-         by Linux's rules; a machine where acpiexec stops before an evaluation it was given is counted apart
+         by Linux's rules, and the port states they give a processor whose MWAIT reaches no state past C1 with those
+         tools/acpi/oracles/linux_idle_ports.py derives from them and the FADT; it counts the states it compared by
+         how they are entered; a machine where acpiexec stops before an evaluation it was given is counted apart
   routing  initialises each machine of a list with `test-acpi --loaded`, its presets given, then compares the
          PCI interrupt routes it publishes with those tools/acpi/oracles/acpiexec_routing.py works out apart from
          the kernel's code, in the sandbox of tools/acpi/sandbox.sh: the root bridges, the bridges below them and
@@ -148,9 +150,9 @@ pinned commit into build/acpi-corpus/, never committed and never put in an image
 
 Exit status: 0 when every machine agrees, 1 when one does not or its dump or decoded tables are
 missing, 2 on a usage error. records-cost also exits 1 when valgrind is missing or xmake cannot build its
-harness, and 2 when RECORDS_TOLERANCE is no decimal number. idle also exits 1 when no MWAIT hint was compared,
-so that a list of machines without one checks nothing silently. Every mode also exits 1 when a sanitizer stopped
-the harness, whatever the mode made of that run, and lists the arguments of the runs it stopped.
+harness, and 2 when RECORDS_TOLERANCE is no decimal number. idle also exits 1 when no MWAIT hint or no port state
+was compared, so that a list of machines without one checks nothing silently. Every mode also exits 1 when a
+sanitizer stopped the harness, whatever the mode made of that run, and lists the arguments of the runs it stopped.
 USAGE
 }
 
@@ -778,13 +780,15 @@ records_cost_check() {
 
 # Compares the C-states each machine of the list $1 publishes with those tools/acpi/oracles/acpiexec_idle.py works out apart from
 # the kernel's code: the processor objects and their CPU slots from acpiexec's namespace and the decoded MADT, their
-# states from the _CST acpiexec evaluates after the same handshake (specification §8.6), and each hint's latency and
-# residency from those states by Linux's rules (tools/acpi/oracles/linux_idle_hints.py).
+# states from the _CST acpiexec evaluates after the same handshake (specification §8.6), each hint's latency and
+# residency from those states by Linux's rules (tools/acpi/oracles/linux_idle_hints.py), and the port states they give a
+# processor whose MWAIT reaches no state past C1 (tools/acpi/oracles/linux_idle_ports.py).
 idle_check() {
     [[ -x "$ACPICA_BIN/acpiexec" ]] || { echo "idle: no acpiexec, run fetch acpica first" >&2; exit 1; }
     (cd "$ROOT" && xmake build -q test-acpi)
-    local number=0 agree=0 none=0 stopped=0 slots=0 states=0 hints=0 subject ours theirs madt tables
-    ours="$(mktemp)" theirs="$(mktemp)" madt="$(mktemp)" tables="$(mktemp -d)"
+    local number=0 agree=0 none=0 stopped=0 slots=0 states=0 hints=0 mwait=0 fixed=0 ports=0 given=0 subject ours
+    local theirs madt fadt tables
+    ours="$(mktemp)" theirs="$(mktemp)" madt="$(mktemp)" fadt="$(mktemp)" tables="$(mktemp -d)"
     while IFS= read -r subject; do
         number=$((number + 1))
         if ! has_decoded "$subject"; then
@@ -793,10 +797,12 @@ idle_check() {
         fi
         rm -f "$tables"/*.dat
         "$HARNESS" --loaded "$LINUXHW/$subject.bin" "$PRESETS" "$tables" 2>&1 |
-            grep -E '^aml idle (slot|state|hint) ' >"$ours" || true
+            grep -E '^aml idle (slot|state|hint|port|ports) ' >"$ours" || true
         decoded "$subject" | python3 -I "$ROOT/tools/acpi/oracles/expected_madt.py" "$LINUXHW/$subject.bin" - >"$madt" || true
+        decoded "$subject" | python3 -I "$ROOT/tools/acpi/oracles/expected_fadt.py" "$LINUXHW/$subject.bin" - >"$fadt" || true
         python3 -I "$ROOT/tools/acpi/oracles/acpiexec_idle.py" "$ACPICA_BIN" "$madt" "$PRESETS" "$tables"/*.dat |
-            python3 -I "$ROOT/tools/acpi/oracles/linux_idle_hints.py" >"$theirs" || true
+            python3 -I "$ROOT/tools/acpi/oracles/linux_idle_hints.py" |
+            python3 -I "$ROOT/tools/acpi/oracles/linux_idle_ports.py" --fadt "$fadt" >"$theirs" || true
         if grep -q '^aml idle unevaluated ' "$theirs"; then
             echo "ok $number $subject # SKIP acpiexec stops before $(cut -d' ' -f4 "$theirs")"
             stopped=$((stopped + 1))
@@ -806,17 +812,25 @@ idle_check() {
             slots=$((slots + $(grep -c '^aml idle slot ' "$ours" || true)))
             states=$((states + $(grep -c '^aml idle state ' "$ours" || true)))
             hints=$((hints + $(grep -c '^aml idle hint ' "$ours" || true)))
+            mwait=$((mwait + $(grep -c '^aml idle state .* space=0x7F width=[0-9]* offset=2 ' "$ours" || true)))
+            fixed=$((fixed + $(grep -c '^aml idle state .* space=0x7F ' "$ours" || true)))
+            ports=$((ports + $(grep -c '^aml idle state .* space=0x01 ' "$ours" || true)))
+            given=$((given + $(grep -c '^aml idle port ' "$ours" || true)))
             echo "ok $number $subject"
         else
             echo "not ok $number $subject"
             diff "$ours" "$theirs" | head -8 | sed 's/^/    # /' || true
         fi
     done < <(reports "$1")
-    rm -rf "$ours" "$theirs" "$madt" "$tables"
+    rm -rf "$ours" "$theirs" "$madt" "$fadt" "$tables"
     echo "# idle: $agree of $((number - stopped)) agree with acpiexec, $slots CPU slots, $states states and $hints hints," \
         "$none publishing none on both sides; acpiexec stops before the evaluations it was given on $stopped"
+    echo "# idle: of those states, $mwait enter by MWAIT (FFixedHW class 2), $((fixed - mwait)) by another FFixedHW" \
+        "class, $ports by a port read (SystemIO) and $((states - fixed - ports)) by another space; $given port states" \
+        "given a processor whose MWAIT reaches no state past C1"
     [[ "$hints" -gt 0 ]] || echo "idle: no MWAIT hint compared, so no latency nor residency was checked"
-    [[ "$agree" -eq $((number - stopped)) ]] && [[ "$hints" -gt 0 ]]
+    [[ "$given" -gt 0 ]] || echo "idle: no port state compared, so no state a port read enters was checked"
+    [[ "$agree" -eq $((number - stopped)) ]] && [[ "$hints" -gt 0 ]] && [[ "$given" -gt 0 ]]
 }
 
 # Prints, one per line, the section, the bridge and the machine of each line of tools/acpi/lists/routing-decided.list

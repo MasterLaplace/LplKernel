@@ -1,9 +1,16 @@
 #include <kernel/power/processor_sleep.h>
 
+#include <kernel/acpi/initialization.h>
+#include <kernel/acpi/processor_idle.h>
+#include <kernel/acpi/tables.h>
+#include <kernel/cpu/apic.h>
 #include <kernel/cpu/apic_timer.h>
+#include <kernel/cpu/cpu_identity.h>
 
 #include <kernel/lib/asmutils.h>
 #include <kernel/power/wakeup_accounting.h>
+
+#include <string.h>
 
 /** CPUID leaf 1, ECX bit 3: the processor implements MONITOR and MWAIT. */
 #define PROCESSOR_SLEEP_CPUID_MONITOR_BIT (1u << 3)
@@ -35,9 +42,14 @@ static uint32_t processor_sleep_halts = 0u;
 static uint64_t processor_sleep_asleep = 0u;
 static uint64_t processor_sleep_awake = 0u;
 static uint64_t processor_sleep_last_wake = 0u;
-static uint32_t processor_sleep_available_hints = 0u;
-static uint32_t processor_sleep_hint = PROCESSOR_SLEEP_HINT_C1;
+static ProcessorSleepLadder_t processor_sleep_ladder = {.available = 1u};
+static uint32_t processor_sleep_available_depths = 1u;
+static uint32_t processor_sleep_validated_depths = 1u;
+static bool processor_sleep_probing = false;
+static uint32_t processor_sleep_depth = PROCESSOR_SLEEP_DEPTH_C1;
 static uint32_t processor_sleep_clamped = 0u;
+static uint32_t processor_sleep_refused = 0u;
+static uint32_t processor_sleep_port_sleeps = 0u;
 static bool processor_sleep_interrupt_break = false;
 static volatile uint32_t processor_sleep_published_duty = KERNEL_PROCESSOR_SLEEP_DUTY_UNMEASURED;
 
@@ -102,24 +114,166 @@ static bool processor_sleep_read_monitor(uint32_t *out_line, uint32_t *out_ecx, 
  */
 static volatile uint32_t processor_sleep_idle_line = 0u;
 
+_Static_assert(PROCESSOR_SLEEP_DEPTHS == PROCESSOR_SLEEP_HINT_MAX + 1u, "a ladder holds a depth per MWAIT hint");
+_Static_assert(PROCESSOR_SLEEP_DEPTHS == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_PROCESSOR_IDLE_PORTS + 1u,
+               "a ladder holds C1 and a depth per port state a slot gives");
+
 /**
- * @brief The deepest enumerated hint no deeper than @p ceiling, or C1 when there is none.
- *
- * @details Walked down rather than taken from the highest set bit, because the
- *          enumeration has gaps and the caller asked for at most this much.
- *
- * @param ceiling Hint the caller asked for, which is the most it is willing to take.
- * @return The hint index.
+ * @brief The deepest validated depth no deeper than @p ceiling, or C1 when there is none.
  */
-static uint32_t processor_sleep_deepest_enumerated_at_or_below(uint32_t ceiling)
+static uint32_t processor_sleep_deepest_validated_at_or_below(uint32_t ceiling)
 {
-    for (uint32_t candidate = ceiling; candidate > PROCESSOR_SLEEP_HINT_C1; --candidate)
+    for (uint32_t candidate = ceiling; candidate > PROCESSOR_SLEEP_DEPTH_C1; --candidate)
+        if (((processor_sleep_validated_depths >> candidate) & 1u) != 0u)
+            return candidate;
+    return PROCESSOR_SLEEP_DEPTH_C1;
+}
+
+/**
+ * @brief The depth a sleep until an interrupt enters: the active one while a probe is open or once validated, the
+ *        deepest validated below it otherwise.
+ */
+static uint32_t processor_sleep_entered_depth(void)
+{
+    if (processor_sleep_probing || ((processor_sleep_validated_depths >> processor_sleep_depth) & 1u) != 0u)
+        return processor_sleep_depth;
+    return processor_sleep_deepest_validated_at_or_below(processor_sleep_depth);
+}
+
+/**
+ * @brief The depths of @p ladder a sleep may enter without a probe: every one but its port reads.
+ */
+static uint32_t processor_sleep_depths_without_ports(const ProcessorSleepLadder_t *ladder)
+{
+    uint32_t validated = 1u;
+
+    for (uint32_t depth = PROCESSOR_SLEEP_DEPTH_C1 + 1u; depth < PROCESSOR_SLEEP_DEPTHS; ++depth)
+        if (((ladder->available >> depth) & 1u) != 0u && ladder->depths[depth].entry != PROCESSOR_SLEEP_ENTRY_PORT)
+            validated |= 1u << depth;
+    return validated;
+}
+
+/**
+ * @brief The deepest available depth no deeper than @p ceiling, or C1 when there is none.
+ *
+ * @details Walked down rather than taken from the highest set bit, because a ladder of MWAIT hints has gaps and the
+ *          caller asked for at most this much.
+ *
+ * @param ceiling Depth the caller asked for, which is the most it is willing to take.
+ * @return The depth.
+ */
+static uint32_t processor_sleep_deepest_available_at_or_below(uint32_t ceiling)
+{
+    for (uint32_t candidate = ceiling; candidate > PROCESSOR_SLEEP_DEPTH_C1; --candidate)
     {
-        if (((processor_sleep_available_hints >> candidate) & 1u) != 0u)
+        if (((processor_sleep_available_depths >> candidate) & 1u) != 0u)
             return candidate;
     }
 
-    return PROCESSOR_SLEEP_HINT_C1;
+    return PROCESSOR_SLEEP_DEPTH_C1;
+}
+
+/**
+ * @brief Whether the processor's vendor string is Intel's.
+ */
+static bool processor_sleep_is_intel(const CpuIdentity_t *identity)
+{
+    return memcmp(identity->vendor, "GenuineIntel", sizeof("GenuineIntel")) == 0;
+}
+
+/**
+ * @brief Depth 0 of a ladder: MWAIT 0 where the monitor pair is usable, HLT otherwise, with C1's published latency.
+ */
+static void processor_sleep_ladder_c1(const ProcessorSleepLadderFacts_t *facts, ProcessorSleepDepth_t *out_depth)
+{
+    out_depth->entry = facts->monitor ? PROCESSOR_SLEEP_ENTRY_MONITOR_WAIT : PROCESSOR_SLEEP_ENTRY_HALT;
+    out_depth->latency_published =
+        facts->idle != NULL && advanced_configuration_and_power_interface_processor_idle_latency(
+                                   facts->idle, PROCESSOR_SLEEP_HINT_C1, &out_depth->latency);
+}
+
+/**
+ * @brief The depths past C1 of an Intel processor whose MWAIT reaches past it: each usable hint, at its own depth.
+ */
+static void processor_sleep_ladder_hints(const ProcessorSleepLadderFacts_t *facts, ProcessorSleepLadder_t *out_ladder)
+{
+    for (uint32_t hint = PROCESSOR_SLEEP_HINT_C1 + 1u; hint <= PROCESSOR_SLEEP_HINT_MAX; ++hint)
+    {
+        ProcessorSleepDepth_t *depth = &out_ladder->depths[hint];
+
+        if (((facts->usable_hints >> hint) & 1u) == 0u)
+            continue;
+        out_ladder->available |= 1u << hint;
+        depth->entry = PROCESSOR_SLEEP_ENTRY_MONITOR_WAIT;
+        depth->hint = hint;
+        depth->latency_published =
+            facts->idle != NULL &&
+            advanced_configuration_and_power_interface_processor_idle_latency(facts->idle, hint, &depth->latency);
+    }
+}
+
+/**
+ * @brief Whether the slot's port states may be the depths past C1, and why not.
+ * @return A ProcessorSleepPorts_t.
+ */
+static uint32_t processor_sleep_ladder_ports_gate(const ProcessorSleepLadderFacts_t *facts)
+{
+    if (facts->idle == NULL)
+        return PROCESSOR_SLEEP_PORTS_NO_SLOT;
+    if (!facts->timer_always_runs)
+        return PROCESSOR_SLEEP_PORTS_TIMER_MAY_STOP;
+    if (!facts->counter_invariant)
+        return PROCESSOR_SLEEP_PORTS_COUNTER_MAY_STOP;
+    if (facts->control_skipped)
+        return PROCESSOR_SLEEP_PORTS_NOT_HANDED_OVER;
+    return PROCESSOR_SLEEP_PORTS_TAKEN;
+}
+
+/**
+ * @brief The depths past C1 the slot's port states give, depth 1 on, in their order.
+ */
+static void processor_sleep_ladder_ports(const ProcessorSleepLadderFacts_t *facts, ProcessorSleepLadder_t *out_ladder)
+{
+    AdvancedConfigurationAndPowerInterfaceIdlePorts_t ports;
+
+    advanced_configuration_and_power_interface_processor_idle_ports(facts->idle, facts->fadt, &ports);
+    out_ladder->ports_refused = ports.refused;
+    for (uint32_t index = 0u; index < ports.count; ++index)
+    {
+        ProcessorSleepDepth_t *depth = &out_ladder->depths[index + 1u];
+
+        out_ladder->available |= 1u << (index + 1u);
+        depth->entry = PROCESSOR_SLEEP_ENTRY_PORT;
+        depth->port = ports.ports[index].port;
+        depth->latency_published = true;
+        depth->latency = ports.ports[index].latency;
+    }
+}
+
+/**
+ * @brief Adopts @p ladder: every depth available, C1 active, no refusal counted.
+ */
+static void processor_sleep_adopt(const ProcessorSleepLadder_t *ladder)
+{
+    processor_sleep_ladder = *ladder;
+    processor_sleep_available_depths = ladder->available | 1u;
+    processor_sleep_validated_depths = processor_sleep_depths_without_ports(ladder);
+    processor_sleep_probing = false;
+    processor_sleep_depth = PROCESSOR_SLEEP_DEPTH_C1;
+    processor_sleep_refused = 0u;
+}
+
+/**
+ * @brief The depth a watched sleep enters: the active one where it is an MWAIT depth, C1 otherwise, since a port
+ *        read watches no line.
+ */
+static const ProcessorSleepDepth_t *processor_sleep_watched_depth(void)
+{
+    const ProcessorSleepDepth_t *active = &processor_sleep_ladder.depths[processor_sleep_depth];
+
+    return active->entry == PROCESSOR_SLEEP_ENTRY_MONITOR_WAIT ?
+               active :
+               &processor_sleep_ladder.depths[PROCESSOR_SLEEP_DEPTH_C1];
 }
 
 /**
@@ -144,28 +298,74 @@ __attribute__((always_inline)) static inline bool processor_sleep_watched_moved(
 }
 
 /**
- * @brief Sleeps unless @p done says the wait is over: masks interrupts, arms the monitor on @p line, asks @p done,
- *        then enters MWAIT or HLT in the step that enables interrupts, and gives the interrupt flag back as found.
+ * @brief Enters @p depth by its entry, the accounting armed, and says whether an interrupt was taken before the return.
+ *
+ * @details Called with interrupts masked, the monitor armed for an MWAIT depth. HLT and MWAIT come in the step that
+ *          enables interrupts; a port is read masked, and interrupts enabled after the read.
+ *
+ * @param depth The depth.
+ * @param line  The line MONITOR watches, for an MWAIT depth.
+ * @return How the processor was put to sleep, and whether an interrupt was taken.
+ */
+__attribute__((always_inline)) static inline ProcessorSleepOutcome_t
+processor_sleep_enter(const ProcessorSleepDepth_t *depth, const volatile void *line)
+{
+    ProcessorSleepOutcome_t outcome = {PROCESSOR_SLEEP_HALT, false};
+
+    ++processor_sleep_sleeps;
+    kernel_wakeup_accounting_arm();
+    if (depth->entry == PROCESSOR_SLEEP_ENTRY_PORT)
+    {
+        ++processor_sleep_port_sleeps;
+        asmutils_input_byte_then_enable_interrupts(depth->port);
+        outcome.mode = PROCESSOR_SLEEP_PORT;
+    }
+    else if (depth->entry == PROCESSOR_SLEEP_ENTRY_MONITOR_WAIT)
+    {
+        asmutils_enable_interrupts_and_monitor_wait(
+            kernel_processor_sleep_mwait_hint(depth->hint),
+            processor_sleep_interrupt_break ? PROCESSOR_SLEEP_BREAK_ON_INTERRUPT : 0u);
+        outcome.mode = PROCESSOR_SLEEP_MONITOR;
+    }
+    else
+    {
+        ++processor_sleep_halts;
+        asmutils_enable_interrupts_and_halt();
+    }
+    outcome.interrupted = !kernel_wakeup_accounting_is_armed();
+    if (outcome.mode == PROCESSOR_SLEEP_MONITOR && line != &processor_sleep_idle_line)
+        kernel_wakeup_accounting_close_monitor_write();
+    else
+        kernel_wakeup_accounting_close_unattributed();
+    return outcome;
+}
+
+/**
+ * @brief Sleeps unless @p done says the wait is over: masks interrupts, arms the monitor on @p line for an MWAIT depth,
+ *        asks @p done, then enters @p depth, and gives the interrupt flag back as found.
  *
  * @details The one place every sleep of this module is entered, so that the masking around the last check is written,
  *          and tested, once; inlined, so that each caller pays only for the parts it uses. A wait on the idle line that
- * returns while still armed is counted unattributed, since nothing writes that line; one on another line, a write.
+ *          returns while still armed is counted unattributed, since nothing writes that line; one on another line, a
+ *          write.
  *
  * @param line    The line MONITOR watches: the idle line when only an interrupt should end the wait.
  * @param done    Asked once, after the monitor is armed; NULL never says the wait is over.
  * @param context What @p done receives.
- * @param hint    The hint index, which kernel_processor_sleep_mwait_hint encodes for MWAIT.
- * @return How the processor was put to sleep, PROCESSOR_SLEEP_NONE when @p done said the wait was over.
+ * @param depth   The depth entered.
+ * @return How the processor was put to sleep, PROCESSOR_SLEEP_NONE when @p done said the wait was over, and whether an
+ *         interrupt was taken.
  */
-__attribute__((always_inline)) static inline ProcessorSleepMode_t
-processor_sleep_masked(const volatile void *line, ProcessorSleepCondition_t done, void *context, uint32_t hint)
+__attribute__((always_inline)) static inline ProcessorSleepOutcome_t
+processor_sleep_masked(const volatile void *line, ProcessorSleepCondition_t done, void *context,
+                       const ProcessorSleepDepth_t *depth)
 {
     const uint32_t flags = asmutils_save_flags_and_disable_interrupts();
     const uint64_t before = asmutils_read_timestamp_counter();
-    ProcessorSleepMode_t mode = PROCESSOR_SLEEP_NONE;
+    ProcessorSleepOutcome_t outcome = {PROCESSOR_SLEEP_NONE, false};
 
     processor_sleep_charge_awake(before);
-    if (processor_sleep_monitor_available)
+    if (depth->entry == PROCESSOR_SLEEP_ENTRY_MONITOR_WAIT)
         asmutils_monitor((const void *) line, 0u, 0u);
 
     if (done != NULL && done(context))
@@ -173,32 +373,13 @@ processor_sleep_masked(const volatile void *line, ProcessorSleepCondition_t done
         ++processor_sleep_skipped;
         processor_sleep_last_wake = before;
     }
-    else if (!processor_sleep_monitor_available)
-    {
-        ++processor_sleep_sleeps;
-        ++processor_sleep_halts;
-        kernel_wakeup_accounting_arm();
-        asmutils_enable_interrupts_and_halt();
-        kernel_wakeup_accounting_close_unattributed();
-        processor_sleep_charge_asleep_since(before);
-        mode = PROCESSOR_SLEEP_HALT;
-    }
     else
     {
-        ++processor_sleep_sleeps;
-        kernel_wakeup_accounting_arm();
-        asmutils_enable_interrupts_and_monitor_wait(
-            kernel_processor_sleep_mwait_hint(hint),
-            processor_sleep_interrupt_break ? PROCESSOR_SLEEP_BREAK_ON_INTERRUPT : 0u);
-        if (line == &processor_sleep_idle_line)
-            kernel_wakeup_accounting_close_unattributed();
-        else
-            kernel_wakeup_accounting_close_monitor_write();
+        outcome = processor_sleep_enter(depth, line);
         processor_sleep_charge_asleep_since(before);
-        mode = PROCESSOR_SLEEP_MONITOR;
     }
     asmutils_restore_flags(flags);
-    return mode;
+    return outcome;
 }
 
 void kernel_processor_sleep_initialize(void)
@@ -207,23 +388,67 @@ void kernel_processor_sleep_initialize(void)
     uint32_t ecx = 0u;
     uint32_t edx = 0u;
 
-    processor_sleep_monitor_available = false;
-    processor_sleep_monitor_line = 0u;
-    processor_sleep_available_hints = 0u;
-    processor_sleep_hint = PROCESSOR_SLEEP_HINT_C1;
+    ProcessorSleepLadderFacts_t facts;
+    ProcessorSleepLadder_t ladder;
+
     processor_sleep_clamped = 0u;
-    processor_sleep_interrupt_break = false;
     processor_sleep_published_duty = KERNEL_PROCESSOR_SLEEP_DUTY_UNMEASURED;
     kernel_processor_sleep_begin_accounting();
+    processor_sleep_monitor_available = processor_sleep_read_monitor(&line, &ecx, &edx);
+    processor_sleep_monitor_line = processor_sleep_monitor_available ? line : 0u;
+    processor_sleep_interrupt_break =
+        processor_sleep_monitor_available && (ecx & PROCESSOR_SLEEP_CPUID_INTERRUPT_BREAK_BIT) != 0u;
+    kernel_processor_sleep_read_ladder_facts(&facts);
+    kernel_processor_sleep_build_ladder(&facts, &ladder);
+    processor_sleep_adopt(&ladder);
+}
 
-    if (!processor_sleep_read_monitor(&line, &ecx, &edx))
+void kernel_processor_sleep_build_ladder(const ProcessorSleepLadderFacts_t *facts, ProcessorSleepLadder_t *out_ladder)
+{
+    memset(out_ladder, 0, sizeof(*out_ladder));
+    out_ladder->available = 1u;
+    processor_sleep_ladder_c1(facts, &out_ladder->depths[PROCESSOR_SLEEP_DEPTH_C1]);
+    const bool deep_hints = facts->monitor && (facts->usable_hints >> (PROCESSOR_SLEEP_HINT_C1 + 1u)) != 0u;
+    if (deep_hints && facts->intel)
+    {
+        out_ladder->ports = PROCESSOR_SLEEP_PORTS_MONITOR_WAIT;
+        processor_sleep_ladder_hints(facts, out_ladder);
         return;
+    }
+    out_ladder->ports = processor_sleep_ladder_ports_gate(facts);
+    if (out_ladder->ports == PROCESSOR_SLEEP_PORTS_TAKEN)
+        processor_sleep_ladder_ports(facts, out_ladder);
+    if (deep_hints && out_ladder->available == 1u)
+    {
+        out_ladder->ports = PROCESSOR_SLEEP_PORTS_MONITOR_WAIT;
+        processor_sleep_ladder_hints(facts, out_ladder);
+    }
+}
 
-    processor_sleep_monitor_available = true;
-    processor_sleep_monitor_line = line;
-    processor_sleep_interrupt_break = (ecx & PROCESSOR_SLEEP_CPUID_INTERRUPT_BREAK_BIT) != 0u;
-    processor_sleep_available_hints = kernel_processor_sleep_usable_hints(
-        kernel_processor_sleep_enumerated_hints(edx), advanced_pic_timer_backend_always_runs() != 0u);
+void kernel_processor_sleep_read_ladder_facts(ProcessorSleepLadderFacts_t *out_facts)
+{
+    uint32_t line = 0u;
+    uint32_t ecx = 0u;
+    uint32_t edx = 0u;
+    CpuIdentity_t identity;
+
+    memset(out_facts, 0, sizeof(*out_facts));
+    cpu_identity_read(&identity);
+    out_facts->monitor = processor_sleep_read_monitor(&line, &ecx, &edx);
+    out_facts->intel = processor_sleep_is_intel(&identity);
+    out_facts->timer_always_runs = advanced_pic_timer_backend_always_runs() != 0u;
+    out_facts->counter_invariant = advanced_pic_timer_backend_has_invariant_timestamp_counter() != 0u;
+    out_facts->usable_hints = out_facts->monitor ?
+                                  kernel_processor_sleep_usable_hints(kernel_processor_sleep_enumerated_hints(edx),
+                                                                      out_facts->timer_always_runs) :
+                                  0u;
+    out_facts->control_skipped = advanced_configuration_and_power_interface_initialization()->idle_control ==
+                                 ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_IDLE_CONTROL_SKIPPED;
+    out_facts->idle = apic_is_running() ? advanced_configuration_and_power_interface_processor_idle_of_processor(
+                                              advanced_configuration_and_power_interface_processor_idle(),
+                                              advanced_configuration_and_power_interface_madt(), apic_get_id()) :
+                                          NULL;
+    out_facts->fadt = &advanced_configuration_and_power_interface_directory()->fixed_description;
 }
 
 void kernel_processor_sleep_begin_accounting(void)
@@ -231,6 +456,7 @@ void kernel_processor_sleep_begin_accounting(void)
     processor_sleep_sleeps = 0u;
     processor_sleep_skipped = 0u;
     processor_sleep_halts = 0u;
+    processor_sleep_port_sleeps = 0u;
     processor_sleep_asleep = 0u;
     processor_sleep_awake = 0u;
     processor_sleep_last_wake = 0u;
@@ -273,24 +499,23 @@ uint32_t kernel_processor_sleep_monitor_line_bytes(void) { return processor_slee
 ProcessorSleepMode_t processor_sleep_until_write(const volatile uint32_t *watched, uint32_t expected)
 {
     if (watched == NULL)
-    {
-        processor_sleep_until_interrupt();
-        return PROCESSOR_SLEEP_HALT;
-    }
+        return processor_sleep_until_interrupt().mode;
 
     ProcessorSleepWatch_t watch = {watched, expected};
-    return processor_sleep_masked(watched, processor_sleep_watched_moved, &watch, processor_sleep_hint);
+    return processor_sleep_masked(watched, processor_sleep_watched_moved, &watch, processor_sleep_watched_depth()).mode;
 }
 
-void processor_sleep_until_interrupt(void)
+ProcessorSleepOutcome_t processor_sleep_until_interrupt(void)
 {
-    (void) processor_sleep_masked(&processor_sleep_idle_line, NULL, NULL, processor_sleep_hint);
+    return processor_sleep_masked(&processor_sleep_idle_line, NULL, NULL,
+                                  &processor_sleep_ladder.depths[processor_sleep_entered_depth()]);
 }
 
 bool processor_sleep_unless(ProcessorSleepCondition_t done, void *context)
 {
-    return processor_sleep_masked(&processor_sleep_idle_line, done, context, PROCESSOR_SLEEP_HINT_C1) ==
-           PROCESSOR_SLEEP_NONE;
+    return processor_sleep_masked(&processor_sleep_idle_line, done, context,
+                                  &processor_sleep_ladder.depths[PROCESSOR_SLEEP_DEPTH_C1])
+               .mode == PROCESSOR_SLEEP_NONE;
 }
 
 uint32_t kernel_processor_sleep_count(void) { return processor_sleep_sleeps; }
@@ -339,31 +564,93 @@ uint32_t kernel_processor_sleep_usable_hints(uint32_t enumerated, bool timer_alw
     return timer_always_runs ? enumerated : enumerated & (1u << PROCESSOR_SLEEP_HINT_C1);
 }
 
-uint32_t kernel_processor_sleep_available_hints(void) { return processor_sleep_available_hints; }
-
 bool kernel_processor_sleep_has_interrupt_break(void) { return processor_sleep_interrupt_break; }
 
-bool kernel_processor_sleep_request_hint(uint32_t hint)
-{
-    if (hint > PROCESSOR_SLEEP_HINT_MAX)
-        hint = PROCESSOR_SLEEP_HINT_MAX;
+uint32_t kernel_processor_sleep_available_depths(void) { return processor_sleep_available_depths; }
 
-    if (hint == PROCESSOR_SLEEP_HINT_C1 || ((processor_sleep_available_hints >> hint) & 1u) != 0u)
+bool kernel_processor_sleep_depth_of(uint32_t depth, ProcessorSleepDepth_t *out_depth)
+{
+    if (depth >= PROCESSOR_SLEEP_DEPTHS || ((processor_sleep_available_depths >> depth) & 1u) == 0u)
+        return false;
+    *out_depth = processor_sleep_ladder.depths[depth];
+    return true;
+}
+
+const ProcessorSleepLadder_t *kernel_processor_sleep_ladder(void) { return &processor_sleep_ladder; }
+
+bool kernel_processor_sleep_request_depth(uint32_t depth)
+{
+    if (depth > PROCESSOR_SLEEP_DEPTH_DEEPEST)
+        depth = PROCESSOR_SLEEP_DEPTH_DEEPEST;
+
+    if (((processor_sleep_available_depths >> depth) & 1u) != 0u)
     {
-        processor_sleep_hint = hint;
+        processor_sleep_depth = depth;
         return true;
     }
 
-    processor_sleep_hint = processor_sleep_deepest_enumerated_at_or_below(hint);
+    processor_sleep_depth = processor_sleep_deepest_available_at_or_below(depth);
     ++processor_sleep_clamped;
     return false;
 }
 
-uint32_t kernel_processor_sleep_active_hint(void) { return processor_sleep_hint; }
-
-uint32_t kernel_processor_sleep_depth(void)
+bool kernel_processor_sleep_refuse_depth(uint32_t depth)
 {
-    return processor_sleep_monitor_available ? processor_sleep_hint : PROCESSOR_SLEEP_HINT_C1;
+    if (depth == PROCESSOR_SLEEP_DEPTH_C1 || depth >= PROCESSOR_SLEEP_DEPTHS ||
+        ((processor_sleep_available_depths >> depth) & 1u) == 0u ||
+        processor_sleep_ladder.depths[depth].entry != PROCESSOR_SLEEP_ENTRY_PORT)
+        return false;
+
+    processor_sleep_available_depths &= ~(1u << depth);
+    processor_sleep_validated_depths &= ~(1u << depth);
+    ++processor_sleep_refused;
+    if (processor_sleep_depth >= depth)
+        processor_sleep_depth = processor_sleep_deepest_available_at_or_below(depth);
+    return true;
 }
 
+uint32_t kernel_processor_sleep_refused_depth_count(void) { return processor_sleep_refused; }
+
+uint32_t kernel_processor_sleep_depth_awaiting_probe(void)
+{
+    return ((processor_sleep_validated_depths >> processor_sleep_depth) & 1u) != 0u ? PROCESSOR_SLEEP_NO_DEPTH :
+                                                                                      processor_sleep_depth;
+}
+
+void kernel_processor_sleep_begin_probe(void) { processor_sleep_probing = true; }
+
+void kernel_processor_sleep_end_probe(bool stops)
+{
+    processor_sleep_probing = false;
+    if (kernel_processor_sleep_depth_awaiting_probe() == PROCESSOR_SLEEP_NO_DEPTH)
+        return;
+    if (stops)
+        processor_sleep_validated_depths |= 1u << processor_sleep_depth;
+    else
+        (void) kernel_processor_sleep_refuse_depth(processor_sleep_depth);
+}
+
+uint32_t kernel_processor_sleep_port_sleep_count(void) { return processor_sleep_port_sleeps; }
+
+uint32_t kernel_processor_sleep_depth(void) { return processor_sleep_entered_depth(); }
+
 uint32_t kernel_processor_sleep_clamped_count(void) { return processor_sleep_clamped; }
+
+const char *kernel_processor_sleep_ports_name(uint32_t ports)
+{
+    static const char *const names[] = {"taken",          "monitor_wait",     "no_slot",
+                                        "timer_may_stop", "counter_may_stop", "not_handed_over"};
+
+    return ports < sizeof(names) / sizeof(names[0]) ? names[ports] : "unknown";
+}
+
+const char *kernel_processor_sleep_entry_name(uint32_t entry)
+{
+    static const char *const names[] = {"halt", "mwait", "port"};
+
+    return entry < sizeof(names) / sizeof(names[0]) ? names[entry] : "unknown";
+}
+
+#if defined(LPL_KERNEL_ENABLE_SMOKE_TESTS)
+void kernel_processor_sleep_debug_adopt_ladder(const ProcessorSleepLadder_t *ladder) { processor_sleep_adopt(ladder); }
+#endif

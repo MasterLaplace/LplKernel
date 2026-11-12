@@ -14,7 +14,7 @@
  *
  * @file idle_states.h
  * @brief The C-states the boot processor may enter, as records: which MWAIT hints it enumerates and its local timer
- *        allows, and what firmware's _CST says each costs.
+ *        allows, what firmware's _CST says each costs, and the depths its sleeps may take.
  *
  * @author @MasterLaplace
  * @version 0.0.0
@@ -32,7 +32,8 @@ extern "C" {
 
 /**
  * @brief Writes the `[LPLTLM] cstates` record of the boot processor, then one `[LPLTLM] cstate` record per MWAIT hint
- *        the _CST of its CPU slot targets, in increasing order.
+ *        the _CST of its CPU slot targets, in increasing order, then the `[LPLTLM] sleep.depths` record of the ladder
+ *        its facts build (kernel_processor_sleep_build_ladder) and one `[LPLTLM] sleep.depth` record per depth.
  *
  * @details Keys of `cstates`, each mask a bit per hint, bit h for hint h, which targets C(h+1):
  *          - `slot`: the processor's CPU slot in the MADT, `none` when the local APIC does not run or no slot has its
@@ -52,7 +53,20 @@ extern "C" {
  *          - `residency_source`: where that residency comes from: `rule`, derived from the latency as Linux's
  *            intel_idle derives it from _CST.
  *
- *          Called once the local timer is set up, since `usable` reads whether it always runs.
+ *          Keys of `sleep.depths`:
+ *          - `available`: a bit per depth, depth 0 being C1;
+ *          - `ports`: whether the slot's port states are the depths past C1, `taken`, or why not: `monitor_wait`
+ *            (MWAIT reaches past C1, and its hints are the depths), `no_slot`, `timer_may_stop`, `counter_may_stop` or
+ *            `not_handed_over`;
+ *          - `ports_refused`: the port states of type 2 or 3 the slot lists that are no depth, when they are taken.
+ *
+ *          Keys of `sleep.depth`:
+ *          - `depth`;
+ *          - `entry`: `halt`, `mwait` or `port`;
+ *          - `target`: the MWAIT hint, the port read, or 0 for HLT;
+ *          - `latency_us`: the latency _CST publishes for it, `none` where it publishes none.
+ *
+ *          Called once the local timer is set up, since `usable` and the ladder read whether it always runs.
  *
  * @param serial Output port.
  */

@@ -86,7 +86,122 @@ typedef enum {
     PROCESSOR_SLEEP_NONE = 0, /**< It was not: the condition was already true. */
     PROCESSOR_SLEEP_HALT,     /**< `HLT`, woken by an interrupt. */
     PROCESSOR_SLEEP_MONITOR,  /**< `MONITOR`/`MWAIT`, woken by a write or an interrupt. */
+    PROCESSOR_SLEEP_PORT,     /**< A read of the port of a C-state `_CST` lists, woken by an interrupt. */
 } ProcessorSleepMode_t;
+
+/**
+ * @brief How a sleep until an interrupt went.
+ */
+typedef struct ProcessorSleepOutcome {
+    ProcessorSleepMode_t mode; /**< How the processor was put to sleep. */
+    bool interrupted;          /**< Whether an interrupt was taken before the sleep returned. */
+} ProcessorSleepOutcome_t;
+
+#define PROCESSOR_SLEEP_DEPTHS        7u /**< Depths a ladder holds: C1, then six deeper at most. */
+#define PROCESSOR_SLEEP_DEPTH_C1      0u /**< The depth of C1, which every processor enters. */
+#define PROCESSOR_SLEEP_DEPTH_DEEPEST (PROCESSOR_SLEEP_DEPTHS - 1u) /**< The deepest depth a request can name. */
+#define PROCESSOR_SLEEP_NO_DEPTH      0xFFFFFFFFu                   /**< What names no depth, outside every depth. */
+
+/**
+ * @enum ProcessorSleepEntry_t
+ * @brief How a depth is entered.
+ */
+typedef enum {
+    PROCESSOR_SLEEP_ENTRY_HALT = 0,         /**< `HLT`. */
+    PROCESSOR_SLEEP_ENTRY_MONITOR_WAIT = 1, /**< `MWAIT` given the depth's hint, on a line nothing writes. */
+    PROCESSOR_SLEEP_ENTRY_PORT = 2,         /**< A read of the depth's port, interrupts masked (ACPI 6.6 §8.1). */
+} ProcessorSleepEntry_t;
+
+/**
+ * @brief One depth of a ladder: how it is entered, and the latency `_CST` publishes for it.
+ */
+typedef struct ProcessorSleepDepth {
+    uint32_t entry;         /**< A ProcessorSleepEntry_t. */
+    uint32_t hint;          /**< MWAIT's hint index for PROCESSOR_SLEEP_ENTRY_MONITOR_WAIT, 0 otherwise. */
+    uint16_t port;          /**< The port read for PROCESSOR_SLEEP_ENTRY_PORT, 0 otherwise. */
+    bool latency_published; /**< Whether the processor's CPU slot publishes a latency for it. */
+    uint32_t latency;       /**< That latency, in microseconds; 0 when none is published. */
+} ProcessorSleepDepth_t;
+
+/**
+ * @enum ProcessorSleepPorts_t
+ * @brief Whether the port states of the processor's CPU slot are the depths past C1, and why not.
+ */
+typedef enum {
+    PROCESSOR_SLEEP_PORTS_TAKEN = 0,            /**< They are. */
+    PROCESSOR_SLEEP_PORTS_MONITOR_WAIT = 1,     /**< MWAIT reaches past C1, and its hints are the depths. */
+    PROCESSOR_SLEEP_PORTS_NO_SLOT = 2,          /**< The processor's CPU slot publishes no state. */
+    PROCESSOR_SLEEP_PORTS_TIMER_MAY_STOP = 3,   /**< The local timer, which ends every tickless sleep, may stop. */
+    PROCESSOR_SLEEP_PORTS_COUNTER_MAY_STOP = 4, /**< The TSC, which times every sleep, is not invariant. */
+    PROCESSOR_SLEEP_PORTS_NOT_HANDED_OVER = 5,  /**< Step 8 skipped CST_CNT: `_CST` was not handed over. */
+} ProcessorSleepPorts_t;
+
+/**
+ * @brief What a ladder is built from.
+ */
+typedef struct ProcessorSleepLadderFacts {
+    bool monitor;           /**< Whether the kernel can use MONITOR and MWAIT here. */
+    bool intel;             /**< Whether the processor is Intel's, whose MWAIT hints past C1 ACPI's FFixedHW names. */
+    uint32_t usable_hints;  /**< What @ref kernel_processor_sleep_usable_hints gives this processor. */
+    bool timer_always_runs; /**< CPUID.06H:EAX[2], ARAT. */
+    bool counter_invariant; /**< CPUID.80000007H:EDX[8], an invariant TSC. */
+    bool control_skipped;   /**< Whether step 8 skipped CST_CNT
+                               (ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_IDLE_CONTROL_SKIPPED). */
+    const struct AdvancedConfigurationAndPowerInterfaceProcessorIdle *idle;    /**< The CPU slot's states, or NULL. */
+    const struct AdvancedConfigurationAndPowerInterfaceFixedDescription *fadt; /**< The FADT, or NULL. */
+} ProcessorSleepLadderFacts_t;
+
+/**
+ * @brief The depths one processor may sleep at, shallowest first.
+ */
+typedef struct ProcessorSleepLadder {
+    uint32_t available; /**< A bit per depth it holds; depth 0 always. */
+    uint32_t ports;     /**< A ProcessorSleepPorts_t. */
+    uint32_t
+        ports_refused; /**< Port states of type 2 or 3 the slot lists that are no depth, when the ports are taken. */
+    ProcessorSleepDepth_t depths[PROCESSOR_SLEEP_DEPTHS]; /**< By depth; zero where none is available. */
+} ProcessorSleepLadder_t;
+
+/**
+ * @brief The depths a processor may sleep at, from what it offers.
+ * @details Depth 0 is C1, by MWAIT 0 where the monitor pair is usable and by HLT otherwise. Past it:
+ *          - on an Intel processor whose MWAIT reaches a usable hint past C1, depth h is MWAIT hint h, gaps
+ *            included, as Linux's intel_idle drives it, and the slot's port states are no depth;
+ *          - on any other processor, AMD's among them, whose firmware lists its C2 as a port read, the port states
+ *            @ref advanced_configuration_and_power_interface_processor_idle_ports gives the slot are depths 1 on, in
+ *            `_CST`'s order, as Linux's acpi_idle drives them; only where the local timer always runs and the TSC is
+ *            invariant, since a tickless sleep's wake-up and its timing rest on both (Linux marks the TSC unstable
+ *            in a state past C1 without it, v6.12 `tsc_check_state`), and only where step 8 did not skip CST_CNT.
+ *            The ports win there over MWAIT hints past C1, which only Intel's vendor-specific ACPI interface ties to
+ *            C-states; a processor that gives no port depth keeps such hints, as it did before ports were read.
+ *          A depth's latency is the one `_CST` publishes: its hint's
+ *          (@ref advanced_configuration_and_power_interface_processor_idle_latency), or its port state's.
+ * @param facts      What the processor offers.
+ * @param out_ladder Receives the depths, written whole.
+ */
+void kernel_processor_sleep_build_ladder(const ProcessorSleepLadderFacts_t *facts, ProcessorSleepLadder_t *out_ladder);
+
+/**
+ * @brief What the processor that runs the call offers, read from CPUID, its local timer and the ACPI tables, without
+ *        arming the module.
+ * @param out_facts Receives the facts; its slot is the one of this processor's local APIC ID, NULL without one.
+ */
+void kernel_processor_sleep_read_ladder_facts(ProcessorSleepLadderFacts_t *out_facts);
+
+/**
+ * @brief The name the telemetry gives whether the port states are depths.
+ * @param ports A ProcessorSleepPorts_t.
+ * @return "taken", "monitor_wait", "no_slot", "timer_may_stop", "counter_may_stop" or "not_handed_over";
+ *         "unknown" for any other value.
+ */
+const char *kernel_processor_sleep_ports_name(uint32_t ports);
+
+/**
+ * @brief The name the telemetry gives a depth's entry.
+ * @param entry A ProcessorSleepEntry_t.
+ * @return "halt", "mwait" or "port"; "unknown" for any other value.
+ */
+const char *kernel_processor_sleep_entry_name(uint32_t entry);
 
 /**
  * @brief Probes what the processor offers, zeroes the accounting and opens a session.
@@ -107,7 +222,7 @@ void kernel_processor_sleep_initialize(void);
 
 /**
  * @brief Starts the counts of sleeps, halts and skips, the time asleep and awake, and the wake-ups attributed to each
- *        vector (@ref kernel_wakeup_accounting_reset) afresh, keeping what was detected and the hint granted: a
+ *        vector (@ref kernel_wakeup_accounting_reset) afresh, keeping what was detected and the depth granted: a
  *        session that slept to set itself up counts only what its loop does.
  */
 void kernel_processor_sleep_begin_accounting(void);
@@ -187,10 +302,67 @@ uint32_t kernel_processor_sleep_hints_enumerated_by_this_processor(void);
 uint32_t kernel_processor_sleep_usable_hints(uint32_t enumerated, bool timer_always_runs);
 
 /**
- * @brief Which MWAIT hints a sleep may take on this processor: the usable ones of those it enumerates.
- * @return The mask, or zero when the pair is unavailable.
+ * @brief Which depths of the ladder @ref kernel_processor_sleep_initialize adopted a sleep may take, those
+ *        @ref kernel_processor_sleep_refuse_depth refused left out.
+ * @return A bit per depth; depth 0 always.
  */
-uint32_t kernel_processor_sleep_available_hints(void);
+uint32_t kernel_processor_sleep_available_depths(void);
+
+/**
+ * @brief What a depth of the adopted ladder enters.
+ * @param depth     The depth.
+ * @param out_depth Receives it when it is available; untouched otherwise.
+ * @return Whether it is available.
+ */
+bool kernel_processor_sleep_depth_of(uint32_t depth, ProcessorSleepDepth_t *out_depth);
+
+/**
+ * @brief The adopted ladder, available or refused, as @ref kernel_processor_sleep_build_ladder built it.
+ * @return The ladder.
+ */
+const ProcessorSleepLadder_t *kernel_processor_sleep_ladder(void);
+
+/**
+ * @brief Refuses a port depth whose read was found not to stop the processor, and lowers the active depth to the
+ *        deepest still available below it.
+ * @param depth The depth.
+ * @return Whether it was refused: false for a depth that is not available or not a port read.
+ */
+bool kernel_processor_sleep_refuse_depth(uint32_t depth);
+
+/**
+ * @brief Depths @ref kernel_processor_sleep_refuse_depth refused since the last initialisation.
+ * @return The count.
+ */
+uint32_t kernel_processor_sleep_refused_depth_count(void);
+
+/**
+ * @brief The active depth when it waits for a probe: a port depth, which every adoption leaves unvalidated until a
+ *        probe finds its read stops the processor (kernel/power/tickless.h). Until then a sleep enters the deepest
+ *        validated depth below it, so that no sleep reads a port whose read may not stop the processor, whatever
+ *        stops the tick or not.
+ * @return The depth, or @ref PROCESSOR_SLEEP_NO_DEPTH when the active depth is validated.
+ */
+uint32_t kernel_processor_sleep_depth_awaiting_probe(void);
+
+/**
+ * @brief Opens a probe of the depth awaiting one: until @ref kernel_processor_sleep_end_probe, a sleep until an
+ *        interrupt enters the active depth, validated or not.
+ */
+void kernel_processor_sleep_begin_probe(void);
+
+/**
+ * @brief Closes the probe @ref kernel_processor_sleep_begin_probe opened, and validates the depth it probed, or refuses
+ *        it (@ref kernel_processor_sleep_refuse_depth).
+ * @param stops Whether the probe found that the depth's read stops the processor.
+ */
+void kernel_processor_sleep_end_probe(bool stops);
+
+/**
+ * @brief Sleeps entered by a port read since the accounting began.
+ * @return The count.
+ */
+uint32_t kernel_processor_sleep_port_sleep_count(void);
 
 /**
  * @brief Can an unmasked interrupt break an MWAIT on this processor?
@@ -203,36 +375,31 @@ uint32_t kernel_processor_sleep_available_hints(void);
 bool kernel_processor_sleep_has_interrupt_break(void);
 
 /**
- * @brief Asks for a sleep depth, clamped to what the processor enumerates and its local timer allows.
+ * @brief Asks for a depth of the adopted ladder, lowered to the deepest available below it and counted when it is not
+ *        available.
  *
- * @details Asking is not getting: a request past the usable hints, those the processor enumerates and, without
- *          a local timer that always runs, C1's alone (@ref kernel_processor_sleep_usable_hints), is lowered to
- *          the deepest usable hint below it and counted, rather than passed through to raise a fault, to land
- *          somewhere unintended, or to stop the timer that wakes the core. What a hint costs in wake latency is
- *          NOT in CPUID: it lives in ACPI `_CST`, which the ACPI layer publishes per CPU
- *          (kernel/acpi/processor_idle.h) and a tickless sleep reads as the lead of a depth it has not learned yet
- *          (kernel/power/tickless.h); choosing a depth against a deadline stays a decision of the caller that knows
- *          it (#298), never a derivation.
+ * @details Asking is not getting: a request past the available depths is lowered rather than passed through to raise
+ *          a fault, to land somewhere unintended, or to stop the timer that wakes the core. What a depth costs in
+ *          wake latency is NOT in CPUID: it lives in ACPI `_CST`, which the ladder carries and a tickless sleep
+ *          reads as the lead of a depth it has not learned yet (kernel/power/tickless.h); choosing a depth against a
+ *          deadline stays a decision of the caller that knows it (#299), never a derivation.
  *
- * @param hint Desired hint index; @ref PROCESSOR_SLEEP_HINT_C1 is the floor.
+ * @param depth The depth; @ref PROCESSOR_SLEEP_DEPTH_C1 is the floor, a depth past
+ *              @ref PROCESSOR_SLEEP_DEPTH_DEEPEST asks for the deepest.
  * @return true when the request was granted exactly as asked.
  */
-bool kernel_processor_sleep_request_hint(uint32_t hint);
+bool kernel_processor_sleep_request_depth(uint32_t depth);
 
 /**
- * @brief The hint MWAIT is currently given.
- * @return The hint index.
- */
-uint32_t kernel_processor_sleep_active_hint(void);
-
-/**
- * @brief The depth a sleep until an interrupt enters: the active hint where MWAIT is used, C1 where the core halts.
- * @return That hint index.
+ * @brief The depth a sleep until an interrupt enters: the one @ref kernel_processor_sleep_request_depth last granted
+ *        or @ref kernel_processor_sleep_refuse_depth last lowered to, once validated, the deepest validated below it
+ *        until then (@ref kernel_processor_sleep_depth_awaiting_probe), and the active one while a probe is open.
+ * @return That depth.
  */
 uint32_t kernel_processor_sleep_depth(void);
 
 /**
- * @brief Times a requested depth was lowered to what the processor enumerates.
+ * @brief Times a requested depth was lowered to the available ones.
  * @return The count.
  */
 uint32_t kernel_processor_sleep_clamped_count(void);
@@ -249,7 +416,8 @@ uint32_t kernel_processor_sleep_clamped_count(void);
  *
  * @details Interrupts are masked from before the re-read to the sleep, which enables them in the same step (STI then
  *          HLT or MWAIT): an interrupt whose handler writes @p watched after the re-read ends the sleep instead of
- *          being handled just before it. The interrupt flag is given back as it was found.
+ *          being handled just before it. MWAIT is given the active depth's hint where that depth is an MWAIT one,
+ *          C1's otherwise: a port read watches no line. The interrupt flag is given back as it was found.
  *
  * @param watched  Address to watch; typically a driver's write index.
  * @param expected Value that means "nothing new yet".
@@ -260,19 +428,22 @@ ProcessorSleepMode_t processor_sleep_until_write(const volatile uint32_t *watche
 /**
  * @brief Sleeps until the next interrupt, at the depth last granted.
  *
- * For an idle loop with nothing to watch. Where MONITOR/MWAIT exists the monitor is
- * armed on a line nothing writes, so only an interrupt ends the wait, as with HLT, but
- * at the hint @ref kernel_processor_sleep_request_hint granted; without the pair it
- * halts in C1 and is counted as a halt. MWAIT may also exit for implementation-defined
- * reasons with no interrupt at all, and such a wake is counted as unattributed rather
- * than credited to a source that did not cause it.
+ * For an idle loop with nothing to watch, at the depth @ref kernel_processor_sleep_depth gives. An MWAIT depth arms
+ * the monitor on a line nothing writes, so only an interrupt ends the wait, as with HLT; a halt is counted as one,
+ * and a port depth reads its port. MWAIT and a port read may also end for reasons of their own with no interrupt
+ * at all (ACPI 6.6 §8.1.3), and such a wake is counted as unattributed rather than credited to a source that did
+ * not cause it.
  *
  * @details It may be entered with interrupts masked, and that is how a caller that arms a wake-up and then sleeps on
  *          it loses none: an interrupt that became pending since the caller masked them, its own timer's included,
- *          ends the sleep and is handled before the call returns, since the sleep enables interrupts in the same step
- *          (STI then HLT or MWAIT, Intel SDM vol. 3A, §7.8.1). The interrupt flag is given back as it was found.
+ *          ends the sleep and is handled before the call returns. HLT and MWAIT come in the step that enables
+ *          interrupts (STI then the instruction, Intel SDM vol. 3A, §7.8.1); a port is read with interrupts masked,
+ *          a pending interrupt ending the state, and they are enabled right after, as Linux enters `io_idle` (v6.12
+ *          `acpi_idle_do_entry`, drivers/acpi/processor_idle.c). The interrupt flag is given back as it was found.
+ *
+ * @return How the processor was put to sleep, and whether an interrupt was taken before the call returned.
  */
-void processor_sleep_until_interrupt(void);
+ProcessorSleepOutcome_t processor_sleep_until_interrupt(void);
 
 /**
  * @brief Whether what a sleeper waits for has happened; called with interrupts masked.
@@ -299,7 +470,7 @@ bool processor_sleep_unless(ProcessorSleepCondition_t done, void *context);
 
 /**
  * @brief Times the processor was put to sleep.
- * @return The count, both modes together.
+ * @return The count, every mode together.
  */
 uint32_t kernel_processor_sleep_count(void);
 
@@ -376,6 +547,19 @@ void kernel_processor_sleep_close_session(void);
  *         no time.
  */
 uint32_t kernel_processor_sleep_published_duty_cycle_permille(void);
+
+#if defined(LPL_KERNEL_ENABLE_SMOKE_TESTS)
+/**
+ * @brief Adopts @p ladder as an initialisation would, every depth available and C1 active, so that a debug kernel's
+ *        tests give the module depths no QEMU model has; @ref kernel_processor_sleep_initialize adopts this
+ *        processor's own again.
+ * @details A tickless sleep keeps what it learned per depth, so a test that adopts a depth this processor's ladder
+ *          does not have gives that depth's estimate back as it found it
+ *          (kernel_tickless_debug_exchange_depth_estimate): the processor's own depth there would inherit it.
+ * @param ladder The ladder.
+ */
+void kernel_processor_sleep_debug_adopt_ladder(const ProcessorSleepLadder_t *ladder);
+#endif
 
 #ifdef __cplusplus
 }

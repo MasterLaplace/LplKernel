@@ -106,6 +106,15 @@ asmutils_enable_interrupts_and_halt:
     hlt
     ret
 
+.globl asmutils_input_byte_then_enable_interrupts
+.type asmutils_input_byte_then_enable_interrupts, @function
+asmutils_input_byte_then_enable_interrupts:
+    movl 4(%esp), %edx
+    inb %dx, %al
+    sti
+    nop
+    ret
+
 .globl asmutils_no_operation
 .type asmutils_no_operation, @function
 asmutils_no_operation:

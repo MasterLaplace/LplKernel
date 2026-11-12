@@ -184,7 +184,7 @@ bool kernel_satellite_app_run(uint32_t iterations, SatelliteReport_t *out)
     const uint32_t bound_wakes_before = kernel_tickless_wakes_planned_on_the_bound();
 
     kernel_processor_sleep_initialize();
-    (void) kernel_processor_sleep_request_hint(PROCESSOR_SLEEP_HINT_MAX);
+    (void) kernel_processor_sleep_request_depth(PROCESSOR_SLEEP_DEPTH_DEEPEST);
     kernel_frequency_scaling_initialize();
     kernel_frequency_scaling_begin_measurement();
 

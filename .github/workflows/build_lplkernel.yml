@@ -219,6 +219,9 @@ jobs:
     - name: The rules the oracle of each MWAIT hint's latency and residency takes from Linux
       run: python3 -I -B tools/acpi/oracles/linux_idle_hints.py --self-test
 
+    - name: The rules the oracle of the port states a processor without deep MWAIT enters takes from Linux
+      run: python3 -I -B tools/acpi/oracles/linux_idle_ports.py --self-test
+
     - name: The measure that chose the residency rule against intel_idle's tables
       run: python3 -I -B tools/acpi/oracles/against_intel_idle_tables.py --self-test
 

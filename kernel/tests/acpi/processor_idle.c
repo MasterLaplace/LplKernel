@@ -1454,3 +1454,171 @@ KERNEL_TEST(a_processor_finds_the_c_states_of_the_slot_of_its_apic_id)
                       advanced_configuration_and_power_interface_processor_idle_of_processor(&table, &madt, 9u) == NULL,
                       "nor one only a slot past the count has");
 }
+
+/**
+ * @brief Whether @p idle, beside @p fadt, gives the @p count port states of @p expected and @p refused refusals, every
+ *        port past them zeroed.
+ */
+static bool idle_ports_are(const AdvancedConfigurationAndPowerInterfaceProcessorIdle_t *idle,
+                           const AdvancedConfigurationAndPowerInterfaceFixedDescription_t *fadt,
+                           const AdvancedConfigurationAndPowerInterfaceIdlePort_t *expected, uint32_t count,
+                           uint32_t refused)
+{
+    static AdvancedConfigurationAndPowerInterfaceIdlePorts_t ports;
+    static const AdvancedConfigurationAndPowerInterfaceIdlePort_t none = {0u, 0u, 0u};
+
+    memset(&ports, 0xA5, sizeof(ports));
+    advanced_configuration_and_power_interface_processor_idle_ports(idle, fadt, &ports);
+    if (ports.count != count || ports.refused != refused)
+        return false;
+    for (uint32_t index = 0u; index < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_PROCESSOR_IDLE_PORTS; ++index)
+    {
+        const AdvancedConfigurationAndPowerInterfaceIdlePort_t *port = &ports.ports[index];
+        const AdvancedConfigurationAndPowerInterfaceIdlePort_t *wanted = index < count ? &expected[index] : &none;
+
+        if (port->port != wanted->port || port->type != wanted->type || port->latency != wanted->latency)
+            return false;
+    }
+    return true;
+}
+
+/**
+ * @brief A slot gives the sleep path each state of type 2 entered by a port read that Linux's acpi_idle keeps (v6.12
+ *        `acpi_processor_evaluate_cst`, `acpi_processor_power_verify`), in _CST's order; when a kept state's type is
+ *        at least the one before it and its latency below it, the kept latencies are sorted, each state keeping its
+ *        place (`acpi_cst_latency_sort`); a C3 is refused (#839), and so no sort counts it.
+ */
+KERNEL_TEST(a_slot_gives_the_type_2_port_states_linux_keeps_in_cst_order)
+{
+    static AdvancedConfigurationAndPowerInterfaceProcessorIdle_t idle;
+    static const AdvancedConfigurationAndPowerInterfaceIdlePort_t amd[] =
+        {
+            {0x414u, 2u, 18u}
+    },
+                                                                  slower_c2[] = {{0x414u, 2u, 400u}},
+                                                                  sorted[] = {{0x414u, 2u, 300u}, {0x416u, 2u, 400u}},
+                                                                  c1_sorted[] = {{0x414u, 2u, 30u}};
+    const IdleState_t amd_c1 = {
+        .entry = {.space = IDLE_FIXED_HARDWARE, .bit_width = 2u, .bit_offset = 2u},
+        .type = 1u,
+        .latency = 1u
+    };
+
+    memset(&idle, 0, sizeof(idle));
+    idle.count = 3u;
+    idle.states[0] = amd_c1;
+    idle.states[1] = idle_port(0x414u, 1u, 2u, 18u, 0u);
+    idle.states[2] = idle_port(0x415u, 1u, 3u, 350u, 0u);
+    kernel_test_check(test, idle_ports_are(&idle, NULL, amd, 1u, 1u), "AMD's C2 is port 0x414; its C3 is refused");
+
+    idle.states[1].latency = 400u;
+    kernel_test_check(test, idle_ports_are(&idle, NULL, slower_c2, 1u, 1u),
+                      "a C2 of 400 us before the refused C3 of 350 us keeps 400 us: no sort counts a refused state");
+
+    idle.states[2] = idle_port(0x416u, 1u, 2u, 300u, 0u);
+    kernel_test_check(test, idle_ports_are(&idle, NULL, sorted, 2u, 0u),
+                      "a C2 of 400 us before a C2 of 300 us takes 300 us, and the second 400 us");
+
+    idle.count = 2u;
+    idle.states[0] = idle_port(0x410u, 1u, 1u, 30u, 0u);
+    idle.states[1] = idle_port(0x414u, 1u, 2u, 18u, 0u);
+    kernel_test_check(test, idle_ports_are(&idle, NULL, c1_sorted, 1u, 0u),
+                      "a port C1 is no port state, but the sort counts it");
+
+    idle.states[0] = idle_monitor_wait(0x00u, 1u, 30u, 0u);
+    idle.states[0].entry.space = 0x00u;
+    kernel_test_check(test, idle_ports_are(&idle, NULL, amd, 1u, 0u),
+                      "a C1 in memory, which Linux skips, sorts nothing");
+
+    idle.count = 0u;
+    kernel_test_check(test, idle_ports_are(&idle, NULL, NULL, 0u, 0u), "a slot of no state gives none");
+    kernel_test_check(test, idle_ports_are(NULL, NULL, NULL, 0u, 0u), "and so does no slot");
+}
+
+/**
+ * @brief A port state is refused, and counted, when it is a C3 (#839), when its port is 0 or past 0xFFFF, when it lies
+ *        in a register block of the FADT, its reset register among them, belongs to a device the kernel drives (the
+ *        PIT, the keyboard controller, CMOS, COM1) or is one the ACPI layer protects, or when six came before it; a
+ *        state of FFixedHW past C1, or of type 0 or 4, is no port state, and a state past the slot's count is not read.
+ */
+KERNEL_TEST(a_port_state_the_kernel_cannot_enter_is_refused_and_counted)
+{
+    static AdvancedConfigurationAndPowerInterfaceProcessorIdle_t idle;
+    static AdvancedConfigurationAndPowerInterfaceFixedDescription_t fadt;
+    static AdvancedConfigurationAndPowerInterfaceIdlePort_t
+        six[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_PROCESSOR_IDLE_PORTS];
+    static const AdvancedConfigurationAndPowerInterfaceIdlePort_t past_the_blocks[] = {
+        {0x428u, 2u, 1u}
+    };
+    static const uint16_t driven[] = {0x40u, 0x43u, 0x60u, 0x64u, 0x70u, 0x71u, 0x3F8u, 0x3FFu, 0x21u, 0xCF9u};
+    static const uint16_t in_blocks[] = {0x400u, 0x403u, 0x404u, 0x405u, 0x408u, 0x40Bu, 0x420u, 0x427u, 0xB0u, 0x4F9u};
+
+    memset(&idle, 0, sizeof(idle));
+    idle.count = 5u;
+    idle.states[0] = idle_monitor_wait(0x00u, 1u, 1u, 0u);
+    idle.states[1] = idle_port(0x0u, 1u, 2u, 40u, 0u);
+    idle.states[2] = idle_port(0x10000u, 1u, 2u, 42u, 0u);
+    idle.states[3] = idle_monitor_wait(0x10u, 2u, 33u, 0u);
+    idle.states[4] = idle_port(0x416u, 1u, 0u, 43u, 0u);
+    idle.states[5] = idle_port(0x417u, 1u, 2u, 44u, 0u);
+    kernel_test_check(test, idle_ports_are(&idle, NULL, NULL, 0u, 2u),
+                      "port 0 and 0x10000 are refused; MWAIT 0x10, a type 0 and a state past the count are not port "
+                      "states");
+    idle.states[4].type = 4u;
+    kernel_test_check(test, idle_ports_are(&idle, NULL, NULL, 0u, 2u), "nor is a state of type 4");
+
+    idle.count = 2u;
+    for (uint32_t index = 0u; index < sizeof(driven) / sizeof(driven[0]); ++index)
+    {
+        idle.states[1] = idle_port(driven[index], 1u, 2u, 10u, 0u);
+        kernel_test_check(test, idle_ports_are(&idle, NULL, NULL, 0u, 1u),
+                          "a port the kernel drives or the ACPI layer protects is refused");
+    }
+
+    memset(&fadt, 0, sizeof(fadt));
+    fadt.present = true;
+    fadt.power_management_event_blocks[0] =
+        (AdvancedConfigurationAndPowerInterfaceGenericAddress_t){.address = 0x400u,
+                                                                 .space = IDLE_SYSTEM_IO,
+                                                                 .bit_width = 32u};
+    fadt.power_management_control_blocks[0] =
+        (AdvancedConfigurationAndPowerInterfaceGenericAddress_t){.address = 0x404u,
+                                                                 .space = IDLE_SYSTEM_IO,
+                                                                 .bit_width = 16u};
+    fadt.power_management_timer_block =
+        (AdvancedConfigurationAndPowerInterfaceGenericAddress_t){.address = 0x408u,
+                                                                 .space = IDLE_SYSTEM_IO,
+                                                                 .bit_width = 32u};
+    fadt.general_purpose_event_blocks[0] =
+        (AdvancedConfigurationAndPowerInterfaceGenericAddress_t){.address = 0x420u,
+                                                                 .space = IDLE_SYSTEM_IO,
+                                                                 .bit_width = 64u};
+    fadt.general_purpose_event_block_lengths[0] = 8u;
+    fadt.system_management_interrupt_command = 0xB0u;
+    fadt.reset_register = (AdvancedConfigurationAndPowerInterfaceGenericAddress_t){.address = 0x4F9u,
+                                                                                   .space = IDLE_SYSTEM_IO,
+                                                                                   .bit_width = 8u};
+    for (uint32_t index = 0u; index < sizeof(in_blocks) / sizeof(in_blocks[0]); ++index)
+    {
+        idle.states[1] = idle_port(in_blocks[index], 1u, 2u, 1u, 0u);
+        kernel_test_check(test, idle_ports_are(&idle, &fadt, NULL, 0u, 1u),
+                          "a port in a register block of the FADT, or its SMI_CMD, is refused");
+    }
+    idle.states[1] = idle_port(0x428u, 1u, 2u, 1u, 0u);
+    kernel_test_check(test, idle_ports_are(&idle, &fadt, past_the_blocks, 1u, 0u),
+                      "the port right past the GPE0 block is not");
+
+    idle.count = 7u;
+    for (uint32_t index = 0u; index < 7u; ++index)
+    {
+        idle.states[index] = idle_port(0x500u + index, 1u, 2u, 10u + index, 0u);
+        if (index < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_PROCESSOR_IDLE_PORTS)
+        {
+            six[index].port = (uint16_t) (0x500u + index);
+            six[index].type = 2u;
+            six[index].latency = 10u + index;
+        }
+    }
+    kernel_test_check(test, idle_ports_are(&idle, NULL, six, 6u, 1u),
+                      "seven port states give six, the seventh refused");
+}

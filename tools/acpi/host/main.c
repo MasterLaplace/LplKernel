@@ -1003,8 +1003,24 @@ static void harness_print_idle_hints(uint32_t slot, const AdvancedConfigurationA
 }
 
 /**
+ * @brief Prints the port states @p idle gives a processor whose MWAIT reaches no state past C1, beside @p fadt, each as
+ *        the depth it takes past C1, then how many it gives and refuses.
+ */
+static void harness_print_idle_ports(uint32_t slot, const AdvancedConfigurationAndPowerInterfaceProcessorIdle_t *idle,
+                                     const AdvancedConfigurationAndPowerInterfaceFixedDescription_t *fadt)
+{
+    AdvancedConfigurationAndPowerInterfaceIdlePorts_t ports;
+
+    advanced_configuration_and_power_interface_processor_idle_ports(idle, fadt, &ports);
+    for (uint32_t index = 0u; index < ports.count; ++index)
+        printf("aml idle port %u %u port=0x%04X type=%u latency=%u\n", slot, index + 1u, ports.ports[index].port,
+               ports.ports[index].type, ports.ports[index].latency);
+    printf("aml idle ports %u given=%u refused=%u\n", slot, ports.count, ports.refused);
+}
+
+/**
  * @brief Prints what steps 8 and 9 counted, then each CPU slot whose _CST was evaluated, by its processor
- *        object's path, each state it published, and each hint those states target.
+ *        object's path, each state it published, each hint those states target, and the port states they give.
  */
 static void harness_print_idle(AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t *load,
                                const AdvancedConfigurationAndPowerInterfaceInitialization_t *counts)
@@ -1046,6 +1062,7 @@ static void harness_print_idle(AdvancedConfigurationAndPowerInterfaceMachineLang
                    idle->states[state].entry.bit_offset, idle->states[state].entry.access_size,
                    (unsigned long long) idle->states[state].entry.address);
         harness_print_idle_hints(slot, idle);
+        harness_print_idle_ports(slot, idle, load->directory != NULL ? &load->directory->fixed_description : NULL);
     }
 }
 
