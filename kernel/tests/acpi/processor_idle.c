@@ -1537,9 +1537,9 @@ KERNEL_TEST(a_slot_gives_the_type_2_port_states_linux_keeps_in_cst_order)
 
 /**
  * @brief A port state is refused, and counted, when it is a C3 (#839), when its port is 0 or past 0xFFFF, when it lies
- *        in a register block of the FADT, belongs to a device the kernel drives (the PIT, the keyboard controller,
- *        CMOS, COM1) or is one the ACPI layer protects, or when six came before it; a state of FFixedHW past C1, or
- *        of type 0 or 4, is no port state, and a state past the slot's count is not read.
+ *        in a register block of the FADT, its reset register among them, belongs to a device the kernel drives (the
+ *        PIT, the keyboard controller, CMOS, COM1) or is one the ACPI layer protects, or when six came before it; a
+ *        state of FFixedHW past C1, or of type 0 or 4, is no port state, and a state past the slot's count is not read.
  */
 KERNEL_TEST(a_port_state_the_kernel_cannot_enter_is_refused_and_counted)
 {
@@ -1551,7 +1551,7 @@ KERNEL_TEST(a_port_state_the_kernel_cannot_enter_is_refused_and_counted)
         {0x428u, 2u, 1u}
     };
     static const uint16_t driven[] = {0x40u, 0x43u, 0x60u, 0x64u, 0x70u, 0x71u, 0x3F8u, 0x3FFu, 0x21u, 0xCF9u};
-    static const uint16_t in_blocks[] = {0x400u, 0x403u, 0x404u, 0x405u, 0x408u, 0x40Bu, 0x420u, 0x427u, 0xB0u};
+    static const uint16_t in_blocks[] = {0x400u, 0x403u, 0x404u, 0x405u, 0x408u, 0x40Bu, 0x420u, 0x427u, 0xB0u, 0x4F9u};
 
     memset(&idle, 0, sizeof(idle));
     idle.count = 5u;
@@ -1595,7 +1595,7 @@ KERNEL_TEST(a_port_state_the_kernel_cannot_enter_is_refused_and_counted)
                                                                  .bit_width = 64u};
     fadt.general_purpose_event_block_lengths[0] = 8u;
     fadt.system_management_interrupt_command = 0xB0u;
-    fadt.reset_register = (AdvancedConfigurationAndPowerInterfaceGenericAddress_t){.address = 0xCF9u,
+    fadt.reset_register = (AdvancedConfigurationAndPowerInterfaceGenericAddress_t){.address = 0x4F9u,
                                                                                    .space = IDLE_SYSTEM_IO,
                                                                                    .bit_width = 8u};
     for (uint32_t index = 0u; index < sizeof(in_blocks) / sizeof(in_blocks[0]); ++index)
