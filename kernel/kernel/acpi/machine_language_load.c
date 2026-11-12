@@ -3788,11 +3788,9 @@ void advanced_configuration_and_power_interface_machine_language_declare_directo
     const AdvancedConfigurationAndPowerInterfaceDirectory_t *directory)
 {
     const AdvancedConfigurationAndPowerInterfaceFixedDescription_t *fadt = &directory->fixed_description;
-    const uint16_t control_ports[2] = {
-        advanced_configuration_and_power_interface_input_output_port(&fadt->power_management_control_blocks[0], 2u),
-        advanced_configuration_and_power_interface_input_output_port(&fadt->power_management_control_blocks[1], 2u),
-    };
+    uint16_t control_ports[2];
 
+    advanced_configuration_and_power_interface_power_management_control_ports(fadt, control_ports);
     load->directory = directory;
     advanced_configuration_and_power_interface_machine_language_use_global_lock(
         load, fadt->hardware_reduced ? 0u : directory->firmware_control_physical_address, control_ports);

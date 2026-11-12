@@ -656,6 +656,60 @@ extern uint16_t advanced_configuration_and_power_interface_input_output_port(
     const AdvancedConfigurationAndPowerInterfaceGenericAddress_t *reg, uint32_t bytes);
 
 /**
+ * @name The bits of the PM1 registers the sleep path and the global lock touch (ACPI 6.6 §4.8.3.1.1, §4.8.3.2.1)
+ * @{
+ */
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_BUS_MASTER_STATUS 0x0010u   /**< PM1 status BM_STS, cleared by a 1. \
+                                                                                */
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_BUS_MASTER_RELOAD   0x0002u /**< PM1 control BM_RLD. */
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_GLOBAL_LOCK_RELEASE 0x0004u /**< PM1 control GBL_RLS, write-only.   \
+                                                                                */
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_CONTROL_WRITE_ONLY                                                  \
+    0x2004u /**< SLP_EN and GBL_RLS, the write-only bits of PM1 control, which a read gives as 0. */
+/** @} */
+
+/**
+ * @brief The PM1 status registers of a normalised FADT, where BM_STS is read: the first half of each PM1 event block.
+ *
+ * @details PM1a's block must be a port range of 4 bytes at least, so that its status register takes a 16-bit
+ *          access; PM1b's is optional, and taken under the same rule when it gives an address, as ACPICA reads the
+ *          PM1 status grouping (`acpi_hw_register_read`). Neither may reach a protected port.
+ *
+ * @param fadt      The FADT.
+ * @param out_ports Receives PM1a_STS, then PM1b_STS or 0 without a PM1b block; both 0 on false.
+ * @return false when PM1a's block is absent, shorter than 4 bytes, not wholly in the I/O space or reaches a protected
+ *         port, or when PM1b's gives an address under which no such status register lies.
+ */
+extern bool advanced_configuration_and_power_interface_power_management_status_ports(
+    const AdvancedConfigurationAndPowerInterfaceFixedDescription_t *fadt, uint16_t out_ports[2]);
+
+/**
+ * @brief The PM1 control registers of a normalised FADT: PM1a_CNT and PM1b_CNT, as 16-bit ports.
+ *
+ * @param fadt      The FADT.
+ * @param out_ports Receives each port, 0 for a block that does not lie wholly in the I/O space.
+ */
+extern void advanced_configuration_and_power_interface_power_management_control_ports(
+    const AdvancedConfigurationAndPowerInterfaceFixedDescription_t *fadt, uint16_t out_ports[2]);
+
+/**
+ * @brief Sets @p bits in the PM1 control grouping, as ACPI writes a register grouping: reads PM1a_CNT and PM1b_CNT, ORs
+ *        them, clears the write-only bits, sets @p bits, then writes the value to PM1a_CNT, then to PM1b_CNT.
+ *
+ * @details The sequence of ACPICA's `acpi_write_bit_register` on PM1 control. A port that is 0 or protected is neither
+ *          read nor written. Its callers run on the bootstrap processor one after the other, so that no lock orders
+ *          them: the global lock's release, and the sleep path's BM_RLD.
+ *
+ * @param host  The host the ports are read and written through.
+ * @param ports PM1a_CNT and PM1b_CNT (@ref advanced_configuration_and_power_interface_power_management_control_ports).
+ * @param bits  What to set: ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_GLOBAL_LOCK_RELEASE or
+ *              ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_BUS_MASTER_RELOAD.
+ * @return Whether a register was written.
+ */
+extern bool advanced_configuration_and_power_interface_set_power_management_control_bits(
+    const AdvancedConfigurationAndPowerInterfaceHost_t *host, const uint16_t ports[2], uint32_t bits);
+
+/**
  * @brief Puts the platform a normalised FADT describes in ACPI mode, through @p host (§3.8 step 0).
  *
  * @details Nothing is written when the platform is hardware-reduced, when SCI_EN, in either PM1

@@ -20,12 +20,10 @@
 #define MACHINE_LANGUAGE_ACCESS_LAST      5u   /**< AccessType BufferAcc, the last one not reserved. */
 #define MACHINE_LANGUAGE_LOCK_PENDING     0x1u /**< GlobalLock bit Pending: the other side wants the lock. */
 #define MACHINE_LANGUAGE_LOCK_OWNED       0x2u /**< GlobalLock bit Owned. */
-#define MACHINE_LANGUAGE_LOCK_RELEASE     0x4u /**< GBL_RLS, bit 2 of a PM1 control register. */
 #define MACHINE_LANGUAGE_FACS_LOCK_OFFSET 16u  /**< Where the GlobalLock word lies in the FACS. */
 #define MACHINE_LANGUAGE_FACS_MINIMUM     24u  /**< The shortest FACS that holds a GlobalLock word. */
 #define MACHINE_LANGUAGE_FACS_ALIGNMENT                                                                                \
     64u /**< The alignment ACPI gives a FACS, which keeps its lock word in one page. */
-#define MACHINE_LANGUAGE_CONTROL_WRITE_ONLY 0x2004u /**< SLP_EN and GBL_RLS: the write-only bits of PM1 control. */
 
 typedef AdvancedConfigurationAndPowerInterfaceMachineLanguageStatus_t MachineLanguageStatus_t;
 typedef AdvancedConfigurationAndPowerInterfaceMachineLanguageLoad_t MachineLanguageLoad_t;
@@ -535,41 +533,20 @@ static MachineLanguageStatus_t machine_language_region_datum(MachineLanguageLoad
 }
 
 /**
- * @brief Whether the PM1 control register @p index is one GBL_RLS may be written to: given, and not a
- *        port the kernel protects.
- */
-static bool machine_language_control_port(const MachineLanguageRegions_t *regions, uint32_t index)
-{
-    const uint16_t port = regions->power_management_control_ports[index];
-
-    return port != 0u && !advanced_configuration_and_power_interface_port_is_protected(port);
-}
-
-/**
- * @brief Tells the firmware waiting for the global lock that it is free: reads PM1a and PM1b control,
- *        ORs them, clears the write-only bits, sets GBL_RLS, and writes the value to PM1a, then to
- *        PM1b, as ACPI reads and writes a register grouping (the ACPI Register Model); counted when a
- *        register was written.
+ * @brief Tells the firmware waiting for the global lock that it is free: sets GBL_RLS in the PM1 control grouping
+ *        (@ref advanced_configuration_and_power_interface_set_power_management_control_bits); counted when a register
+ *        was written.
  */
 static void machine_language_signal_global_lock(MachineLanguageLoad_t *load)
 {
     MachineLanguageRegions_t *regions = &load->regions;
-    const MachineLanguageHost_t *host = load->space.host;
-    uint32_t value = 0u;
-    bool written = false;
 
-    for (uint32_t index = 0u; index < 2u; ++index)
-        if (machine_language_control_port(regions, index))
-            value |= host->port_read(host->context, regions->power_management_control_ports[index], 2u);
-    value = (value & ~MACHINE_LANGUAGE_CONTROL_WRITE_ONLY) | MACHINE_LANGUAGE_LOCK_RELEASE;
-    for (uint32_t index = 0u; index < 2u; ++index)
-    {
-        if (!machine_language_control_port(regions, index))
-            continue;
-        host->port_write(host->context, regions->power_management_control_ports[index], 2u, value);
-        written = true;
-    }
-    regions->global_lock_releases_signalled += written ? 1u : 0u;
+    regions->global_lock_releases_signalled +=
+        advanced_configuration_and_power_interface_set_power_management_control_bits(
+            load->space.host, regions->power_management_control_ports,
+            ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_GLOBAL_LOCK_RELEASE) ?
+            1u :
+            0u;
 }
 
 /**
