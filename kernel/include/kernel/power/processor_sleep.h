@@ -97,6 +97,8 @@ typedef enum {
 typedef struct ProcessorSleepOutcome {
     ProcessorSleepMode_t mode; /**< How the processor was put to sleep. */
     bool interrupted;          /**< Whether an interrupt was taken before the sleep returned. */
+    uint32_t depth;            /**< The depth entered: the one asked, or the one the bus-master check demoted it to;
+                                    for PROCESSOR_SLEEP_NONE, the one asked. */
 } ProcessorSleepOutcome_t;
 
 #define PROCESSOR_SLEEP_DEPTHS        7u /**< Depths a ladder holds: C1, then six deeper at most. */
@@ -423,7 +425,8 @@ uint32_t kernel_processor_sleep_depth_awaiting_probe(void);
 
 /**
  * @brief Opens a probe of the depth awaiting one: until @ref kernel_processor_sleep_end_probe, a sleep until an
- *        interrupt enters the active depth, validated or not.
+ *        interrupt enters the active depth, validated or not, and without the bus-master check, as Linux's s2idle
+ *        enters C3 (v6.12 `acpi_idle_enter_s2idle`), so that each of the probe's sleeps reads the port it judges.
  */
 void kernel_processor_sleep_begin_probe(void);
 
@@ -452,6 +455,49 @@ void kernel_processor_sleep_port_verdicts(uint32_t out_verdicts[PROCESSOR_SLEEP_
  * @return The count.
  */
 uint32_t kernel_processor_sleep_port_sleep_count(void);
+
+/**
+ * @brief The depth a sleep enters once the bus-master check read PM1 status @p status before depth @p depth.
+ *
+ * @details A depth with the check is entered while BM_STS is clear; while it is set, a bus master was active since
+ *          the last check, and the sleep takes instead the deepest depth below it that @p allowed names and that has
+ *          no check, C1 when none does, as Linux's `acpi_idle_enter_bm` demotes to its safe state (v6.12
+ *          drivers/acpi/processor_idle.c), ACPI's policy between C2 and C3 (ACPI 6.6 §8.1.4).
+ *
+ * @param ladder  The ladder.
+ * @param allowed A bit per depth the caller may enter.
+ * @param depth   The depth asked, a depth of @p ladder.
+ * @param status  PM1a status ORed with PM1b's, as read before the sleep.
+ * @return The depth entered; @p depth itself when it has no check, or BM_STS is clear in @p status.
+ */
+uint32_t kernel_processor_sleep_depth_after_the_bus_master_check(const ProcessorSleepLadder_t *ladder, uint32_t allowed,
+                                                                 uint32_t depth, uint32_t status);
+
+/**
+ * @brief Reads @p ladder's PM1 status registers, where the bus-master check reads BM_STS.
+ *
+ * @param ladder The ladder whose status registers to read.
+ * @return PM1a status ORed with PM1b's; 0 for a ladder that names none.
+ */
+uint32_t kernel_processor_sleep_read_bus_master_status(const ProcessorSleepLadder_t *ladder);
+
+/**
+ * @brief Reads @p ladder's PM1 status registers before a depth with the bus-master check, and clears BM_STS where it
+ *        is set, by writing it alone back to each, as ACPICA clears a status bit (v6.12 `acpi_write_bit_register`).
+ *
+ * @details Called with interrupts masked, by any processor: a clear another made only hides a request from the next
+ *          check, and writing 1 again changes nothing.
+ *
+ * @param ladder The ladder whose status registers to read.
+ * @return PM1a status ORed with PM1b's, as read before the clear; 0 for a ladder that names none.
+ */
+uint32_t kernel_processor_sleep_check_bus_masters(const ProcessorSleepLadder_t *ladder);
+
+/**
+ * @brief Sleeps the bus-master check demoted since the accounting began.
+ * @return The count.
+ */
+uint32_t kernel_processor_sleep_bus_master_demotion_count(void);
 
 /**
  * @brief Can an unmasked interrupt break an MWAIT on this processor?
@@ -523,7 +569,11 @@ ProcessorSleepMode_t processor_sleep_until_write(const volatile uint32_t *watche
  * at all (ACPI 6.6 §8.1.3), and such a wake is counted as unattributed rather than credited to a source that did
  * not cause it.
  *
- * @details It may be entered with interrupts masked, and that is how a caller that arms a wake-up and then sleeps on
+ * @details A depth with the bus-master check reads BM_STS first, interrupts masked, outside a probe: set, the sleep
+ *          enters the depth below that @ref kernel_processor_sleep_depth_after_the_bus_master_check gives over the
+ *          validated depths, and the outcome names it.
+ *
+ *          It may be entered with interrupts masked, and that is how a caller that arms a wake-up and then sleeps on
  *          it loses none: an interrupt that became pending since the caller masked them, its own timer's included,
  *          ends the sleep and is handled before the call returns. HLT and MWAIT come in the step that enables
  *          interrupts (STI then the instruction, Intel SDM vol. 3A, §7.8.1); a port is read with interrupts masked,

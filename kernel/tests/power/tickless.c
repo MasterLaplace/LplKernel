@@ -1023,10 +1023,10 @@ KERNEL_TEST(a_port_depth_whose_read_does_not_stop_is_refused_at_the_first_stop_o
  */
 KERNEL_TEST(a_probe_sleep_did_not_stop_when_its_port_read_returned_early_with_no_interrupt)
 {
-    const ProcessorSleepOutcome_t port = {PROCESSOR_SLEEP_PORT, false};
-    const ProcessorSleepOutcome_t interrupted_port = {PROCESSOR_SLEEP_PORT, true};
-    const ProcessorSleepOutcome_t halt = {PROCESSOR_SLEEP_HALT, false};
-    const ProcessorSleepOutcome_t monitor_wait = {PROCESSOR_SLEEP_MONITOR, false};
+    const ProcessorSleepOutcome_t port = {PROCESSOR_SLEEP_PORT, false, PROCESSOR_SLEEP_DEPTH_C1};
+    const ProcessorSleepOutcome_t interrupted_port = {PROCESSOR_SLEEP_PORT, true, PROCESSOR_SLEEP_DEPTH_C1};
+    const ProcessorSleepOutcome_t halt = {PROCESSOR_SLEEP_HALT, false, PROCESSOR_SLEEP_DEPTH_C1};
+    const ProcessorSleepOutcome_t monitor_wait = {PROCESSOR_SLEEP_MONITOR, false, PROCESSOR_SLEEP_DEPTH_C1};
 
     kernel_test_check(test, kernel_tickless_probe_sleep_did_not_stop(true, &port),
                       "a read that returned early with no interrupt did not stop");
@@ -1080,4 +1080,74 @@ KERNEL_TEST(a_near_window_at_a_deeper_unlearned_depth_is_planned_on_its_publishe
     kernel_test_check(test, seen.on_a_published >= 1u && seen.on_the_bound == 0u,
                       "the wake-up is planned on the published latency, never on the bound");
     kernel_test_measure(test, "near_wakes_on_published", seen.on_a_published);
+}
+
+/**
+ * @brief Under a hypervisor, a sleep the bus-master check demoted teaches the depth it entered, never the one asked:
+ *        with a validated C3 whose status register reads BM_STS set, a port nothing decodes, and HLT below it, every
+ *        sleep of a session enters HLT, which the timer ends, and only its estimate learns; the C3's probe, every one
+ *        of its sleeps demoted, teaches nothing and refuses nothing. Skipped on a real processor, whose ports may stop
+ *        it.
+ */
+KERNEL_TEST(a_sleep_the_bus_master_check_demoted_is_learned_at_the_depth_it_entered)
+{
+    static ProcessorSleepLadder_t ladder;
+    CpuIdentity_t identity;
+    KernelWakeLatency_t held_halt = {0};
+    KernelWakeLatency_t held_c3 = {0};
+
+    cpu_identity_read(&identity);
+    if (!identity.hypervisor)
+    {
+        kernel_test_skip(test, "a real processor: the made-up ports may well stop it");
+        return;
+    }
+    if (!tickless_test_can_stop_the_tick(test))
+        return;
+
+    ladder = *kernel_processor_sleep_ladder();
+    ladder.available |= 0x6u;
+    ladder.depths[1] =
+        (ProcessorSleepDepth_t){.entry = PROCESSOR_SLEEP_ENTRY_HALT, .latency_published = true, .latency = 18u};
+    ladder.depths[2] = (ProcessorSleepDepth_t){.entry = PROCESSOR_SLEEP_ENTRY_PORT,
+                                               .port = TICKLESS_TEST_UNDECODED_PORT,
+                                               .latency_published = true,
+                                               .latency = 350u,
+                                               .bus_master_check = true};
+    ladder.bus_master_status_ports[0] = TICKLESS_TEST_UNDECODED_PORT;
+    kernel_processor_sleep_debug_adopt_ladder(&ladder);
+    (void) kernel_processor_sleep_request_depth(2u);
+    kernel_processor_sleep_begin_probe();
+    kernel_processor_sleep_end_probe(true);
+    kernel_tickless_debug_exchange_depth_estimate(1u, &held_halt);
+    kernel_tickless_debug_exchange_depth_estimate(2u, &held_c3);
+    const uint32_t refused_before = kernel_processor_sleep_refused_depth_count();
+    const uint32_t demotions_before = kernel_processor_sleep_bus_master_demotion_count();
+
+    const uint32_t duty = tickless_test_begin();
+    const bool stopped = kernel_tickless_enable(true, &tickless_test_plan);
+    const uint32_t probe_taught = kernel_tickless_wake_samples_at(2u);
+    const uint64_t earliest = asmutils_read_timestamp_counter() +
+                              kernel_tickless_cycles_from_microseconds(TICKLESS_TEST_WINDOW_OPENS_MICROSECONDS);
+    (void) kernel_wake_planner_arm(&tickless_test_plan, duty, earliest,
+                                   earliest +
+                                       kernel_tickless_cycles_from_microseconds(TICKLESS_TEST_WINDOW_MICROSECONDS));
+    for (uint32_t sleeps = 0u; tickless_test_runs == 0u && sleeps < TICKLESS_TEST_SLEEPS; ++sleeps)
+        (void) kernel_tickless_sleep_on(&tickless_test_plan);
+    const uint32_t halt_taught = kernel_tickless_wake_samples_at(1u);
+    const uint32_t c3_taught = kernel_tickless_wake_samples_at(2u);
+    const uint32_t demotions = kernel_processor_sleep_bus_master_demotion_count() - demotions_before;
+    const uint32_t refused = kernel_processor_sleep_refused_depth_count() - refused_before;
+    kernel_tickless_disable();
+    kernel_tickless_debug_exchange_depth_estimate(1u, &held_halt);
+    kernel_tickless_debug_exchange_depth_estimate(2u, &held_c3);
+    kernel_processor_sleep_initialize();
+
+    kernel_test_check(test, stopped && tickless_test_runs == 1u, "the tick stops, and the duty is served");
+    kernel_test_check(test, probe_taught == 0u && refused == 0u, "the C3's probe teaches nothing, and refuses nothing");
+    kernel_test_check(test, demotions > 0u, "the check demotes the sleeps");
+    kernel_test_check(test, halt_taught > 0u, "HLT, the depth they entered, learns");
+    kernel_test_check(test, c3_taught == 0u, "the C3, never entered, learns nothing");
+    kernel_test_measure(test, "demotions", demotions);
+    kernel_test_measure(test, "halt_taught", halt_taught);
 }

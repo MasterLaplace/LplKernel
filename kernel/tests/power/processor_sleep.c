@@ -1265,3 +1265,129 @@ KERNEL_TEST(each_bus_master_reload_has_its_name)
     kernel_test_check(test, processor_sleep_test_named(kernel_processor_sleep_bus_master_reload_name(3u), "unknown"),
                       "anything else is unknown");
 }
+
+/**
+ * @brief A ladder of C1 by HLT, a C2 at port 0x414, and C3 at ports 0x415 and 0x416, both with the bus-master check,
+ *        its status read at @p status.
+ */
+static void processor_sleep_test_checked_ladder(ProcessorSleepLadder_t *ladder, uint16_t status)
+{
+    memset(ladder, 0, sizeof(*ladder));
+    ladder->available = 0xFu;
+    ladder->ports = PROCESSOR_SLEEP_PORTS_TAKEN;
+    ladder->bus_master_status_ports[0] = status;
+    for (uint32_t depth = 1u; depth < 4u; ++depth)
+    {
+        ladder->depths[depth].entry = PROCESSOR_SLEEP_ENTRY_PORT;
+        ladder->depths[depth].port = (uint16_t) (0x413u + depth);
+        ladder->depths[depth].latency_published = true;
+        ladder->depths[depth].bus_master_check = depth >= 2u;
+    }
+}
+
+/**
+ * @brief The bus-master check enters a depth with it while BM_STS is clear, and otherwise the deepest allowed depth
+ *        below it without the check, skipping a C3 below, C1 when none is allowed; it never moves a depth without the
+ *        check, nor for status bits other than BM_STS.
+ */
+KERNEL_TEST(the_bus_master_check_demotes_a_c3_to_the_deepest_allowed_depth_below_it_without_the_check)
+{
+    static ProcessorSleepLadder_t ladder;
+    const uint32_t active = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_BUS_MASTER_STATUS;
+
+    processor_sleep_test_checked_ladder(&ladder, 0x800u);
+    kernel_test_check(test, kernel_processor_sleep_depth_after_the_bus_master_check(&ladder, 0xFu, 2u, 0u) == 2u,
+                      "BM_STS clear enters the C3");
+    kernel_test_check(
+        test, kernel_processor_sleep_depth_after_the_bus_master_check(&ladder, 0xFu, 2u, 0xFFFFu & ~active) == 2u,
+        "every other status bit set changes nothing");
+    kernel_test_check(test, kernel_processor_sleep_depth_after_the_bus_master_check(&ladder, 0xFu, 2u, active) == 1u,
+                      "BM_STS set enters the C2 below");
+    kernel_test_check(test, kernel_processor_sleep_depth_after_the_bus_master_check(&ladder, 0xFu, 3u, active) == 1u,
+                      "past the other C3, which has the check too");
+    kernel_test_check(test, kernel_processor_sleep_depth_after_the_bus_master_check(&ladder, 0xDu, 2u, active) == 0u,
+                      "C1 when the C2 is not allowed");
+    kernel_test_check(test, kernel_processor_sleep_depth_after_the_bus_master_check(&ladder, 0xFu, 1u, active) == 1u,
+                      "a depth without the check is never moved");
+    ladder.available = 0xDu;
+    kernel_test_check(test, kernel_processor_sleep_depth_after_the_bus_master_check(&ladder, 0xFu, 2u, active) == 0u,
+                      "nor demoted to a depth the ladder does not hold");
+    kernel_test_check(test,
+                      kernel_processor_sleep_depth_after_the_bus_master_check(&ladder, 0xFu, PROCESSOR_SLEEP_DEPTHS,
+                                                                              active) == PROCESSOR_SLEEP_DEPTHS,
+                      "a depth past the ladder is given back as it is");
+}
+
+/**
+ * @brief Under a hypervisor, a sleep until an interrupt at a validated C3 whose status register reads BM_STS set, a
+ *        port nothing decodes, enters the C2 below instead, counted, and its outcome names depth 1; at a C3 whose
+ *        status register is QEMU's own PM1a_STS, whose BM_STS stays clear, it enters the C3; with the C2 unvalidated it
+ *        enters C1. Skipped on a real processor, whose ports may stop it.
+ */
+KERNEL_TEST(a_sleep_the_bus_master_check_demotes_enters_the_depth_below_and_says_so)
+{
+    static ProcessorSleepLadder_t ladder;
+    uint16_t status[2] = {0u, 0u};
+    CpuIdentity_t identity;
+    uint8_t vector = 0u;
+    uint64_t quarter_tick = 0u;
+
+    cpu_identity_read(&identity);
+    if (!identity.hypervisor)
+    {
+        kernel_test_skip(test, "a real processor: the made-up ports may well stop it");
+        return;
+    }
+    if (!advanced_configuration_and_power_interface_power_management_status_ports(
+            &advanced_configuration_and_power_interface_directory()->fixed_description, status))
+    {
+        kernel_test_skip(test, "the FADT gives no PM1 status register");
+        return;
+    }
+    if (!processor_sleep_test_take_a_vector(test, &vector, &quarter_tick))
+        return;
+
+    processor_sleep_test_checked_ladder(&ladder, PROCESSOR_SLEEP_TEST_UNDECODED_PORT);
+    ladder.available = 0x7u;
+    kernel_processor_sleep_debug_adopt_ladder(&ladder);
+    for (uint32_t depth = 1u; depth <= 2u; ++depth)
+    {
+        (void) kernel_processor_sleep_request_depth(depth);
+        kernel_processor_sleep_begin_probe();
+        kernel_processor_sleep_end_probe(true);
+    }
+    const uint32_t demotions_before = kernel_processor_sleep_bus_master_demotion_count();
+    const ProcessorSleepOutcome_t active = processor_sleep_test_sleep_on_a_pending(vector);
+    const uint32_t demotions_active = kernel_processor_sleep_bus_master_demotion_count() - demotions_before;
+
+    ladder.bus_master_status_ports[0] = status[0];
+    ladder.bus_master_status_ports[1] = status[1];
+    kernel_processor_sleep_debug_adopt_ladder(&ladder);
+    for (uint32_t depth = 1u; depth <= 2u; ++depth)
+    {
+        (void) kernel_processor_sleep_request_depth(depth);
+        kernel_processor_sleep_begin_probe();
+        kernel_processor_sleep_end_probe(true);
+    }
+    const ProcessorSleepOutcome_t quiet = processor_sleep_test_sleep_on_a_pending(vector);
+    const uint32_t demotions_quiet = kernel_processor_sleep_bus_master_demotion_count() - demotions_before;
+
+    ladder.bus_master_status_ports[0] = PROCESSOR_SLEEP_TEST_UNDECODED_PORT;
+    ladder.bus_master_status_ports[1] = 0u;
+    kernel_processor_sleep_debug_adopt_ladder(&ladder);
+    (void) kernel_processor_sleep_request_depth(2u);
+    kernel_processor_sleep_begin_probe();
+    kernel_processor_sleep_end_probe(true);
+    const ProcessorSleepOutcome_t alone = processor_sleep_test_sleep_on_a_pending(vector);
+    device_interrupt_release(vector);
+    kernel_processor_sleep_initialize();
+
+    kernel_test_check(test, active.depth == 1u && active.mode == PROCESSOR_SLEEP_PORT && demotions_active == 1u,
+                      "BM_STS set: the C2 is entered, and the demotion counted");
+    kernel_test_check(test, quiet.depth == 2u && quiet.mode == PROCESSOR_SLEEP_PORT && demotions_quiet == 1u,
+                      "QEMU's BM_STS clear: the C3 is entered, nothing demoted");
+    kernel_test_check(test, alone.depth == 0u && alone.mode != PROCESSOR_SLEEP_PORT,
+                      "with the C2 unvalidated, C1 is entered");
+    kernel_test_check(test, active.interrupted && quiet.interrupted && alone.interrupted,
+                      "each sleep handles its pending interrupt");
+}
