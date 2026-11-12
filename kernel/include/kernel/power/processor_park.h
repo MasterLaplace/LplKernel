@@ -45,9 +45,10 @@ extern "C" {
 
 /**
  * A port read that returns sooner than this with no interrupt requested did not stop the processor; a read that slept
- * lasts until an interrupt. A read of a port nothing decodes takes 6.5 us on average under KVM, and its longest of 256
- * reads 82 us (`read_ns_mean` and `read_ns_longest` of processor_sleep.the_timed_read_reads_its_port_between_two_
- * fenced_counter_reads): a VM exit, now and then a host that schedules late, which only delays a refusal.
+ * lasts until an interrupt. A read of a port nothing decodes takes 5.7 to 6.5 us on average under KVM, the longest of
+ * 256 reads 15 to 82 us, and 0.1 us under TCG (`read_ns_mean` and `read_ns_longest` of processor_sleep.the_timed_read_
+ * reads_its_port_between_two_fenced_counter_reads, five boots): a VM exit, now and then a host that schedules late,
+ * which only delays a refusal.
  */
 #define KERNEL_PROCESSOR_PARK_QUICK_MICROSECONDS 256u
 
