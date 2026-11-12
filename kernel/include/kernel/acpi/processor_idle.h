@@ -39,6 +39,7 @@
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_PROCESSOR_IDLE_NO_SLOT                                              \
     0xFFFFFFFFu /**< What a processor object bound to no CPU slot binds to. */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_PROCESSOR_IDLE_HINTS 16u /**< Hints a _CST state can target. */
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_PROCESSOR_IDLE_PORTS 6u  /**< Port states a slot gives at most. */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_PROCESSOR_IDLE_CHANGED                                              \
     0x81u /**< The Notify value that says a processor's _CST changed (ACPI 6.6 §8.4.1.1). */
 
@@ -220,6 +221,52 @@ typedef struct AdvancedConfigurationAndPowerInterfaceIdleCosts {
 extern bool advanced_configuration_and_power_interface_processor_idle_costs(
     const AdvancedConfigurationAndPowerInterfaceProcessorIdle_t *idle, uint32_t hint,
     AdvancedConfigurationAndPowerInterfaceIdleCosts_t *out_costs);
+
+/**
+ * @brief A C-state entered by reading an I/O port, as the sleep path takes it from a slot's _CST.
+ */
+typedef struct AdvancedConfigurationAndPowerInterfaceIdlePort {
+    uint16_t port;    /**< The port whose read enters it. */
+    uint32_t type;    /**< Its type, 2. */
+    uint32_t latency; /**< Its worst-case latency to enter and leave it, in microseconds, as Linux orders them. */
+} AdvancedConfigurationAndPowerInterfaceIdlePort_t;
+
+/**
+ * @brief The port states one slot gives the sleep path, in _CST's order.
+ */
+typedef struct AdvancedConfigurationAndPowerInterfaceIdlePorts {
+    uint32_t count;   /**< Port states given. */
+    uint32_t refused; /**< States of type 2 or 3 entered by a port read that are not given: see
+                           advanced_configuration_and_power_interface_processor_idle_ports. */
+    AdvancedConfigurationAndPowerInterfaceIdlePort_t
+        ports[ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_PROCESSOR_IDLE_PORTS]; /**< The first count; zero past them. */
+} AdvancedConfigurationAndPowerInterfaceIdlePorts_t;
+
+/**
+ * @brief The C-states a processor whose MWAIT reaches no state past C1, as AMD's, enters by a port read, from the
+ *        states one CPU slot publishes.
+ * @details The states kept are those Linux's acpi_idle keeps on such a processor (v6.12 `acpi_processor_evaluate_cst`,
+ *          drivers/acpi/acpi_processor.c; `acpi_processor_power_verify`, drivers/acpi/processor_idle.c): one of
+ *          FFixedHW or SystemIO and type 1, or a SystemIO read of type 2 whose port is not 0. When a kept state's type
+ *          is at least the kept state's before it and its latency below it, the latencies of the kept states are
+ *          sorted into increasing order, each state keeping its place (`acpi_cst_latency_sort`). Each kept state of
+ *          type 2 is given, in _CST's order, with its sorted latency.
+ *
+ *          A SystemIO state of type 2 or 3 is refused, counted and kept out of the sort, where Linux would keep it:
+ *          a type 3, whose bus-master check is #839; a port past 0xFFFF; a port in a register block of @p fadt (its
+ *          PM1 event, PM1 control, PM timer and GPE blocks, its reset register) or its SMI_CMD; a port of a device
+ *          the kernel drives, the PIT (0x40-0x43), the keyboard controller (0x60, 0x64), CMOS (0x70-0x71) and COM1
+ *          (0x3F8-0x3FF), or one the ACPI layer protects
+ * (advanced_configuration_and_power_interface_port_is_protected); and a state past the first
+ * ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_PROCESSOR_IDLE_PORTS given.
+ * @param idle      The states one CPU slot publishes, or NULL, which gives none.
+ * @param fadt      The FADT whose register blocks no port state may read, or NULL.
+ * @param out_ports Receives the port states, written whole.
+ */
+extern void advanced_configuration_and_power_interface_processor_idle_ports(
+    const AdvancedConfigurationAndPowerInterfaceProcessorIdle_t *idle,
+    const AdvancedConfigurationAndPowerInterfaceFixedDescription_t *fadt,
+    AdvancedConfigurationAndPowerInterfaceIdlePorts_t *out_ports);
 
 /**
  * @brief The name the telemetry gives how step 8 handed _CST to the operating system.
