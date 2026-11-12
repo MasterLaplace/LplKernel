@@ -19,7 +19,7 @@
  * in HLT holds the whole package in C1, however deep the bootstrap processor sleeps. A parked processor builds its own
  * ladder from its own CPUID and CPU slot and enters its deepest depth: an MWAIT hint as it is; a port depth once the
  * bootstrap processor's probe found that port's read stops a processor, and only while its own guard has not seen the
- * read return at once.
+ * read return at once. A refusal holds while the verdict that let the depth in does.
  *
  * The guard judges each port read by what the processor can see when the read returns, interrupts still masked: how
  * long it took, and whether an interrupt is requested in the local APIC. A read that slept until an interrupt finds
@@ -44,8 +44,10 @@ extern "C" {
 #endif
 
 /**
- * A port read that returns sooner than this with no interrupt requested did not stop the processor: 36 times the
- * 7.1 us a read of a port nothing decodes takes under KVM, and a read that slept lasts until an interrupt.
+ * A port read that returns sooner than this with no interrupt requested did not stop the processor; a read that slept
+ * lasts until an interrupt. A read of a port nothing decodes takes 6.5 us on average under KVM, and its longest of 256
+ * reads 82 us (`read_ns_mean` and `read_ns_longest` of processor_sleep.the_timed_read_reads_its_port_between_two_
+ * fenced_counter_reads): a VM exit, now and then a host that schedules late, which only delays a refusal.
  */
 #define KERNEL_PROCESSOR_PARK_QUICK_MICROSECONDS 256u
 
@@ -90,7 +92,7 @@ typedef struct ProcessorParkRecord {
  * @param cycles          The read's length, in TSC cycles.
  * @param quick_cycles    The length under which a read with no interrupt requested did not stop the processor.
  * @return true when this read makes KERNEL_PROCESSOR_PARK_QUICK_LIMIT quick reads, or KERNEL_PROCESSOR_PARK_STUCK_LIMIT
- *         stuck ones, in a row.
+ *         stuck ones, in a row; both streaks then start over.
  */
 extern bool kernel_processor_park_judge(ProcessorParkJudge_t *judge, bool requested, bool still_requested,
                                         uint64_t cycles, uint64_t quick_cycles);
@@ -134,8 +136,10 @@ extern void kernel_processor_park(void) __attribute__((noreturn));
  *
  * @details Called on the bootstrap processor, by the probe once it judged a port depth (kernel/power/tickless.h).
  *          Publishes the cycles of KERNEL_PROCESSOR_PARK_QUICK_MICROSECONDS at the calibrated rate, which a probe
- *          needs too, then sends every other processor an interrupt on a vector of its own, allocated by the first
- *          call; a processor that is not parked takes it and goes on.
+ *          needs too, then sends an interrupt on a vector of its own, allocated by the first call, to each other
+ *          processor online, one by one: one that never started, whose local APIC may be in any state, is sent none,
+ *          as Linux sends no broadcast until every present processor started once (v6.12 arch/x86/kernel/apic/ipi.c,
+ *          `apic_smt_update`). A processor that is not parked takes it and goes on.
  */
 extern void kernel_processor_park_reconsider(void);
 
@@ -144,12 +148,6 @@ extern void kernel_processor_park_reconsider(void);
  * @return The vector, or 0 before its first call, or when no vector was free.
  */
 extern uint8_t kernel_processor_park_reconsider_vector(void);
-
-/**
- * @brief The cycles under which the guard calls a read quick.
- * @return Those cycles, or 0 while the TSC rate is unknown, in which case no processor parks at a port depth.
- */
-extern uint32_t kernel_processor_park_quick_cycles(void);
 
 /**
  * @brief Copies what the processor of @p slot did in its park.

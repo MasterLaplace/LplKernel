@@ -20,8 +20,8 @@ Depth 0's entry, HLT or MWAIT 0, is printed and not compared. The accelerator ar
 invariant TSC.
 
 With either table, the `[LPLTLM] park` record of the second processor parks it at depth 0, nothing inherited or
-refused and no port read: no probe has validated a port when the boot prints it. Its entry and target, HLT or MWAIT 0,
-and its turns are printed and not compared.
+refused and no port read, after one turn at least: no probe has validated a port when the boot prints it. Its entry
+and target, HLT or MWAIT 0, and how many turns it took are printed and not compared.
 
 BOOT_TESTS names the debug kernel's tests the boot runs (`lpl.test=<BOOT_TESTS>`, `none` by default); with it, the
 boot waits for their `# Totals:` line, which must count no failure.
@@ -51,7 +51,7 @@ readonly LADDER_PORTS='[LPLTLM] sleep.depths available=0x00000003 ports=taken po
 [LPLTLM] sleep.depth depth=1 entry=port target=0x00000414 latency_us=18'
 readonly LADDER_NO_COUNTER='[LPLTLM] sleep.depths available=0x00000001 ports=counter_may_stop ports_refused=0
 [LPLTLM] sleep.depth depth=0 latency_us=1'
-readonly PARKED='[LPLTLM] park slot=1 depth=0 inherited=0x00000000 refused=0x00000000 port_reads=0 quick=0 stuck=0'
+readonly PARKED='[LPLTLM] park slot=1 depth=0 inherited=0x00000000 refused=0x00000000 turns=some port_reads=0 quick=0 stuck=0'
 
 # Whether the serial log $1 holds all the boot is waited for: the C-states and the record after the ladder, then, when
 # BOOT_TESTS is set, the tests' totals.
@@ -83,9 +83,10 @@ ladder() {
     grep -a '^\[LPLTLM\] sleep\.depth' "$1" | sed -E 's/^(\[LPLTLM\] sleep\.depth depth=0) entry=[a-z]+ target=0x[0-9A-F]+/\1/'
 }
 
-# The park records of the serial log $1, their entry, target and turns, which depend on the machine, left out.
+# The park records of the serial log $1, their entry and target, which depend on the machine, left out, and their turns
+# as `some` when the processor took one at least: how many depends on the boot.
 parks() {
-    grep -a '^\[LPLTLM\] park ' "$1" | sed -E 's/ entry=[a-z]+ target=0x[0-9A-F]+//; s/ turns=[0-9]+//'
+    grep -a '^\[LPLTLM\] park ' "$1" | sed -E 's/ entry=[a-z]+ target=0x[0-9A-F]+//; s/ turns=[1-9][0-9]*/ turns=some/'
 }
 
 main() {

@@ -119,15 +119,21 @@ static bool processor_park_read_port(const ProcessorSleepDepth_t *depth, Process
 
 /**
  * @brief One turn of a park: interrupts masked, the target as the verdicts and the refusals stand, then a sleep there.
- * @return The depth this turn refused, as a bit; 0 when it refused none.
+ *
+ * @details A refusal holds while the verdict that let the depth in does: once the bootstrap processor withdraws it,
+ *          at its next adoption, the refusal goes with it, so that the next validation is judged afresh, as the
+ *          bootstrap processor's own probe is.
+ *
+ * @return The depths refused after this turn.
  */
 static uint32_t processor_park_turn(const ProcessorSleepLadder_t *ladder, ProcessorParkJudge_t *judges,
-                                    uint32_t refused, ProcessorParkRecord_t *record)
+                                    uint32_t refused_before, ProcessorParkRecord_t *record)
 {
     asmutils_disable_interrupts();
 
     const uint32_t quick_cycles = processor_park_quick_cycles_word;
     const uint32_t inherited = processor_park_inherited_now(ladder);
+    const uint32_t refused = refused_before & inherited;
     const uint32_t depth = kernel_processor_park_target(ladder, inherited, refused, quick_cycles != 0u);
     const ProcessorSleepDepth_t *entered = &ladder->depths[depth];
 
@@ -140,9 +146,9 @@ static uint32_t processor_park_turn(const ProcessorSleepLadder_t *ladder, Proces
     if (entered->entry != PROCESSOR_SLEEP_ENTRY_PORT)
     {
         processor_park_sleep_at(entered);
-        return 0u;
+        return refused;
     }
-    return processor_park_read_port(entered, &judges[depth], quick_cycles, record) ? 1u << depth : 0u;
+    return processor_park_read_port(entered, &judges[depth], quick_cycles, record) ? refused | 1u << depth : refused;
 }
 
 bool kernel_processor_park_judge(ProcessorParkJudge_t *judge, bool requested, bool still_requested, uint64_t cycles,
@@ -153,7 +159,10 @@ bool kernel_processor_park_judge(ProcessorParkJudge_t *judge, bool requested, bo
 
     judge->quick = quick ? judge->quick + 1u : 0u;
     judge->stuck = stuck ? judge->stuck + 1u : 0u;
-    return judge->quick >= KERNEL_PROCESSOR_PARK_QUICK_LIMIT || judge->stuck >= KERNEL_PROCESSOR_PARK_STUCK_LIMIT;
+    if (judge->quick < KERNEL_PROCESSOR_PARK_QUICK_LIMIT && judge->stuck < KERNEL_PROCESSOR_PARK_STUCK_LIMIT)
+        return false;
+    *judge = (ProcessorParkJudge_t){0};
+    return true;
 }
 
 uint32_t kernel_processor_park_inherited_depths(const ProcessorSleepLadder_t *ladder, const uint32_t *verdicts,
@@ -200,11 +209,12 @@ void kernel_processor_park(void)
     kernel_processor_sleep_read_ladder_facts(&facts);
     kernel_processor_sleep_build_ladder(&facts, &ladder);
     for (;;)
-        refused |= processor_park_turn(&ladder, judges, refused, record);
+        refused = processor_park_turn(&ladder, judges, refused, record);
 }
 
 void kernel_processor_park_reconsider(void)
 {
+    const uint32_t here = cpu_topology_get_slot_for_apic_id(apic_get_id());
     uint8_t vector = processor_park_vector;
 
     processor_park_quick_cycles_word =
@@ -213,13 +223,13 @@ void kernel_processor_park_reconsider(void)
     if (vector == 0u && !device_interrupt_allocate(processor_park_woken, NULL, &vector))
         return;
     processor_park_vector = vector;
-    if (advanced_pic_ipi_is_ready())
-        (void) advanced_pic_ipi_send_fixed(0u, vector, ADVANCED_PIC_IPI_SHORT_ALL_EXCL);
+    for (uint32_t slot = 0u; advanced_pic_ipi_is_ready() && slot < CPU_TOPOLOGY_MAX_LOGICAL_CPUS_PUBLIC; ++slot)
+        if (slot != here && cpu_topology_is_logical_slot_online(slot))
+            (void) advanced_pic_ipi_send_fixed(cpu_topology_get_apic_id_at_slot(slot), vector,
+                                               ADVANCED_PIC_IPI_SHORT_NONE);
 }
 
 uint8_t kernel_processor_park_reconsider_vector(void) { return processor_park_vector; }
-
-uint32_t kernel_processor_park_quick_cycles(void) { return processor_park_quick_cycles_word; }
 
 bool kernel_processor_park_record(uint32_t slot, ProcessorParkRecord_t *out_record)
 {

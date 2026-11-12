@@ -309,7 +309,9 @@ extern void asmutils_write_model_specific_register(uint32_t msr_id, uint64_t val
  *          does not hold WRMSR back, since WRMSR is no load or store; the LFENCE does. An interprocessor interrupt
  *          sent by a WRMSR to the x2APIC ICR could otherwise reach a processor before the data it announces. Linux
  *          puts the same pair before each x2APIC interrupt (`weak_wrmsr_fence`, v6.12
- *          arch/x86/include/asm/processor.h).
+ *          arch/x86/include/asm/processor.h), except on AMD and Hygon, whose writes need none (v6.12
+ *          arch/x86/kernel/cpu/amd.c, `X86_FEATURE_APIC_MSRS_FENCE`); here the pair is written on every processor,
+ *          for tens of cycles an interrupt.
  *
  * @param msr_id The register.
  * @param value  What it receives.

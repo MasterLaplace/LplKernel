@@ -80,6 +80,10 @@ KERNEL_TEST(seven_quick_reads_keep_a_port_depth_and_the_eighth_refuses_it)
                       kernel_processor_park_judge(&judge, false, false, PROCESSOR_PARK_TEST_QUICK_CYCLES - 1u,
                                                   PROCESSOR_PARK_TEST_QUICK_CYCLES),
                       "the eighth refuses it");
+    kernel_test_check(test,
+                      !processor_park_test_judge_alike(&judge, KERNEL_PROCESSOR_PARK_QUICK_LIMIT - 1u, false, false,
+                                                       PROCESSOR_PARK_TEST_QUICK_CYCLES - 1u),
+                      "and the streak starts over: seven more keep it");
 }
 
 /**
@@ -311,6 +315,61 @@ static uint32_t processor_park_test_first_port_depth(void)
 }
 
 /**
+ * @brief Whether this boot can show a parked processor judging a port whose read does not stop it, the test skipped
+ *        with the reason otherwise: under a hypervisor, another processor online, and a port depth adopted.
+ */
+static bool processor_park_test_can_judge_a_port(KernelTest_t *test)
+{
+    CpuIdentity_t identity;
+
+    cpu_identity_read(&identity);
+    if (!identity.hypervisor)
+    {
+        kernel_test_skip(test, "a real processor: the port's read may well stop it");
+        return false;
+    }
+    if (cpu_topology_get_online_cpu_count() < 2u)
+    {
+        kernel_test_skip(test, "no other processor is online: boot with -smp 2");
+        return false;
+    }
+    kernel_processor_sleep_initialize();
+    if (processor_park_test_first_port_depth() == PROCESSOR_SLEEP_NO_DEPTH)
+    {
+        kernel_test_skip(test, "no port depth here: boot the port fixture under KVM -cpu host,+invtsc");
+        return false;
+    }
+    return true;
+}
+
+/**
+ * @brief Publishes the first port depth of a fresh adoption as validated, the way a probe that found its read stops
+ *        the processor publishes it.
+ */
+static void processor_park_test_publish_a_validated_port(void)
+{
+    kernel_processor_sleep_initialize();
+    (void) kernel_processor_sleep_request_depth(processor_park_test_first_port_depth());
+    kernel_processor_sleep_begin_probe();
+    kernel_processor_sleep_end_probe(true);
+}
+
+/**
+ * @brief Copies every slot's turns and port reads.
+ */
+static void processor_park_test_snapshot(uint32_t *out_turns, uint32_t *out_reads)
+{
+    ProcessorParkRecord_t record = {0};
+
+    for (uint32_t slot = 0u; slot < CPU_TOPOLOGY_MAX_LOGICAL_CPUS_PUBLIC; ++slot)
+    {
+        (void) kernel_processor_park_record(slot, &record);
+        out_turns[slot] = record.turns;
+        out_reads[slot] = record.port_reads;
+    }
+}
+
+/**
  * @brief A parked processor given a validated port whose read does not stop it refuses it on its own and halts again:
  *        the bootstrap processor's verdict is taken, and the guard still judges each read.
  *
@@ -318,13 +377,13 @@ static uint32_t processor_park_test_first_port_depth(void)
  *          a real processor it may well stop it, and keeping it would be right. The verdict is published the way a
  *          probe that found the read stops the processor publishes it. Needs the port fixture
  *          (tools/acpi/boot-cst.sh --ports) under KVM `-cpu host,+invtsc`, whose first two processors list 0x414; a
- *          processor whose slot lists no port takes none. Last of the suite: the refusal holds until the next boot.
+ *          processor whose slot lists no port takes none.
  */
 KERNEL_TEST(a_parked_processor_refuses_a_validated_port_whose_read_does_not_stop_it)
 {
     const uint32_t here = cpu_topology_get_slot_for_apic_id(apic_get_id());
     uint32_t turns[CPU_TOPOLOGY_MAX_LOGICAL_CPUS_PUBLIC] = {0u};
-    CpuIdentity_t identity;
+    uint32_t reads[CPU_TOPOLOGY_MAX_LOGICAL_CPUS_PUBLIC] = {0u};
     ProcessorParkRecord_t record;
     ProcessorParkRecord_t judged_record = {0};
     uint32_t applications = 0u;
@@ -334,30 +393,10 @@ KERNEL_TEST(a_parked_processor_refuses_a_validated_port_whose_read_does_not_stop
     uint32_t judged = 0u;
     uint32_t held = 0u;
 
-    cpu_identity_read(&identity);
-    if (!identity.hypervisor)
-    {
-        kernel_test_skip(test, "a real processor: the port's read may well stop it");
+    if (!processor_park_test_can_judge_a_port(test))
         return;
-    }
-    if (cpu_topology_get_online_cpu_count() < 2u)
-    {
-        kernel_test_skip(test, "no other processor is online: boot with -smp 2");
-        return;
-    }
-    kernel_processor_sleep_initialize();
-    const uint32_t depth = processor_park_test_first_port_depth();
-    if (depth == PROCESSOR_SLEEP_NO_DEPTH)
-    {
-        kernel_test_skip(test, "no port depth here: boot the port fixture under KVM -cpu host,+invtsc");
-        return;
-    }
-    (void) kernel_processor_sleep_request_depth(depth);
-    kernel_processor_sleep_begin_probe();
-    kernel_processor_sleep_end_probe(true);
-    for (uint32_t slot = 0u; slot < CPU_TOPOLOGY_MAX_LOGICAL_CPUS_PUBLIC; ++slot)
-        if (kernel_processor_park_record(slot, &record))
-            turns[slot] = record.turns;
+    processor_park_test_publish_a_validated_port();
+    processor_park_test_snapshot(turns, reads);
     kernel_processor_park_reconsider();
     for (uint32_t slot = 0u; slot < CPU_TOPOLOGY_MAX_LOGICAL_CPUS_PUBLIC; ++slot)
     {
@@ -400,4 +439,62 @@ KERNEL_TEST(a_parked_processor_refuses_a_validated_port_whose_read_does_not_stop
     kernel_test_measure(test, "quick", judged_record.quick);
     kernel_test_measure(test, "port_reads", judged_record.port_reads);
     kernel_test_measure(test, "stuck", judged_record.stuck);
+}
+
+/**
+ * @brief A refusal lasts as long as the verdict that let the port in: withdrawn by the bootstrap processor's next
+ *        adoption, it goes, and a new validation is judged afresh, as the bootstrap processor's own probe is.
+ *
+ * @details Hypervisor-only, on the port fixture under KVM `-cpu host,+invtsc`, as the test before it.
+ */
+KERNEL_TEST(a_refusal_lasts_as_long_as_the_verdict_that_let_the_port_in)
+{
+    const uint32_t here = cpu_topology_get_slot_for_apic_id(apic_get_id());
+    uint32_t turns[CPU_TOPOLOGY_MAX_LOGICAL_CPUS_PUBLIC] = {0u};
+    uint32_t reads[CPU_TOPOLOGY_MAX_LOGICAL_CPUS_PUBLIC] = {0u};
+    bool judging[CPU_TOPOLOGY_MAX_LOGICAL_CPUS_PUBLIC] = {false};
+    ProcessorParkRecord_t record;
+    uint32_t refused = 0u;
+    uint32_t withdrawn = 0u;
+    uint32_t judged_afresh = 0u;
+
+    if (!processor_park_test_can_judge_a_port(test))
+        return;
+    processor_park_test_publish_a_validated_port();
+    processor_park_test_snapshot(turns, reads);
+    kernel_processor_park_reconsider();
+    for (uint32_t slot = 0u; slot < CPU_TOPOLOGY_MAX_LOGICAL_CPUS_PUBLIC; ++slot)
+    {
+        memset(&record, 0, sizeof(record));
+        judging[slot] = slot != here && cpu_topology_is_logical_slot_online(slot) &&
+                        processor_park_test_wait_for_turns(slot, turns[slot], 0u) &&
+                        kernel_processor_park_record(slot, &record) && record.inherited != 0u &&
+                        processor_park_test_wait_for_a_refusal(slot, &record);
+        refused += judging[slot] ? 1u : 0u;
+    }
+    processor_park_test_snapshot(turns, reads);
+    kernel_processor_sleep_initialize();
+    kernel_processor_park_reconsider();
+    for (uint32_t slot = 0u; slot < CPU_TOPOLOGY_MAX_LOGICAL_CPUS_PUBLIC; ++slot)
+        withdrawn += judging[slot] && processor_park_test_wait_for_turns(slot, turns[slot], 0u) &&
+                             kernel_processor_park_record(slot, &record) && record.refused == 0u &&
+                             record.inherited == 0u ?
+                         1u :
+                         0u;
+    processor_park_test_snapshot(turns, reads);
+    processor_park_test_publish_a_validated_port();
+    kernel_processor_park_reconsider();
+    for (uint32_t slot = 0u; slot < CPU_TOPOLOGY_MAX_LOGICAL_CPUS_PUBLIC; ++slot)
+        judged_afresh += judging[slot] && processor_park_test_wait_for_turns(slot, turns[slot], 0u) &&
+                                 processor_park_test_wait_for_a_refusal(slot, &record) &&
+                                 record.port_reads >= reads[slot] + KERNEL_PROCESSOR_PARK_QUICK_LIMIT ?
+                             1u :
+                             0u;
+    kernel_processor_sleep_initialize();
+    kernel_processor_park_reconsider();
+
+    kernel_test_check(test, refused != 0u, "one at least refused the validated port");
+    kernel_test_check(test, withdrawn == refused, "each refusal went with the verdict");
+    kernel_test_check(test, judged_afresh == refused, "and the next validation was judged afresh, eight reads again");
+    kernel_test_measure(test, "refused", refused);
 }

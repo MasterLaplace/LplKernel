@@ -8,6 +8,7 @@
 #include <kernel/lib/asmutils.h>
 #include <kernel/memory/spsc_ring.h>
 #include <kernel/power/processor_sleep.h>
+#include <kernel/power/tickless.h>
 #include <kernel/power/wakeup_accounting.h>
 #include <kernel/testing/test.h>
 
@@ -1019,6 +1020,8 @@ KERNEL_TEST(the_idle_line_lies_alone_in_its_interference_span)
 /** How far into the timed read its instructions are looked for: it saves two registers before the first. */
 #define PROCESSOR_SLEEP_TEST_TIMED_READ_BYTES 48u
 
+#define PROCESSOR_SLEEP_TEST_TIMED_READS 256u /**< Reads of a port nothing decodes the timed read's test times. */
+
 /**
  * @brief The timed read reads its port between two counter reads, each after an LFENCE: LFENCE, RDTSC, IN, LFENCE,
  *        RDTSC, so that the second read of the counter follows the end of the port read.
@@ -1044,6 +1047,19 @@ KERNEL_TEST(the_timed_read_reads_its_port_between_two_fenced_counter_reads)
                       in < PROCESSOR_SLEEP_TEST_TIMED_READ_BYTES - sizeof(lfence_rdtsc) &&
                           memcmp(routine + in + 1u, lfence_rdtsc, sizeof(lfence_rdtsc)) == 0,
                       "LFENCE; RDTSC right after it");
-    kernel_test_check(test, asmutils_timed_input_byte(PROCESSOR_SLEEP_TEST_UNDECODED_PORT) != 0u,
-                      "a read takes some cycles");
+    uint64_t total = 0u;
+    uint64_t longest = 0u;
+    for (uint32_t read = 0u; read < PROCESSOR_SLEEP_TEST_TIMED_READS; ++read)
+    {
+        const uint32_t flags = asmutils_save_flags_and_disable_interrupts();
+        const uint64_t cycles = asmutils_timed_input_byte(PROCESSOR_SLEEP_TEST_UNDECODED_PORT);
+
+        asmutils_restore_flags(flags);
+        total += cycles;
+        longest = cycles > longest ? cycles : longest;
+    }
+    kernel_test_check(test, total != 0u, "a read takes some cycles");
+    kernel_test_measure(test, "read_ns_mean",
+                        (uint32_t) (kernel_tickless_nanoseconds_from_cycles(total) / PROCESSOR_SLEEP_TEST_TIMED_READS));
+    kernel_test_measure(test, "read_ns_longest", (uint32_t) kernel_tickless_nanoseconds_from_cycles(longest));
 }
