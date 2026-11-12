@@ -659,13 +659,16 @@ extern uint16_t advanced_configuration_and_power_interface_input_output_port(
  * @name The bits of the PM1 registers the sleep path and the global lock touch (ACPI 6.6 §4.8.3.1.1, §4.8.3.2.1)
  * @{
  */
-#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_BUS_MASTER_STATUS 0x0010u   /**< PM1 status BM_STS, cleared by a 1. \
-                                                                                */
-#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_BUS_MASTER_RELOAD   0x0002u /**< PM1 control BM_RLD. */
-#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_GLOBAL_LOCK_RELEASE 0x0004u /**< PM1 control GBL_RLS, write-only.   \
-                                                                                */
-#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_CONTROL_WRITE_ONLY                                                  \
-    0x2004u /**< SLP_EN and GBL_RLS, the write-only bits of PM1 control, which a read gives as 0. */
+/** PM1 status BM_STS: a bus master requested the bus since it was cleared, by writing a 1. */
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_BUS_MASTER_STATUS 0x0010u
+/** PM1 control BM_RLD: a bus master's request ends C3. */
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_BUS_MASTER_RELOAD 0x0002u
+/** PM1 control GBL_RLS, write-only: the global lock is released to the firmware waiting for it. */
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_GLOBAL_LOCK_RELEASE 0x0004u
+/** SLP_EN and GBL_RLS, the write-only bits of PM1 control, which a read gives as 0. */
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_CONTROL_WRITE_ONLY 0x2004u
+/** PM1 status bit 11, which ACPI ignores and a write leaves 0 (ACPICA `ACPI_PM1_STATUS_PRESERVED_BITS`). */
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_STATUS_IGNORED 0x0800u
 /** @} */
 
 /**
@@ -682,6 +685,21 @@ extern uint16_t advanced_configuration_and_power_interface_input_output_port(
  */
 extern bool advanced_configuration_and_power_interface_power_management_status_ports(
     const AdvancedConfigurationAndPowerInterfaceFixedDescription_t *fadt, uint16_t out_ports[2]);
+
+/**
+ * @brief Clears @p bits in the PM1 status grouping, as ACPICA clears a status bit: writes them alone to PM1a_STS, then
+ *        to PM1b_STS, since a 1 clears a status bit and a 0 leaves it (`acpi_hw_register_write`), bit 11 left 0.
+ *
+ * @details A port that is 0 or protected is not written. Nothing is read, so that it costs one write per register
+ *          on the path that idles.
+ *
+ * @param host  The host the ports are written through.
+ * @param ports PM1a_STS and PM1b_STS (@ref advanced_configuration_and_power_interface_power_management_status_ports).
+ * @param bits  The status bits to clear, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_BUS_MASTER_STATUS among them.
+ * @return Whether a register was written.
+ */
+extern bool advanced_configuration_and_power_interface_clear_power_management_status_bits(
+    const AdvancedConfigurationAndPowerInterfaceHost_t *host, const uint16_t ports[2], uint32_t bits);
 
 /**
  * @brief The PM1 control registers of a normalised FADT: PM1a_CNT and PM1b_CNT, as 16-bit ports.

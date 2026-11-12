@@ -586,9 +586,9 @@ static bool acpi_locate_status(const AdvancedConfigurationAndPowerInterfaceGener
 }
 
 /**
- * @brief Whether a PM1 control register is read and written through @p port: given, and not protected.
+ * @brief Whether a PM1 status or control register is read and written through @p port: given, and not protected.
  */
-static bool acpi_control_port_reachable(uint16_t port)
+static bool acpi_power_management_port_reachable(uint16_t port)
 {
     return port != 0u && !advanced_configuration_and_power_interface_port_is_protected(port);
 }
@@ -1551,6 +1551,22 @@ bool advanced_configuration_and_power_interface_power_management_status_ports(
     return true;
 }
 
+bool advanced_configuration_and_power_interface_clear_power_management_status_bits(
+    const AdvancedConfigurationAndPowerInterfaceHost_t *host, const uint16_t ports[2], uint32_t bits)
+{
+    bool written = false;
+
+    for (uint32_t index = 0u; index < 2u; ++index)
+    {
+        if (!acpi_power_management_port_reachable(ports[index]))
+            continue;
+        host->port_write(host->context, ports[index], ACPI_POWER_MANAGEMENT_REGISTER_BYTES,
+                         bits & ~ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_STATUS_IGNORED);
+        written = true;
+    }
+    return written;
+}
+
 void advanced_configuration_and_power_interface_power_management_control_ports(
     const AdvancedConfigurationAndPowerInterfaceFixedDescription_t *fadt, uint16_t out_ports[2])
 {
@@ -1566,12 +1582,12 @@ bool advanced_configuration_and_power_interface_set_power_management_control_bit
     bool written = false;
 
     for (uint32_t index = 0u; index < 2u; ++index)
-        if (acpi_control_port_reachable(ports[index]))
+        if (acpi_power_management_port_reachable(ports[index]))
             value |= host->port_read(host->context, ports[index], ACPI_POWER_MANAGEMENT_REGISTER_BYTES);
     value = (value & ~ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_CONTROL_WRITE_ONLY) | bits;
     for (uint32_t index = 0u; index < 2u; ++index)
     {
-        if (!acpi_control_port_reachable(ports[index]))
+        if (!acpi_power_management_port_reachable(ports[index]))
             continue;
         host->port_write(host->context, ports[index], ACPI_POWER_MANAGEMENT_REGISTER_BYTES, value);
         written = true;

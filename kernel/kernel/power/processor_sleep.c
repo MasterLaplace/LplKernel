@@ -791,12 +791,10 @@ uint32_t kernel_processor_sleep_check_bus_masters(const ProcessorSleepLadder_t *
 {
     const uint32_t status = kernel_processor_sleep_read_bus_master_status(ladder);
 
-    if ((status & ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_BUS_MASTER_STATUS) == 0u)
-        return status;
-    for (uint32_t index = 0u; index < 2u; ++index)
-        if (ladder->bus_master_status_ports[index] != 0u)
-            asmutils_output_word(ladder->bus_master_status_ports[index],
-                                 ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_BUS_MASTER_STATUS);
+    if ((status & ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_BUS_MASTER_STATUS) != 0u)
+        (void) advanced_configuration_and_power_interface_clear_power_management_status_bits(
+            &advanced_configuration_and_power_interface_machine_host, ladder->bus_master_status_ports,
+            ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_BUS_MASTER_STATUS);
     return status;
 }
 

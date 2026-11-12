@@ -223,3 +223,35 @@ KERNEL_TEST(a_control_bit_is_never_set_through_a_missing_or_protected_port)
     kernel_test_check(test, registers_host.access_count == 0u, "and neither reads");
     advanced_configuration_and_power_interface_simulated_host_close(&registers_host);
 }
+
+/**
+ * @brief Clearing a status bit writes it alone to each status register, PM1a first, reads nothing, and leaves bit 11,
+ *        which ACPI ignores, 0; a port that is 0 or protected is not written.
+ */
+KERNEL_TEST(clearing_a_status_bit_writes_it_alone_to_each_status_register)
+{
+    static const uint16_t both[2] = {REGISTERS_PM1A_EVENT, REGISTERS_PM1B_EVENT};
+    static const uint16_t protected_alone[2] = {REGISTERS_PROTECTED, 0u};
+    const uint32_t bus_master = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_BUS_MASTER_STATUS;
+
+    registers_open_host();
+    kernel_test_check(
+        test,
+        advanced_configuration_and_power_interface_clear_power_management_status_bits(
+            &registers_host.host, both, bus_master | ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_STATUS_IGNORED),
+        "a register was written");
+    const uint32_t first = registers_write_index(REGISTERS_PM1A_EVENT, bus_master);
+    const uint32_t second = registers_write_index(REGISTERS_PM1B_EVENT, bus_master);
+    kernel_test_check(test, first != REGISTERS_NOT_LOGGED && second != REGISTERS_NOT_LOGGED,
+                      "BM_STS alone is written to PM1a_STS and PM1b_STS, bit 11 left 0");
+    kernel_test_check(test, first < second && registers_host.access_count == 2u, "PM1a first, and nothing read");
+    advanced_configuration_and_power_interface_simulated_host_close(&registers_host);
+
+    registers_open_host();
+    kernel_test_check(test,
+                      !advanced_configuration_and_power_interface_clear_power_management_status_bits(
+                          &registers_host.host, protected_alone, bus_master),
+                      "a protected port is not written");
+    kernel_test_check(test, registers_host.access_count == 0u, "nor read");
+    advanced_configuration_and_power_interface_simulated_host_close(&registers_host);
+}

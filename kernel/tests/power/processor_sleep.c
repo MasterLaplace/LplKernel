@@ -1322,7 +1322,8 @@ KERNEL_TEST(the_bus_master_check_demotes_a_c3_to_the_deepest_allowed_depth_below
  * @brief Under a hypervisor, a sleep until an interrupt at a validated C3 whose status register reads BM_STS set, a
  *        port nothing decodes, enters the C2 below instead, counted, and its outcome names depth 1; at a C3 whose
  *        status register is QEMU's own PM1a_STS, whose BM_STS stays clear, it enters the C3; with the C2 unvalidated it
- *        enters C1. Skipped on a real processor, whose ports may stop it.
+ *        enters C1; an open probe enters the C3 whatever BM_STS says. Skipped on a real processor, whose ports may
+ *        stop it.
  */
 KERNEL_TEST(a_sleep_the_bus_master_check_demotes_enters_the_depth_below_and_says_so)
 {
@@ -1359,6 +1360,10 @@ KERNEL_TEST(a_sleep_the_bus_master_check_demotes_enters_the_depth_below_and_says
     const uint32_t demotions_before = kernel_processor_sleep_bus_master_demotion_count();
     const ProcessorSleepOutcome_t active = processor_sleep_test_sleep_on_a_pending(vector);
     const uint32_t demotions_active = kernel_processor_sleep_bus_master_demotion_count() - demotions_before;
+    kernel_processor_sleep_begin_probe();
+    const ProcessorSleepOutcome_t probed = processor_sleep_test_sleep_on_a_pending(vector);
+    kernel_processor_sleep_end_probe(true);
+    const uint32_t demotions_probed = kernel_processor_sleep_bus_master_demotion_count() - demotions_before;
 
     ladder.bus_master_status_ports[0] = status[0];
     ladder.bus_master_status_ports[1] = status[1];
@@ -1384,10 +1389,29 @@ KERNEL_TEST(a_sleep_the_bus_master_check_demotes_enters_the_depth_below_and_says
 
     kernel_test_check(test, active.depth == 1u && active.mode == PROCESSOR_SLEEP_PORT && demotions_active == 1u,
                       "BM_STS set: the C2 is entered, and the demotion counted");
+    kernel_test_check(test, probed.depth == 2u && probed.mode == PROCESSOR_SLEEP_PORT && demotions_probed == 1u,
+                      "an open probe enters the C3 all the same, as s2idle skips the check");
     kernel_test_check(test, quiet.depth == 2u && quiet.mode == PROCESSOR_SLEEP_PORT && demotions_quiet == 1u,
                       "QEMU's BM_STS clear: the C3 is entered, nothing demoted");
     kernel_test_check(test, alone.depth == 0u && alone.mode != PROCESSOR_SLEEP_PORT,
                       "with the C2 unvalidated, C1 is entered");
     kernel_test_check(test, active.interrupted && quiet.interrupted && alone.interrupted,
                       "each sleep handles its pending interrupt");
+}
+
+/**
+ * @brief The ladder facts this processor reads carry the vendor rule of its own identity, read apart: on the bench's
+ *        KVM, Intel 6/170, a type 3 is entered behind the bus-master check; under TCG, AMD 6/6, it is not.
+ */
+KERNEL_TEST(the_ladder_facts_carry_this_processor_s_vendor_rule)
+{
+    ProcessorSleepLadderFacts_t facts;
+    CpuIdentity_t identity;
+
+    cpu_identity_read(&identity);
+    kernel_processor_sleep_read_ladder_facts(&facts);
+    kernel_test_check(
+        test, facts.bus_master_check == kernel_processor_sleep_enters_type_3_behind_the_bus_master_check(&identity),
+        "the facts' rule is the identity's");
+    kernel_test_measure(test, "type_3", facts.bus_master_check ? 1u : 0u);
 }
