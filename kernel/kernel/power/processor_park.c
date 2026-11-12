@@ -1,5 +1,6 @@
 #include <kernel/power/processor_park.h>
 
+#include <kernel/acpi/host.h>
 #include <kernel/acpi/tables.h>
 #include <kernel/cpu/apic.h>
 #include <kernel/cpu/apic_ipi.h>
@@ -108,8 +109,10 @@ static bool processor_park_read_port(const ProcessorSleepLadder_t *ladder, const
     ProcessorParkRead_t read = {.cycles = asmutils_timed_input_byte(depth->port)};
 
     read.requested = apic_interrupt_requested();
-    read.bus_mastered = depth->bus_master_check && (kernel_processor_sleep_read_bus_master_status(ladder) &
-                                                    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_BUS_MASTER_STATUS) != 0u;
+    read.bus_mastered =
+        depth->bus_master_check && (kernel_processor_sleep_read_bus_master_status(
+                                        &advanced_configuration_and_power_interface_machine_host, ladder) &
+                                    ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_BUS_MASTER_STATUS) != 0u;
     asmutils_enable_interrupts();
     asmutils_no_operation();
     read.still_requested = read.requested && apic_interrupt_requested();
@@ -132,7 +135,8 @@ static uint32_t processor_park_checked_depth(const ProcessorSleepLadder_t *ladde
         return target;
 
     const uint32_t entered = kernel_processor_sleep_depth_after_the_bus_master_check(
-        ladder, allowed, target, kernel_processor_sleep_check_bus_masters(ladder));
+        ladder, allowed, target,
+        kernel_processor_sleep_check_bus_masters(&advanced_configuration_and_power_interface_machine_host, ladder));
     record->demotions += entered != target ? 1u : 0u;
     return entered;
 }

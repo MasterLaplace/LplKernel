@@ -49,6 +49,8 @@
 extern "C" {
 #endif
 
+struct AdvancedConfigurationAndPowerInterfaceHost;
+
 /**
  * MWAIT's hint index for C1, the shallowest: clock stopped, power maintained. Passing
  * this is what the kernel did before any of the enumeration below existed, and it is
@@ -476,10 +478,12 @@ uint32_t kernel_processor_sleep_depth_after_the_bus_master_check(const Processor
 /**
  * @brief Reads @p ladder's PM1 status registers, where the bus-master check reads BM_STS.
  *
+ * @param host   The host the ports are read through: the machine's, or a simulated one in a test.
  * @param ladder The ladder whose status registers to read.
  * @return PM1a status ORed with PM1b's; 0 for a ladder that names none.
  */
-uint32_t kernel_processor_sleep_read_bus_master_status(const ProcessorSleepLadder_t *ladder);
+uint32_t kernel_processor_sleep_read_bus_master_status(const struct AdvancedConfigurationAndPowerInterfaceHost *host,
+                                                       const ProcessorSleepLadder_t *ladder);
 
 /**
  * @brief Reads @p ladder's PM1 status registers before a depth with the bus-master check, and clears BM_STS where it
@@ -488,10 +492,12 @@ uint32_t kernel_processor_sleep_read_bus_master_status(const ProcessorSleepLadde
  * @details Called with interrupts masked, by any processor: a clear another made only hides a request from the next
  *          check, and writing 1 again changes nothing.
  *
+ * @param host   The host the ports are read and written through: the machine's, or a simulated one in a test.
  * @param ladder The ladder whose status registers to read.
  * @return PM1a status ORed with PM1b's, as read before the clear; 0 for a ladder that names none.
  */
-uint32_t kernel_processor_sleep_check_bus_masters(const ProcessorSleepLadder_t *ladder);
+uint32_t kernel_processor_sleep_check_bus_masters(const struct AdvancedConfigurationAndPowerInterfaceHost *host,
+                                                  const ProcessorSleepLadder_t *ladder);
 
 /**
  * @brief Sleeps the bus-master check demoted since the accounting began.

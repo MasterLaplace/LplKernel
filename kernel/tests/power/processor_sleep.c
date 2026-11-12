@@ -1,3 +1,5 @@
+#include "../acpi/simulated_host.h"
+
 #include <kernel/acpi/processor_idle.h>
 #include <kernel/acpi/tables.h>
 #include <kernel/cpu/apic_ipi.h>
@@ -1414,4 +1416,61 @@ KERNEL_TEST(the_ladder_facts_carry_this_processor_s_vendor_rule)
         test, facts.bus_master_check == kernel_processor_sleep_enters_type_3_behind_the_bus_master_check(&identity),
         "the facts' rule is the identity's");
     kernel_test_measure(test, "type_3", facts.bus_master_check ? 1u : 0u);
+}
+
+/**
+ * @brief Whether @p host's log holds, in this order, a 2-byte write of @p value to @p first and then one to @p second.
+ */
+static bool processor_sleep_test_wrote_in_order(const AdvancedConfigurationAndPowerInterfaceSimulatedHost_t *host,
+                                                uint16_t first, uint16_t second, uint32_t value)
+{
+    uint32_t found = 0u;
+
+    for (uint32_t index = 0u;
+         index < host->access_count && index < ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_HOST_MAX_ACCESSES;
+         ++index)
+    {
+        const AdvancedConfigurationAndPowerInterfaceSimulatedAccess_t *access = &host->accesses[index];
+        const uint16_t wanted = found == 0u ? first : second;
+
+        if (access->kind == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_SIMULATED_PORT_WRITE && access->width == 2u &&
+            access->port == wanted && access->value == value)
+            ++found;
+    }
+    return found == 2u;
+}
+
+/**
+ * @brief The check reads PM1a status and PM1b status as one word each and gives them ORed; it clears BM_STS where it
+ *        finds it set, by writing it alone to each, PM1a first, and writes nothing where it is clear; a read of the
+ *        status alone writes nothing.
+ */
+KERNEL_TEST(the_check_clears_bus_master_status_where_it_finds_it_set)
+{
+    static AdvancedConfigurationAndPowerInterfaceSimulatedHost_t host;
+    static ProcessorSleepLadder_t ladder;
+    const uint32_t active = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_BUS_MASTER_STATUS;
+
+    processor_sleep_test_checked_ladder(&ladder, 0x800u);
+    ladder.bus_master_status_ports[1] = 0x840u;
+    advanced_configuration_and_power_interface_simulated_host_open(&host);
+    (void) advanced_configuration_and_power_interface_simulated_host_set_port(&host, 0x800u, 0x0001u);
+    (void) advanced_configuration_and_power_interface_simulated_host_set_port(&host, 0x840u, active);
+    const uint32_t found = kernel_processor_sleep_check_bus_masters(&host.host, &ladder);
+    kernel_test_check(test, found == (0x0001u | active), "PM1a and PM1b status, ORed");
+    kernel_test_check(test,
+                      processor_sleep_test_wrote_in_order(&host, 0x800u, 0x840u, active) && host.access_count == 4u,
+                      "two reads, then BM_STS alone written to PM1a_STS, then to PM1b_STS");
+    advanced_configuration_and_power_interface_simulated_host_close(&host);
+
+    advanced_configuration_and_power_interface_simulated_host_open(&host);
+    (void) advanced_configuration_and_power_interface_simulated_host_set_port(&host, 0x800u, 0xFFEFu);
+    (void) advanced_configuration_and_power_interface_simulated_host_set_port(&host, 0x840u, 0u);
+    kernel_test_check(
+        test, kernel_processor_sleep_check_bus_masters(&host.host, &ladder) == 0xFFEFu && host.access_count == 2u,
+        "BM_STS clear: two reads, no write");
+    kernel_test_check(
+        test, kernel_processor_sleep_read_bus_master_status(&host.host, &ladder) == 0xFFEFu && host.access_count == 4u,
+        "and a read alone writes nothing either");
+    advanced_configuration_and_power_interface_simulated_host_close(&host);
 }

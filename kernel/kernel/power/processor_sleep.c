@@ -47,6 +47,8 @@
 #define PROCESSOR_SLEEP_FAMILY_ZEN           0x17u /**< AMD's Zen family, from which every family is. */
 /** @} */
 
+#define PROCESSOR_SLEEP_STATUS_REGISTER_BYTES 2u /**< The bytes of a PM1 status register, read as one word. */
+
 static bool processor_sleep_monitor_available = false;
 static uint32_t processor_sleep_monitor_line = 0u;
 static uint32_t processor_sleep_sleeps = 0u;
@@ -373,7 +375,8 @@ __attribute__((always_inline)) static inline uint32_t processor_sleep_checked_de
 
     const uint32_t entered = kernel_processor_sleep_depth_after_the_bus_master_check(
         &processor_sleep_ladder, processor_sleep_validated_depths, depth,
-        kernel_processor_sleep_check_bus_masters(&processor_sleep_ladder));
+        kernel_processor_sleep_check_bus_masters(&advanced_configuration_and_power_interface_machine_host,
+                                                 &processor_sleep_ladder));
     processor_sleep_bus_master_demotions += entered != depth ? 1u : 0u;
     return entered;
 }
@@ -777,24 +780,26 @@ uint32_t kernel_processor_sleep_depth_after_the_bus_master_check(const Processor
     return PROCESSOR_SLEEP_DEPTH_C1;
 }
 
-uint32_t kernel_processor_sleep_read_bus_master_status(const ProcessorSleepLadder_t *ladder)
+uint32_t kernel_processor_sleep_read_bus_master_status(const AdvancedConfigurationAndPowerInterfaceHost_t *host,
+                                                       const ProcessorSleepLadder_t *ladder)
 {
     uint32_t status = 0u;
 
     for (uint32_t index = 0u; index < 2u; ++index)
         if (ladder->bus_master_status_ports[index] != 0u)
-            status |= asmutils_input_word(ladder->bus_master_status_ports[index]);
+            status |= host->port_read(host->context, ladder->bus_master_status_ports[index],
+                                      PROCESSOR_SLEEP_STATUS_REGISTER_BYTES);
     return status;
 }
 
-uint32_t kernel_processor_sleep_check_bus_masters(const ProcessorSleepLadder_t *ladder)
+uint32_t kernel_processor_sleep_check_bus_masters(const AdvancedConfigurationAndPowerInterfaceHost_t *host,
+                                                  const ProcessorSleepLadder_t *ladder)
 {
-    const uint32_t status = kernel_processor_sleep_read_bus_master_status(ladder);
+    const uint32_t status = kernel_processor_sleep_read_bus_master_status(host, ladder);
 
     if ((status & ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_BUS_MASTER_STATUS) != 0u)
         (void) advanced_configuration_and_power_interface_clear_power_management_status_bits(
-            &advanced_configuration_and_power_interface_machine_host, ladder->bus_master_status_ports,
-            ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_BUS_MASTER_STATUS);
+            host, ladder->bus_master_status_ports, ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_BUS_MASTER_STATUS);
     return status;
 }
 
