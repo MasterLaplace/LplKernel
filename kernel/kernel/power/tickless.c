@@ -4,6 +4,7 @@
 #include <kernel/cpu/apic_timer.h>
 #include <kernel/cpu/irq.h>
 #include <kernel/lib/asmutils.h>
+#include <kernel/power/processor_park.h>
 #include <kernel/power/processor_sleep.h>
 #include <kernel/power/wake_latency.h>
 
@@ -251,6 +252,8 @@ static uint32_t tickless_probe(uint32_t depth)
         kernel_processor_sleep_end_probe(!refused);
     else if (refused)
         (void) kernel_processor_sleep_refuse_depth(depth);
+    if (validating || refused)
+        kernel_processor_park_reconsider();
     kernel_wake_latency_assume(&tickless_wake_latency[depth], tickless_bound_cycles());
     if (!refused)
         kernel_wake_latency_learn_from_the_longest(&tickless_wake_latency[depth], latencies, taught);

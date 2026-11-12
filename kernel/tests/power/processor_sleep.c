@@ -6,6 +6,7 @@
 #include <kernel/cpu/irq.h>
 #include <kernel/drivers/keyboard.h>
 #include <kernel/lib/asmutils.h>
+#include <kernel/memory/spsc_ring.h>
 #include <kernel/power/processor_sleep.h>
 #include <kernel/power/wakeup_accounting.h>
 #include <kernel/testing/test.h>
@@ -931,4 +932,114 @@ KERNEL_TEST(a_processor_not_intel_s_without_port_depths_keeps_its_deep_hints)
                       "a TSC that is not invariant refuses the ports, and the hints are the depths");
     kernel_test_check(test, processor_sleep_test_ladder.depths[1].entry == PROCESSOR_SLEEP_ENTRY_MONITOR_WAIT,
                       "depth 1 is MWAIT hint 1");
+}
+
+/**
+ * @brief Whether one of @p verdicts is exactly @p word.
+ */
+static bool processor_sleep_test_verdicts_hold(const uint32_t *verdicts, uint32_t word)
+{
+    for (uint32_t index = 0u; index < PROCESSOR_SLEEP_PORT_VERDICTS; ++index)
+        if (verdicts[index] == word)
+            return true;
+    return false;
+}
+
+/**
+ * @brief Whether every one of @p verdicts is 0.
+ */
+static bool processor_sleep_test_verdicts_empty(const uint32_t *verdicts)
+{
+    for (uint32_t index = 0u; index < PROCESSOR_SLEEP_PORT_VERDICTS; ++index)
+        if (verdicts[index] != 0u)
+            return false;
+    return true;
+}
+
+/**
+ * @brief A probe's verdict names the port it judged, validated or refused, for the parked processors to take, until
+ *        the next adoption clears it.
+ */
+KERNEL_TEST(a_probe_s_verdict_names_the_port_it_judged_until_the_next_adoption)
+{
+    uint32_t verdicts[PROCESSOR_SLEEP_PORT_VERDICTS];
+
+    processor_sleep_test_amd();
+    kernel_processor_sleep_build_ladder(&processor_sleep_test_facts, &processor_sleep_test_ladder);
+    kernel_processor_sleep_debug_adopt_ladder(&processor_sleep_test_ladder);
+    kernel_processor_sleep_port_verdicts(verdicts);
+    kernel_test_check(test, processor_sleep_test_verdicts_empty(verdicts), "an adoption judged nothing yet");
+
+    (void) kernel_processor_sleep_request_depth(1u);
+    kernel_processor_sleep_begin_probe();
+    kernel_processor_sleep_end_probe(true);
+    kernel_processor_sleep_port_verdicts(verdicts);
+    kernel_test_check(test,
+                      processor_sleep_test_verdicts_hold(verdicts, 0x414u | PROCESSOR_SLEEP_PORT_VERDICT_VALIDATED),
+                      "a probe that found the read stops validates 0x414");
+
+    kernel_processor_sleep_debug_adopt_ladder(&processor_sleep_test_ladder);
+    kernel_processor_sleep_port_verdicts(verdicts);
+    kernel_test_check(test, processor_sleep_test_verdicts_empty(verdicts), "the next adoption clears it");
+
+    (void) kernel_processor_sleep_request_depth(1u);
+    kernel_processor_sleep_begin_probe();
+    kernel_processor_sleep_end_probe(false);
+    kernel_processor_sleep_port_verdicts(verdicts);
+    kernel_test_check(test, processor_sleep_test_verdicts_hold(verdicts, 0x414u | PROCESSOR_SLEEP_PORT_VERDICT_REFUSED),
+                      "one that found it does not refuses 0x414");
+
+    kernel_processor_sleep_initialize();
+    kernel_processor_sleep_port_verdicts(verdicts);
+    kernel_test_check(test, processor_sleep_test_verdicts_empty(verdicts), "an initialisation clears it too");
+}
+
+/**
+ * @brief The idle line lies alone in its interference span, so that no store lands in the line MONITOR watches; a
+ *        monitor that watches more than that span is not used.
+ */
+KERNEL_TEST(the_idle_line_lies_alone_in_its_interference_span)
+{
+    const uint32_t bytes = kernel_processor_sleep_idle_line_bytes();
+    const uintptr_t line = (uintptr_t) kernel_processor_sleep_idle_line();
+
+    kernel_test_check(test, bytes >= KERNEL_SPSC_RING_INTERFERENCE_SIZE, "it spans the interference size at least");
+    kernel_test_check(test, bytes != 0u && line % bytes == 0u, "it is aligned to its span");
+    kernel_test_check(test,
+                      kernel_processor_sleep_monitor_line_fits(64u) && kernel_processor_sleep_monitor_line_fits(bytes),
+                      "a monitor line of 64 bytes, or of the span, fits");
+    kernel_test_check(test, !kernel_processor_sleep_monitor_line_fits(2u * bytes), "one twice the span does not");
+    kernel_test_measure(test, "bytes", bytes);
+}
+
+/** How far into the timed read its instructions are looked for: it saves two registers before the first. */
+#define PROCESSOR_SLEEP_TEST_TIMED_READ_BYTES 48u
+
+/**
+ * @brief The timed read reads its port between two counter reads, each after an LFENCE: LFENCE, RDTSC, IN, LFENCE,
+ *        RDTSC, so that the second read of the counter follows the end of the port read.
+ */
+KERNEL_TEST(the_timed_read_reads_its_port_between_two_fenced_counter_reads)
+{
+    static const uint8_t lfence_rdtsc[] = {0x0Fu, 0xAEu, 0xE8u, 0x0Fu, 0x31u};
+    const uint8_t *routine = (const uint8_t *) (uintptr_t) asmutils_timed_input_byte;
+    uint32_t first = PROCESSOR_SLEEP_TEST_TIMED_READ_BYTES;
+    uint32_t in = PROCESSOR_SLEEP_TEST_TIMED_READ_BYTES;
+
+    for (uint32_t offset = 0u; offset + sizeof(lfence_rdtsc) < PROCESSOR_SLEEP_TEST_TIMED_READ_BYTES; ++offset)
+    {
+        if (first == PROCESSOR_SLEEP_TEST_TIMED_READ_BYTES &&
+            memcmp(routine + offset, lfence_rdtsc, sizeof(lfence_rdtsc)) == 0)
+            first = offset;
+        if (in == PROCESSOR_SLEEP_TEST_TIMED_READ_BYTES && first != PROCESSOR_SLEEP_TEST_TIMED_READ_BYTES &&
+            routine[offset] == 0xECu)
+            in = offset;
+    }
+    kernel_test_check(test, first < in, "LFENCE; RDTSC before the IN");
+    kernel_test_check(test,
+                      in < PROCESSOR_SLEEP_TEST_TIMED_READ_BYTES - sizeof(lfence_rdtsc) &&
+                          memcmp(routine + in + 1u, lfence_rdtsc, sizeof(lfence_rdtsc)) == 0,
+                      "LFENCE; RDTSC right after it");
+    kernel_test_check(test, asmutils_timed_input_byte(PROCESSOR_SLEEP_TEST_UNDECODED_PORT) != 0u,
+                      "a read takes some cycles");
 }

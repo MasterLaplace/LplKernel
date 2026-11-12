@@ -115,6 +115,26 @@ asmutils_input_byte_then_enable_interrupts:
     nop
     ret
 
+.globl asmutils_timed_input_byte
+.type asmutils_timed_input_byte, @function
+asmutils_timed_input_byte:
+    pushl %ebx
+    pushl %esi
+    movl 12(%esp), %ecx
+    lfence
+    rdtsc
+    movl %eax, %ebx
+    movl %edx, %esi
+    movl %ecx, %edx
+    inb %dx, %al
+    lfence
+    rdtsc
+    subl %ebx, %eax
+    sbbl %esi, %edx
+    popl %esi
+    popl %ebx
+    ret
+
 .globl asmutils_no_operation
 .type asmutils_no_operation, @function
 asmutils_no_operation:
@@ -223,6 +243,17 @@ asmutils_read_model_specific_register:
     movl 8(%ebp), %ecx
     rdmsr
     popl %ebp
+    ret
+
+.globl asmutils_write_model_specific_register_after_a_fence
+.type asmutils_write_model_specific_register_after_a_fence, @function
+asmutils_write_model_specific_register_after_a_fence:
+    movl 4(%esp), %ecx
+    movl 8(%esp), %eax
+    movl 12(%esp), %edx
+    mfence
+    lfence
+    wrmsr
     ret
 
 .globl asmutils_write_model_specific_register

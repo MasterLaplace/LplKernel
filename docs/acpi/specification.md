@@ -749,9 +749,13 @@ Notifies queued since. A table loaded during step 8 or step 9 that gives a proce
   before it. The sleep path takes them as its depths past C1 where the local timer always runs, the TSC is invariant and
   step 8 did not skip CST_CNT, an Intel processor whose MWAIT reaches past C1 keeping its hints instead. It enters a
   port depth only once a probe at the first stop of the tick finds its read stops the processor, and refuses the depth
-  otherwise. The boot prints one `[LPLTLM] sleep.depths` line, then one `[LPLTLM] sleep.depth` line per depth;
-  `tools/acpi/corpus.sh idle` compares each slot's port states with `tools/acpi/oracles/linux_idle_ports.py`, and
-  `tools/acpi/boot-cst.sh --ports` checks the depths on a boot.
+  otherwise. An application processor parks at the deepest depth of its own slot's ladder: an MWAIT hint as it is, a
+  port depth once that probe has validated the port, and only until 8 of its reads in a row come back within 256 us
+  with no interrupt requested in its local APIC (`kernel/power/processor_park.h`). The boot prints one
+  `[LPLTLM] sleep.depths` line, then one `[LPLTLM] sleep.depth` line per depth, then one `[LPLTLM] park` line per
+  application processor; `tools/acpi/corpus.sh idle` compares each slot's port states with
+  `tools/acpi/oracles/linux_idle_ports.py`, and `tools/acpi/boot-cst.sh --ports` checks the depths and the park on a
+  boot.
 
 ### 3.11 What `_PRT` publishes
 

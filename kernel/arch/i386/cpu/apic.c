@@ -172,7 +172,7 @@ void apic_write_icr(uint32_t high, uint32_t low)
     if (g_x2apic_active)
     {
         uint64_t msr_val = ((uint64_t) high << 32u) | (uint64_t) low;
-        asmutils_write_model_specific_register(X2APIC_MSR_BASE + (LAPIC_REG_ICR_LOW >> 4u), msr_val);
+        asmutils_write_model_specific_register_after_a_fence(X2APIC_MSR_BASE + (LAPIC_REG_ICR_LOW >> 4u), msr_val);
     }
     else if (g_apic_mmio_base)
     {
@@ -192,4 +192,13 @@ uint32_t apic_get_id(void)
     const uint32_t identifier = apic_read(LAPIC_REG_ID);
 
     return g_x2apic_active ? identifier : identifier >> 24u;
+}
+
+bool apic_interrupt_requested(void)
+{
+    uint32_t requested = 0u;
+
+    for (uint32_t word = 1u; word < LAPIC_REG_IRR_WORDS; ++word)
+        requested |= apic_read(LAPIC_REG_IRR + word * LAPIC_REG_IRR_STRIDE);
+    return requested != 0u;
 }

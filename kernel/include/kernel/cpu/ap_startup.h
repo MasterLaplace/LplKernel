@@ -151,9 +151,9 @@ extern uint32_t application_processor_startup_get_logical_slot(void);
 extern uint8_t application_processor_startup_is_initialized(void);
 
 /**
- * @brief Main event loop for AP (after initialization).
+ * @brief Main event loop for AP (after initialization): parks the processor, which has nothing to run, at the deepest
+ *        depth it may enter (@ref kernel_processor_park), for good.
  *
- * Placeholder for AP-specific tasks. Currently spins with HLT.
  * In a full scheduler, this would wait for work or interrupts.
  */
 extern void application_processor_startup_main_loop(void);

@@ -53,6 +53,7 @@
 #include <kernel/memory/stack_allocator.h>
 #include <kernel/memory/tlsf.h>
 #include <kernel/memory/vmm.h>
+#include <kernel/power/processor_park.h>
 #include <kernel/power/processor_sleep.h>
 
 #include <kernel/core/console.h>
@@ -473,6 +474,7 @@ __attribute__((constructor)) void kernel_initialize(void)
             write_apic_calibration_info(&com1);
             write_apic_owner_handoff_info(
                 &com1, advanced_pic_timer_backend_enable_periodic_mode(interrupt_request_get_timer_frequency_hz()));
+            kernel_processor_park_reconsider();
         }
         else
         {
