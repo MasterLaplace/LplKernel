@@ -740,6 +740,17 @@ Notifies queued since. A table loaded during step 8 or step 9 that gives a proce
   `tools/acpi/corpus.sh idle` compares each hint with `tools/acpi/oracles/linux_idle_hints.py`, and
   `tools/acpi/boot-cst.sh` checks those lines on a boot under QEMU, which places a made-up `_CST` given by
   `-acpitable` where the kernel finds it.
+- **Port states, for a processor whose MWAIT reaches no state past C1,** AMD's: it enters its deeper states by
+  reading their port ([§8.1]). A slot gives it, in `_CST`'s order, each state of type 2 Linux's acpi_idle keeps there
+  (v6.12 `acpi_processor_power_verify`): a SystemIO read of a port other than 0, its latency sorted with the others
+  when they are out of order (`acpi_cst_latency_sort`). A SystemIO state of type 2 or 3 is refused and counted when it
+  is a C3 (#839), when its port passes 0xFFFF, lies in a register block of the FADT or is its SMI_CMD, belongs to a
+  device the kernel drives (the PIT, the keyboard controller, CMOS, COM1) or is protected (§5.3), or when six came
+  before it. The sleep path takes them as its depths past C1 where the local timer always runs, the TSC is invariant
+  and step 8 did not skip CST_CNT, an Intel processor whose MWAIT reaches past C1 keeping its hints instead, and it
+  refuses a depth whose probe finds the reads do not stop the processor. The boot prints one `[LPLTLM] sleep.depths`
+  line, then one `[LPLTLM] sleep.depth` line per depth; `tools/acpi/corpus.sh idle` compares each slot's port states
+  with `tools/acpi/oracles/linux_idle_ports.py`, and `tools/acpi/boot-cst.sh --ports` checks the depths on a boot.
 
 ### 3.11 What `_PRT` publishes
 
@@ -1604,6 +1615,7 @@ its page.
 [§6.4.3.7]: https://uefi.org/sites/default/files/resources/ACPI_Spec_6.6.pdf#page=525
 [§6.5.1]: https://uefi.org/sites/default/files/resources/ACPI_Spec_6.6.pdf#page=547
 [§6.5.4]: https://uefi.org/sites/default/files/resources/ACPI_Spec_6.6.pdf#page=549
+[§8.1]: https://uefi.org/sites/default/files/resources/ACPI_Spec_6.6.pdf#page=587
 [§8.1.4]: https://uefi.org/sites/default/files/resources/ACPI_Spec_6.6.pdf#page=592
 [§8.4]: https://uefi.org/sites/default/files/resources/ACPI_Spec_6.6.pdf#page=594
 [§8.4.1.1]: https://uefi.org/sites/default/files/resources/ACPI_Spec_6.6.pdf#page=595

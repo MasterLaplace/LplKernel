@@ -8,6 +8,8 @@
 #include <kernel/power/wakeup_accounting.h>
 #include <kernel/testing/test.h>
 
+#include <string.h>
+
 KERNEL_TEST_SUITE(processor_sleep, KERNEL_TEST_STAGE_BOOTED);
 
 /** Sleeps entered with a self-interrupt already pending, interrupts masked. */
@@ -190,8 +192,8 @@ static bool processor_sleep_test_wait_for_a_tick(void)
 KERNEL_TEST(hints_are_read_one_state_deep)
 {
     const uint32_t clamped_before = kernel_processor_sleep_clamped_count();
-    const bool deepest_granted = kernel_processor_sleep_request_hint(PROCESSOR_SLEEP_HINT_MAX);
-    const uint32_t available = kernel_processor_sleep_available_hints();
+    const bool deepest_granted = kernel_processor_sleep_request_depth(PROCESSOR_SLEEP_DEPTH_DEEPEST);
+    const uint32_t available = kernel_processor_sleep_available_depths();
 
     kernel_test_check(test, kernel_processor_sleep_enumerated_hints(0x00000000u) == 0u, "nothing enumerated, no hint");
     kernel_test_check(test, kernel_processor_sleep_enumerated_hints(0x00000020u) == 0x1u,
@@ -202,14 +204,12 @@ KERNEL_TEST(hints_are_read_one_state_deep)
     kernel_test_check(test, kernel_processor_sleep_enumerated_hints(0x00200020u) == 0x11u,
                       "a gap in the enumeration stays a gap");
     kernel_test_check(test, deepest_granted || kernel_processor_sleep_clamped_count() == clamped_before + 1u,
-                      "a depth nothing enumerates is lowered and counted, not passed");
+                      "a depth the ladder lacks is lowered and counted, not passed");
+    kernel_test_check(test, ((available >> kernel_processor_sleep_depth()) & 1u) == 1u,
+                      "the active depth is one the ladder holds");
     kernel_test_check(test,
-                      available == 0u ? kernel_processor_sleep_active_hint() == PROCESSOR_SLEEP_HINT_C1 :
-                                        ((available >> kernel_processor_sleep_active_hint()) & 1u) == 1u,
-                      "the active hint is one the processor enumerates");
-    kernel_test_check(test,
-                      kernel_processor_sleep_request_hint(PROCESSOR_SLEEP_HINT_C1) &&
-                          kernel_processor_sleep_active_hint() == PROCESSOR_SLEEP_HINT_C1,
+                      kernel_processor_sleep_request_depth(PROCESSOR_SLEEP_DEPTH_C1) &&
+                          kernel_processor_sleep_depth() == PROCESSOR_SLEEP_DEPTH_C1,
                       "C1 is always askable");
     kernel_test_measure(test, "available", available);
     kernel_test_measure(test, "interrupt_break", kernel_processor_sleep_has_interrupt_break() ? 1u : 0u);
@@ -259,7 +259,7 @@ KERNEL_TEST(the_hints_of_the_cpuid_leaves_are_leaf_5_s_where_the_pair_is_impleme
  */
 KERNEL_TEST(the_hints_this_processor_enumerates_are_read_without_arming_the_module)
 {
-    const uint32_t available = kernel_processor_sleep_available_hints();
+    const uint32_t available = kernel_processor_sleep_available_depths();
     const uint32_t hints = kernel_processor_sleep_hints_enumerated_by_this_processor();
     uint32_t eax = 0u;
     uint32_t ebx = 0u;
@@ -271,7 +271,7 @@ KERNEL_TEST(the_hints_this_processor_enumerates_are_read_without_arming_the_modu
     asmutils_cpuid(5u, 0u, &eax, &ebx, &ecx, &edx);
     kernel_test_check(test, hints == kernel_processor_sleep_hints_of_cpuid_leaves(leaf1_ecx, ebx, edx),
                       "the hints are those of this processor's leaves 1 and 5");
-    kernel_test_check(test, kernel_processor_sleep_available_hints() == available, "the read adopts no hint");
+    kernel_test_check(test, kernel_processor_sleep_available_depths() == available, "the read adopts no depth");
     kernel_test_measure(test, "enumerated_hints", hints);
 }
 
@@ -506,30 +506,48 @@ KERNEL_TEST(without_an_always_running_timer_no_hint_goes_past_c1)
 }
 
 /**
- * @brief The hints an initialisation adopts are the usable ones of those CPUID enumerates, for the local timer this
- *        processor has. Skipped where the kernel cannot use MONITOR, every QEMU model (#818), where both sides would be
- *        zero and prove nothing.
+ * @brief Whether two depths enter the same way, with the same published latency.
  */
-KERNEL_TEST(an_initialisation_adopts_the_usable_hints)
+static bool processor_sleep_test_depths_equal(const ProcessorSleepDepth_t *left, const ProcessorSleepDepth_t *right)
 {
+    return left->entry == right->entry && left->hint == right->hint && left->port == right->port &&
+           left->latency_published == right->latency_published && left->latency == right->latency;
+}
+
+/**
+ * @brief Whether two ladders hold the same depths and say the same of their ports.
+ */
+static bool processor_sleep_test_ladders_equal(const ProcessorSleepLadder_t *left, const ProcessorSleepLadder_t *right)
+{
+    if (left->available != right->available || left->ports != right->ports ||
+        left->ports_refused != right->ports_refused)
+        return false;
+    for (uint32_t depth = 0u; depth < PROCESSOR_SLEEP_DEPTHS; ++depth)
+        if (!processor_sleep_test_depths_equal(&left->depths[depth], &right->depths[depth]))
+            return false;
+    return true;
+}
+
+/**
+ * @brief An initialisation adopts the ladder this processor's facts build, every depth available.
+ */
+KERNEL_TEST(an_initialisation_adopts_the_ladder_of_this_processor)
+{
+    static ProcessorSleepLadderFacts_t facts;
+    static ProcessorSleepLadder_t expected;
+
     kernel_processor_sleep_initialize();
-    if (!kernel_processor_sleep_has_monitor())
-    {
-        kernel_test_skip(test, "the kernel cannot use MONITOR on this processor, so it adopts no hint (#818)");
-        return;
-    }
+    kernel_processor_sleep_read_ladder_facts(&facts);
+    kernel_processor_sleep_build_ladder(&facts, &expected);
+    const ProcessorSleepLadder_t *adopted = kernel_processor_sleep_ladder();
 
-    uint32_t eax = 0u;
-    uint32_t ebx = 0u;
-    uint32_t ecx = 0u;
-    uint32_t edx = 0u;
-    asmutils_cpuid(5u, 0u, &eax, &ebx, &ecx, &edx);
-    const uint32_t expected = kernel_processor_sleep_usable_hints(kernel_processor_sleep_enumerated_hints(edx),
-                                                                  advanced_pic_timer_backend_always_runs() != 0u);
-
-    kernel_test_check(test, kernel_processor_sleep_available_hints() == expected,
-                      "the hints adopted are the enumerated ones the timer allows");
-    kernel_test_measure(test, "available_hints", kernel_processor_sleep_available_hints());
+    kernel_test_check(test, processor_sleep_test_ladders_equal(adopted, &expected),
+                      "the ladder adopted is the one built");
+    kernel_test_check(test, kernel_processor_sleep_available_depths() == expected.available,
+                      "and every depth of it is available");
+    kernel_test_check(test, (expected.available & 1u) != 0u, "depth 0, C1, always is");
+    kernel_test_measure(test, "available_depths", expected.available);
+    kernel_test_measure(test, "ports", expected.ports);
 }
 
 /**
@@ -541,4 +559,226 @@ KERNEL_TEST(a_hint_reaches_mwait_as_its_c_state_in_bits_7_to_4)
     kernel_test_check(test, kernel_processor_sleep_mwait_hint(PROCESSOR_SLEEP_HINT_C1) == 0x00u, "C1 is 0x00");
     kernel_test_check(test, kernel_processor_sleep_mwait_hint(1u) == 0x10u, "C2 is 0x10, not C1's sub-state 1");
     kernel_test_check(test, kernel_processor_sleep_mwait_hint(PROCESSOR_SLEEP_HINT_MAX) == 0x60u, "C7 is 0x60");
+}
+
+/** @name What the made-up ladders below are built from
+ *  @{ */
+#define PROCESSOR_SLEEP_TEST_FIXED_HARDWARE 0x7Fu /**< FFixedHW. */
+#define PROCESSOR_SLEEP_TEST_SYSTEM_IO      0x01u /**< SystemIO. */
+/** @} */
+
+static AdvancedConfigurationAndPowerInterfaceProcessorIdle_t processor_sleep_test_idle; /**< A made-up CPU slot. */
+static ProcessorSleepLadderFacts_t processor_sleep_test_facts; /**< What a ladder is built of. */
+static ProcessorSleepLadder_t processor_sleep_test_ladder;     /**< The ladder built. */
+
+/**
+ * @brief Gives the made-up slot AMD's states, those of the Framework Laptop 16 of the corpus: C1 by MWAIT 0 of
+ *        AMD's vendor, 1 us; C2 a read of port 0x414, 18 us; C3 a read of port 0x415, 350 us; and the facts of a Zen
+ *        processor: the monitor pair, leaf 5's EDX of 0x11 so hint 0 alone usable, ARAT, an invariant TSC, CST_CNT
+ *        not skipped.
+ */
+static void processor_sleep_test_amd(void)
+{
+    memset(&processor_sleep_test_idle, 0, sizeof(processor_sleep_test_idle));
+    processor_sleep_test_idle.count = 3u;
+    processor_sleep_test_idle.states[0] = (AdvancedConfigurationAndPowerInterfaceIdleState_t){
+        .entry = {.space = PROCESSOR_SLEEP_TEST_FIXED_HARDWARE, .bit_width = 2u, .bit_offset = 2u},
+        .type = 1u,
+        .latency = 1u
+    };
+    processor_sleep_test_idle.states[1] = (AdvancedConfigurationAndPowerInterfaceIdleState_t){
+        .entry = {.address = 0x414u, .space = PROCESSOR_SLEEP_TEST_SYSTEM_IO, .bit_width = 8u, .access_size = 1u},
+        .type = 2u,
+        .latency = 18u
+    };
+    processor_sleep_test_idle.states[2] = processor_sleep_test_idle.states[1];
+    processor_sleep_test_idle.states[2].entry.address = 0x415u;
+    processor_sleep_test_idle.states[2].type = 3u;
+    processor_sleep_test_idle.states[2].latency = 350u;
+    memset(&processor_sleep_test_facts, 0, sizeof(processor_sleep_test_facts));
+    processor_sleep_test_facts.monitor = true;
+    processor_sleep_test_facts.usable_hints =
+        kernel_processor_sleep_usable_hints(kernel_processor_sleep_enumerated_hints(0x11u), true);
+    processor_sleep_test_facts.timer_always_runs = true;
+    processor_sleep_test_facts.counter_invariant = true;
+    processor_sleep_test_facts.idle = &processor_sleep_test_idle;
+}
+
+/**
+ * @brief Whether the ladder built holds depth @p depth, entered by @p entry at hint @p hint or port @p port, with the
+ *        published latency @p latency.
+ */
+static bool processor_sleep_test_depth_is(uint32_t depth, uint32_t entry, uint32_t hint, uint16_t port,
+                                          uint32_t latency)
+{
+    const ProcessorSleepDepth_t expected = {.entry = entry,
+                                            .hint = hint,
+                                            .port = port,
+                                            .latency_published = true,
+                                            .latency = latency};
+
+    return ((processor_sleep_test_ladder.available >> depth) & 1u) != 0u &&
+           processor_sleep_test_depths_equal(&processor_sleep_test_ladder.depths[depth], &expected);
+}
+
+/**
+ * @brief An AMD processor, whose MWAIT reaches C1 alone, sleeps at C1 by MWAIT 0, then at its slot's C2 by a read of
+ *        port 0x414 with its 18 us; its C3 is refused (#839) and counted.
+ */
+KERNEL_TEST(an_amd_processor_s_ladder_is_c1_then_the_port_states_of_its_slot)
+{
+    processor_sleep_test_amd();
+    kernel_processor_sleep_build_ladder(&processor_sleep_test_facts, &processor_sleep_test_ladder);
+
+    kernel_test_check(test, processor_sleep_test_ladder.available == 0x3u, "two depths: C1 and C2");
+    kernel_test_check(test, processor_sleep_test_depth_is(0u, PROCESSOR_SLEEP_ENTRY_MONITOR_WAIT, 0u, 0u, 1u),
+                      "depth 0 is MWAIT 0, 1 us");
+    kernel_test_check(test, processor_sleep_test_depth_is(1u, PROCESSOR_SLEEP_ENTRY_PORT, 0u, 0x414u, 18u),
+                      "depth 1 reads port 0x414, 18 us");
+    kernel_test_check(test,
+                      processor_sleep_test_ladder.ports == PROCESSOR_SLEEP_PORTS_TAKEN &&
+                          processor_sleep_test_ladder.ports_refused == 1u,
+                      "the ports are taken, the C3 refused");
+
+    processor_sleep_test_facts.usable_hints = 0x3u;
+    kernel_processor_sleep_build_ladder(&processor_sleep_test_facts, &processor_sleep_test_ladder);
+    kernel_test_check(test, processor_sleep_test_depth_is(1u, PROCESSOR_SLEEP_ENTRY_PORT, 0u, 0x414u, 18u),
+                      "a processor not Intel's takes its ports even where its leaf 5 lists a hint past C1");
+}
+
+/**
+ * @brief An Intel processor whose MWAIT reaches past C1 sleeps at its usable hints, gaps staying gaps, each with the
+ *        latency `_CST` publishes for it, and takes no port state.
+ */
+KERNEL_TEST(an_intel_processor_with_deep_mwait_takes_its_hints_and_no_port_state)
+{
+    processor_sleep_test_amd();
+    processor_sleep_test_idle.states[0].entry.bit_width = 1u;
+    processor_sleep_test_idle.states[1] = processor_sleep_test_idle.states[0];
+    processor_sleep_test_idle.states[1].entry.address = 0x20u;
+    processor_sleep_test_idle.states[1].type = 3u;
+    processor_sleep_test_idle.states[1].latency = 150u;
+    processor_sleep_test_idle.states[2].type = 2u;
+    processor_sleep_test_facts.intel = true;
+    processor_sleep_test_facts.usable_hints = 0x5u;
+    kernel_processor_sleep_build_ladder(&processor_sleep_test_facts, &processor_sleep_test_ladder);
+
+    kernel_test_check(test, processor_sleep_test_ladder.available == 0x5u, "depths 0 and 2: the hints, gap kept");
+    kernel_test_check(test, processor_sleep_test_depth_is(2u, PROCESSOR_SLEEP_ENTRY_MONITOR_WAIT, 2u, 0u, 150u),
+                      "depth 2 is MWAIT hint 2, 150 us");
+    kernel_test_check(test,
+                      processor_sleep_test_ladder.ports == PROCESSOR_SLEEP_PORTS_MONITOR_WAIT &&
+                          processor_sleep_test_ladder.ports_refused == 0u,
+                      "the port C2 at 0x415 is no depth, and none is refused");
+
+    processor_sleep_test_facts.usable_hints = 0x1u;
+    kernel_processor_sleep_build_ladder(&processor_sleep_test_facts, &processor_sleep_test_ladder);
+    kernel_test_check(test, processor_sleep_test_depth_is(1u, PROCESSOR_SLEEP_ENTRY_PORT, 0u, 0x415u, 350u),
+                      "an Intel processor whose MWAIT stops at C1 takes the port C2");
+}
+
+/**
+ * @brief A port state is a depth only where the local timer always runs, the TSC is invariant, step 8 did not skip
+ *        CST_CNT and the processor's slot publishes states; each reason is named, and the ladder is C1 alone.
+ */
+KERNEL_TEST(a_port_depth_needs_a_running_timer_an_invariant_counter_and_cst_handed_over)
+{
+    processor_sleep_test_amd();
+    processor_sleep_test_facts.timer_always_runs = false;
+    kernel_processor_sleep_build_ladder(&processor_sleep_test_facts, &processor_sleep_test_ladder);
+    kernel_test_check(test,
+                      processor_sleep_test_ladder.available == 0x1u &&
+                          processor_sleep_test_ladder.ports == PROCESSOR_SLEEP_PORTS_TIMER_MAY_STOP,
+                      "a local timer that may stop keeps C1 alone");
+
+    processor_sleep_test_amd();
+    processor_sleep_test_facts.counter_invariant = false;
+    kernel_processor_sleep_build_ladder(&processor_sleep_test_facts, &processor_sleep_test_ladder);
+    kernel_test_check(test,
+                      processor_sleep_test_ladder.available == 0x1u &&
+                          processor_sleep_test_ladder.ports == PROCESSOR_SLEEP_PORTS_COUNTER_MAY_STOP,
+                      "a TSC that is not invariant keeps C1 alone");
+
+    processor_sleep_test_amd();
+    processor_sleep_test_facts.control_skipped = true;
+    kernel_processor_sleep_build_ladder(&processor_sleep_test_facts, &processor_sleep_test_ladder);
+    kernel_test_check(test,
+                      processor_sleep_test_ladder.available == 0x1u &&
+                          processor_sleep_test_ladder.ports == PROCESSOR_SLEEP_PORTS_NOT_HANDED_OVER,
+                      "CST_CNT skipped keeps C1 alone");
+
+    processor_sleep_test_amd();
+    processor_sleep_test_facts.idle = NULL;
+    kernel_processor_sleep_build_ladder(&processor_sleep_test_facts, &processor_sleep_test_ladder);
+    kernel_test_check(test,
+                      processor_sleep_test_ladder.available == 0x1u &&
+                          processor_sleep_test_ladder.ports == PROCESSOR_SLEEP_PORTS_NO_SLOT &&
+                          !processor_sleep_test_ladder.depths[0].latency_published,
+                      "no slot keeps C1 alone, its latency unpublished");
+}
+
+/**
+ * @brief Without the monitor pair, C1 is a halt, with the latency `_CST` publishes for C1; the ports stay depths past
+ *        it.
+ */
+KERNEL_TEST(without_the_monitor_pair_c1_is_a_halt)
+{
+    processor_sleep_test_amd();
+    processor_sleep_test_facts.monitor = false;
+    processor_sleep_test_facts.usable_hints = 0u;
+    kernel_processor_sleep_build_ladder(&processor_sleep_test_facts, &processor_sleep_test_ladder);
+
+    kernel_test_check(test, processor_sleep_test_depth_is(0u, PROCESSOR_SLEEP_ENTRY_HALT, 0u, 0u, 1u),
+                      "depth 0 is HLT, 1 us");
+    kernel_test_check(test, processor_sleep_test_depth_is(1u, PROCESSOR_SLEEP_ENTRY_PORT, 0u, 0x414u, 18u),
+                      "depth 1 still reads port 0x414");
+}
+
+/**
+ * @brief The port sleep reads its port, then enables interrupts and lets a pending one in before it returns: IN, STI,
+ *        NOP, RET, right after the argument is loaded.
+ */
+KERNEL_TEST(the_port_sleep_reads_its_port_before_the_step_that_enables_interrupts)
+{
+    static const uint8_t expected[] = {0x8Bu, 0x54u, 0x24u, 0x04u, 0xECu, PROCESSOR_SLEEP_TEST_STI, 0x90u, 0xC3u};
+    const uint8_t *routine = (const uint8_t *) (uintptr_t) asmutils_input_byte_then_enable_interrupts;
+
+    kernel_test_check(test, memcmp(routine, expected, sizeof(expected)) == 0,
+                      "movl 4(%esp), %edx; inb %dx, %al; sti; nop; ret");
+}
+
+/**
+ * @brief A port depth found not to stop the processor is refused, and the active depth lowered to the deepest left;
+ *        C1, a depth no longer available and an MWAIT depth are never refused.
+ */
+KERNEL_TEST(a_refused_port_depth_lowers_the_active_depth)
+{
+    processor_sleep_test_amd();
+    processor_sleep_test_idle.states[2].type = 2u;
+    kernel_processor_sleep_build_ladder(&processor_sleep_test_facts, &processor_sleep_test_ladder);
+    kernel_processor_sleep_debug_adopt_ladder(&processor_sleep_test_ladder);
+    const uint32_t refused_before = kernel_processor_sleep_refused_depths();
+    const bool granted = kernel_processor_sleep_request_depth(PROCESSOR_SLEEP_DEPTH_DEEPEST);
+
+    kernel_test_check(test, !granted && kernel_processor_sleep_depth() == 2u, "the deepest asked for is depth 2");
+    kernel_test_check(test, kernel_processor_sleep_refuse_depth(2u), "depth 2 is refused");
+    kernel_test_check(test, kernel_processor_sleep_depth() == 1u && kernel_processor_sleep_available_depths() == 0x3u,
+                      "the active depth falls to 1, and 2 is no longer available");
+    kernel_test_check(test, !kernel_processor_sleep_refuse_depth(2u), "nor refused twice");
+    kernel_test_check(test, !kernel_processor_sleep_refuse_depth(0u), "C1 is never refused");
+    kernel_test_check(test, kernel_processor_sleep_refused_depths() == refused_before + 1u, "one refusal is counted");
+    kernel_test_check(test, kernel_processor_sleep_refuse_depth(1u) && kernel_processor_sleep_depth() == 0u,
+                      "refusing depth 1 leaves C1");
+
+    processor_sleep_test_facts.intel = true;
+    processor_sleep_test_facts.usable_hints = 0x5u;
+    kernel_processor_sleep_build_ladder(&processor_sleep_test_facts, &processor_sleep_test_ladder);
+    kernel_processor_sleep_debug_adopt_ladder(&processor_sleep_test_ladder);
+    kernel_test_check(test, !kernel_processor_sleep_refuse_depth(2u), "an MWAIT depth is never refused");
+
+    processor_sleep_test_ladder.depths[0] = processor_sleep_test_ladder.depths[2];
+    processor_sleep_test_ladder.depths[0].entry = PROCESSOR_SLEEP_ENTRY_PORT;
+    kernel_processor_sleep_debug_adopt_ladder(&processor_sleep_test_ladder);
+    kernel_test_check(test, !kernel_processor_sleep_refuse_depth(0u), "nor C1, whatever enters it");
+    kernel_processor_sleep_initialize();
 }

@@ -15,7 +15,7 @@ Each script prints its usage with `--help`. This page says where each kind of to
 | `acpi/oracles/` | the scripts and the program that compare the layer with ACPICA, uACPI, iasl and Linux |
 | `acpi/lists/` | the machine lists, the NVS presets and the decided divergences those runs read |
 | `acpi/*.sh` | the checks CI runs: portability, the release objects, the generated fixtures, the iasl sandbox |
-| `acpi/boot-cst.sh`, `acpi/boot-cst.asl` | a kernel booted on QEMU with a made-up `_CST`, and the C-states it prints |
+| `acpi/boot-cst.sh`, `acpi/boot-cst.asl`, `acpi/boot-cst-ports.asl` | a kernel booted on QEMU with a made-up `_CST`, MWAIT states or AMD's port states (`--ports`), and the C-states and sleep depths it prints |
 | `pci/against-linux.sh` | each PCI function the kernel reads through ECAM against what Linux reads of it, on the same QEMU q35 |
 | `qemu/` | the QEMU plugin `instructions.sh` counts with |
 | `xmake/` | the xmake module that builds the kernel image |

@@ -282,9 +282,11 @@ KERNEL_TEST(the_idle_loop_sleeps_under_its_ceiling)
     kernel_test_measure(test, "early_wakes", kernel_tickless_early_wakes());
     kernel_test_measure(test, "tick_owner_apic", interrupt_request_is_timer_owner_apic());
     kernel_test_measure(test, "monitor_available", report->monitor_available);
-    kernel_test_measure(test, "sleep_hints_available", kernel_processor_sleep_available_hints());
-    kernel_test_measure(test, "sleep_hint_active", kernel_processor_sleep_active_hint());
-    kernel_test_measure(test, "sleep_hint_clamped", kernel_processor_sleep_clamped_count());
+    kernel_test_measure(test, "sleep_depths_available", kernel_processor_sleep_available_depths());
+    kernel_test_measure(test, "sleep_depth_active", kernel_processor_sleep_depth());
+    kernel_test_measure(test, "sleep_depth_clamped", kernel_processor_sleep_clamped_count());
+    kernel_test_measure(test, "sleep_depths_refused", kernel_processor_sleep_refused_depths());
+    kernel_test_measure(test, "port_sleeps", kernel_processor_sleep_port_sleep_count());
     kernel_test_measure(test, "interrupt_break", kernel_processor_sleep_has_interrupt_break() ? 1u : 0u);
     kernel_test_measure(test, "scaling_available", report->scaling_available);
     kernel_test_measure(test, "scaling_refused", report->scaling_refused);

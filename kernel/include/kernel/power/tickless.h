@@ -47,6 +47,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <kernel/power/processor_sleep.h>
 #include <kernel/power/wake_latency.h>
 #include <kernel/power/wake_planner.h>
 
@@ -212,6 +213,41 @@ uint64_t kernel_tickless_wake_lead_cycles(void);
 uint32_t kernel_tickless_wake_samples(void);
 
 /**
+ * @brief How many of the timer's wake-ups taught the lead of @p depth, the probe's included.
+ * @param depth A depth; one past PROCESSOR_SLEEP_DEPTH_DEEPEST has none.
+ * @return The count.
+ */
+uint32_t kernel_tickless_wake_samples_at(uint32_t depth);
+
+/**
+ * @brief Whether a probe whose @p unstopped sleeps, of KERNEL_TICKLESS_PROBES, were port reads that returned before
+ *        their deadline with no interrupt refuses its depth: at least half of them.
+ * @details A port read that stops the processor returns on a break event, the probe's timer most often (ACPI 6.6
+ *          §8.1.3); a port nothing decodes, as under a hypervisor, returns at once. ACPI lets a state end for any
+ *          reason, an SMI's among them, so one such return proves nothing; half of them, over the probe's 1.4 ms, is a
+ *          read that does not stop. Pure, so that a test hands it every count.
+ * @param unstopped Probe sleeps that returned so.
+ * @return true when the depth is refused.
+ */
+bool kernel_tickless_refuses_a_probed_depth(uint32_t unstopped);
+
+/**
+ * @brief Whether a probe sleep was a port read that did not stop the processor: it returned before its deadline, the
+ *        timer still armed, and no interrupt was taken. Pure, so that a test hands it what no emulator gives: a port
+ *        read that stops.
+ * @param before_its_deadline Whether the sleep returned with the probe's timer still armed.
+ * @param outcome             How the processor slept.
+ * @return true when it did not stop.
+ */
+bool kernel_tickless_probe_sleep_did_not_stop(bool before_its_deadline, const ProcessorSleepOutcome_t *outcome);
+
+/**
+ * @brief The probe sleeps of the last probe that were port reads returning before their deadline with no interrupt.
+ * @return The count, of KERNEL_TICKLESS_PROBES.
+ */
+uint32_t kernel_tickless_unstopped_probe_sleeps(void);
+
+/**
  * @brief How long the last probe took, from its first sleep to the end of its last.
  * @return Cycles of the timestamp counter; 0 before any probe.
  */
@@ -269,7 +305,7 @@ uint32_t kernel_tickless_nominal_frequency_hz(void);
  * @brief Exchanges the estimate sleeps at @p depth arm with for @p estimate, and forgets that the depth was probed
  * since the tick stopped, so that a debug kernel's tests make a depth unlearned with a zeroed estimate, at the one
  *        depth QEMU offers, then give it back the estimate they took out.
- * @param depth    A hint index; one past PROCESSOR_SLEEP_HINT_MAX exchanges nothing.
+ * @param depth    A depth; one past PROCESSOR_SLEEP_DEPTH_DEEPEST exchanges nothing.
  * @param estimate The estimate to put in; receives the one taken out.
  */
 void kernel_tickless_debug_exchange_depth_estimate(uint32_t depth, KernelWakeLatency_t *estimate);

@@ -45,6 +45,37 @@ static void idle_states_write_hint(Serial_t *serial, uint32_t hint, const IdleSt
     kernel_telemetry_end_record();
 }
 
+static void idle_states_write_depth(Serial_t *serial, uint32_t depth, const ProcessorSleepDepth_t *entered)
+{
+    kernel_telemetry_begin_record(serial, "sleep.depth");
+    kernel_telemetry_write_unsigned("depth", depth);
+    kernel_telemetry_write_text("entry", kernel_processor_sleep_entry_name(entered->entry));
+    kernel_telemetry_write_hexadecimal(
+        "target", entered->entry == PROCESSOR_SLEEP_ENTRY_PORT ? (uint32_t) entered->port : entered->hint);
+    if (entered->latency_published)
+        kernel_telemetry_write_unsigned("latency_us", entered->latency);
+    else
+        kernel_telemetry_write_text("latency_us", "none");
+    kernel_telemetry_end_record();
+}
+
+static void idle_states_write_ladder(Serial_t *serial)
+{
+    ProcessorSleepLadderFacts_t facts;
+    ProcessorSleepLadder_t ladder;
+
+    kernel_processor_sleep_read_ladder_facts(&facts);
+    kernel_processor_sleep_build_ladder(&facts, &ladder);
+    kernel_telemetry_begin_record(serial, "sleep.depths");
+    kernel_telemetry_write_hexadecimal("available", ladder.available);
+    kernel_telemetry_write_text("ports", kernel_processor_sleep_ports_name(ladder.ports));
+    kernel_telemetry_write_unsigned("ports_refused", ladder.ports_refused);
+    kernel_telemetry_end_record();
+    for (uint32_t depth = 0u; depth < PROCESSOR_SLEEP_DEPTHS; ++depth)
+        if (((ladder.available >> depth) & 1u) != 0u)
+            idle_states_write_depth(serial, depth, &ladder.depths[depth]);
+}
+
 void kernel_idle_states_report(Serial_t *serial)
 {
     const IdleStatesTable_t *table = advanced_configuration_and_power_interface_processor_idle();
@@ -66,4 +97,5 @@ void kernel_idle_states_report(Serial_t *serial)
     for (uint32_t hint = 0u; idle != NULL && hint < IDLE_STATES_HINTS; ++hint)
         if (advanced_configuration_and_power_interface_processor_idle_costs(idle, hint, &costs))
             idle_states_write_hint(serial, hint, &costs);
+    idle_states_write_ladder(serial);
 }
