@@ -119,6 +119,18 @@ extern uint32_t application_processor_bootstrap_get_ap_count(void);
 extern void *application_processor_bootstrap_get_ap_stack_top(uint32_t logical_slot);
 
 /**
+ * @brief Whether @p address lies in the stacks the application processors are started on.
+ *
+ * @details Every application processor runs on its bootstrap stack alone, interrupts included, so an interrupt frame
+ *          there was pushed by an application processor; the bootstrap processor runs elsewhere. That holds until an
+ *          application processor runs on another stack.
+ *
+ * @param address The address.
+ * @return true when it lies in one of them.
+ */
+extern bool application_processor_bootstrap_is_stack_address(uintptr_t address);
+
+/**
  * @brief Get physical address of AP stack top (for real mode bootstrap).
  *
  * @note: This assumes identity mapping or explicit paging initialization
