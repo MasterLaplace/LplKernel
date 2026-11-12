@@ -275,6 +275,12 @@ KERNEL_TEST(every_processor_finds_its_own_slot)
     kernel_test_measure(test, "in_their_domain", in_their_domain);
 }
 
+/**
+ * Reads of the request register the request test makes before it gives up: the interrupt is requested once its send
+ * returns, which waits for its delivery, and the tick that bounds other waits is masked there.
+ */
+#define INTERPROCESSOR_INTERRUPTS_TEST_REQUEST_READS 1000u
+
 /** Runs of the handler the request test's self-interrupt reaches. */
 static volatile uint32_t interprocessor_interrupts_test_requested_runs = 0u;
 
@@ -296,7 +302,6 @@ static void interprocessor_interrupts_test_count_run(void *context)
  */
 KERNEL_TEST(a_masked_interrupt_is_requested_until_the_processor_takes_it)
 {
-    InterruptRequestDeadline_t deadline;
     uint8_t vector = 0u;
     bool requested = false;
 
@@ -313,9 +318,8 @@ KERNEL_TEST(a_masked_interrupt_is_requested_until_the_processor_takes_it)
     interprocessor_interrupts_test_requested_runs = 0u;
     asmutils_disable_interrupts();
     (void) advanced_pic_ipi_send_fixed(0u, vector, ADVANCED_PIC_IPI_SHORT_SELF);
-    interrupt_request_deadline_start(&deadline, INTERPROCESSOR_INTERRUPTS_TEST_WAIT_MICROSECONDS);
-    while (!(requested = apic_interrupt_requested()) && !interrupt_request_deadline_passed(&deadline))
-        asmutils_pause();
+    for (uint32_t read = 0u; read < INTERPROCESSOR_INTERRUPTS_TEST_REQUEST_READS && !requested; ++read)
+        requested = apic_interrupt_requested();
     const uint32_t runs_masked = interprocessor_interrupts_test_requested_runs;
     asmutils_enable_interrupts();
     asmutils_no_operation();

@@ -383,7 +383,7 @@ KERNEL_TEST(a_parked_processor_refuses_a_validated_port_whose_read_does_not_stop
             continue;
         const uint32_t reads = record.port_reads;
         held += processor_park_test_wait_for_turns(slot, turns[slot], 0u) &&
-                        kernel_processor_park_record(slot, &record) && record.port_reads == reads ?
+                        processor_park_test_wait_for_a_refusal(slot, &record) && record.port_reads == reads ?
                     1u :
                     0u;
     }
