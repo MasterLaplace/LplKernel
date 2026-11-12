@@ -56,7 +56,7 @@ extern "C" {
  *          Keys of `sleep.depths`:
  *          - `available`: a bit per depth, depth 0 being C1;
  *          - `ports`: whether the slot's port states are the depths past C1, `taken`, or why not: `monitor_wait`
- *            (an Intel processor's MWAIT reaches past C1), `no_slot`, `timer_may_stop`, `counter_may_stop` or
+ *            (MWAIT reaches past C1, and its hints are the depths), `no_slot`, `timer_may_stop`, `counter_may_stop` or
  *            `not_handed_over`;
  *          - `ports_refused`: the port states of type 2 or 3 the slot lists that are no depth, when they are taken.
  *

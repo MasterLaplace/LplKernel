@@ -147,9 +147,10 @@ extern void asmutils_enable_interrupts_and_halt(void);
  * @brief Reads a byte from an I/O port with interrupts masked, then enables them and lets a pending one in before it
  *        returns (IN, STI, NOP).
  *
- * @details The read of a C-state's port stops the processor until a break event, a pending interrupt among them
- *          whatever the interrupt flag (ACPI 6.6 §8.1, §8.1.3), so the read is made masked, as Linux's `io_idle` makes
- *          it (v6.12 drivers/acpi/processor_idle.c), rather than in STI's shadow: an NMI or an SMI taken in that
+ * @details The read of a C-state's port puts the processor in that state, which it must leave whenever an interrupt
+ *          is to be presented to it (ACPI 6.6 §8.1, §8.1.3). Linux makes the read with interrupts disabled, its caller
+ *          enabling them after (`acpi_idle_do_entry` and `io_idle`, v6.12 drivers/acpi/processor_idle.c), a pending
+ *          interrupt ending the state; so is it made here, rather than in STI's shadow: an NMI or an SMI taken in that
  *          shadow would end it, and the interrupt it held back would then be handled before the read, which would sleep
  *          on nothing. STI's inhibition then lasts over the NOP (Intel SDM vol. 3A, 325384-093US, §7.8.1), and the
  *          interrupt that ended the state is taken on the boundary after it, before the return. The caller masks

@@ -709,7 +709,8 @@ KERNEL_TEST(a_depth_entered_with_the_tick_stopped_is_probed_at_its_first_sleep)
     kernel_test_check(test, stopped && served, "the tick stops and the window is served");
     kernel_test_check(test, probe != probe_before, "the depth entered is probed at its first sleep");
     kernel_test_check(test,
-                      refused ? kernel_tickless_refuses_a_probed_depth(kernel_tickless_unstopped_probe_sleeps()) :
+                      refused ? kernel_tickless_judge_a_probe(kernel_tickless_unstopped_probe_ranks_at(entered)) !=
+                                    KERNEL_TICKLESS_PROBE_KEEPS :
                                 samples >= 1u,
                       "so its lead is learned, or it is refused for reads that did not stop");
     kernel_test_measure(test, "entered_depth", entered);
@@ -880,18 +881,32 @@ KERNEL_TEST(a_window_already_due_at_a_depth_that_learned_nothing_is_served_witho
 }
 
 /**
- * @brief A probe refuses its depth when at least half its sleeps were port reads that returned before their deadline
- *        with no interrupt, and not for fewer.
+ * @brief A probe of a port depth keeps it when its longest sleep stopped the processor, whatever ended the shorter ones
+ *        early; refuses it when its two longest did not stop it; asks one more sleep when the longest alone did not.
  */
-KERNEL_TEST(a_probe_refuses_its_depth_when_half_its_sleeps_did_not_stop)
+KERNEL_TEST(a_probe_judges_a_port_depth_by_its_longest_sleeps)
 {
-    kernel_test_check(test, !kernel_tickless_refuses_a_probed_depth(0u), "every sleep stopped: kept");
-    kernel_test_check(test, !kernel_tickless_refuses_a_probed_depth(KERNEL_TICKLESS_PROBES / 2u - 1u),
-                      "fewer than half that did not, as an SMI may end one: kept");
-    kernel_test_check(test, kernel_tickless_refuses_a_probed_depth(KERNEL_TICKLESS_PROBES / 2u),
-                      "half that did not: refused");
-    kernel_test_check(test, kernel_tickless_refuses_a_probed_depth(KERNEL_TICKLESS_PROBES),
-                      "all that did not: refused");
+    static const struct {
+        uint32_t ranks;
+        KernelTicklessProbeVerdict_t verdict;
+    } cases[] = {
+        {0x0u, KERNEL_TICKLESS_PROBE_KEEPS   },
+        {0x1u, KERNEL_TICKLESS_PROBE_KEEPS   },
+        {0x3u, KERNEL_TICKLESS_PROBE_KEEPS   },
+        {0x4u, KERNEL_TICKLESS_PROBE_KEEPS   },
+        {0x7u, KERNEL_TICKLESS_PROBE_KEEPS   },
+        {0x8u, KERNEL_TICKLESS_PROBE_CONFIRMS},
+        {0xBu, KERNEL_TICKLESS_PROBE_CONFIRMS},
+        {0xCu, KERNEL_TICKLESS_PROBE_REFUSES },
+        {0xEu, KERNEL_TICKLESS_PROBE_REFUSES },
+        {0xFu, KERNEL_TICKLESS_PROBE_REFUSES },
+    };
+    bool held = true;
+
+    for (uint32_t index = 0u; index < sizeof(cases) / sizeof(cases[0]); ++index)
+        held = held && kernel_tickless_judge_a_probe(cases[index].ranks) == cases[index].verdict;
+    kernel_test_check(
+        test, held, "the longest that stopped keeps; the two longest that did not refuse; the longest alone confirms");
 }
 
 /** The port the made-up depth reads: nothing decodes it on QEMU's q35, whose ICH9 power management lies at 0x600. */
@@ -927,14 +942,14 @@ KERNEL_TEST(a_port_depth_whose_read_does_not_stop_is_refused_at_the_first_stop_o
     kernel_processor_sleep_debug_adopt_ladder(&ladder);
     const bool granted = kernel_processor_sleep_request_depth(1u);
     kernel_tickless_debug_exchange_depth_estimate(1u, &held);
-    const uint32_t refused_before = kernel_processor_sleep_refused_depths();
+    const uint32_t refused_before = kernel_processor_sleep_refused_depth_count();
 
     (void) tickless_test_begin();
     const bool stopped = kernel_tickless_enable(true, &tickless_test_plan);
     const uint32_t depth = kernel_processor_sleep_depth();
     const uint32_t available = kernel_processor_sleep_available_depths();
-    const uint32_t refused = kernel_processor_sleep_refused_depths() - refused_before;
-    const uint32_t unstopped = kernel_tickless_unstopped_probe_sleeps();
+    const uint32_t refused = kernel_processor_sleep_refused_depth_count() - refused_before;
+    const uint32_t unstopped = kernel_tickless_unstopped_probe_ranks_at(1u);
     const uint32_t taught = kernel_tickless_wake_samples_at(1u);
     kernel_tickless_disable();
     kernel_tickless_debug_exchange_depth_estimate(1u, &held);
@@ -943,10 +958,11 @@ KERNEL_TEST(a_port_depth_whose_read_does_not_stop_is_refused_at_the_first_stop_o
     kernel_test_check(test, granted && stopped, "depth 1 is granted, and the tick stops");
     kernel_test_check(test, refused == 1u && ((available >> 1u) & 1u) == 0u, "the port depth is refused");
     kernel_test_check(test, depth == PROCESSOR_SLEEP_DEPTH_C1, "and the sleeps fall to C1");
-    kernel_test_check(test, kernel_tickless_refuses_a_probed_depth(unstopped), "for reads that did not stop");
+    kernel_test_check(test, kernel_tickless_judge_a_probe(unstopped) != KERNEL_TICKLESS_PROBE_KEEPS,
+                      "for reads that did not stop");
     kernel_test_check(test, taught == 0u,
                       "and the refused depth is taught nothing, so that its next adoption is probed again");
-    kernel_test_measure(test, "unstopped", unstopped);
+    kernel_test_measure(test, "unstopped_ranks", unstopped);
 }
 
 /**

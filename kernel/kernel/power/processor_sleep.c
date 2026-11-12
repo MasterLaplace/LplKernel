@@ -1,6 +1,7 @@
 #include <kernel/power/processor_sleep.h>
 
 #include <kernel/acpi/initialization.h>
+#include <kernel/acpi/processor_idle.h>
 #include <kernel/acpi/tables.h>
 #include <kernel/cpu/apic.h>
 #include <kernel/cpu/apic_timer.h>
@@ -43,6 +44,8 @@ static uint64_t processor_sleep_awake = 0u;
 static uint64_t processor_sleep_last_wake = 0u;
 static ProcessorSleepLadder_t processor_sleep_ladder = {.available = 1u};
 static uint32_t processor_sleep_available_depths = 1u;
+static uint32_t processor_sleep_validated_depths = 1u;
+static bool processor_sleep_probing = false;
 static uint32_t processor_sleep_depth = PROCESSOR_SLEEP_DEPTH_C1;
 static uint32_t processor_sleep_clamped = 0u;
 static uint32_t processor_sleep_refused = 0u;
@@ -110,6 +113,45 @@ static bool processor_sleep_read_monitor(uint32_t *out_line, uint32_t *out_ecx, 
  * the same wait as HLT — only an interrupt ends it — except at the requested depth.
  */
 static volatile uint32_t processor_sleep_idle_line = 0u;
+
+_Static_assert(PROCESSOR_SLEEP_DEPTHS == PROCESSOR_SLEEP_HINT_MAX + 1u, "a ladder holds a depth per MWAIT hint");
+_Static_assert(PROCESSOR_SLEEP_DEPTHS == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_PROCESSOR_IDLE_PORTS + 1u,
+               "a ladder holds C1 and a depth per port state a slot gives");
+
+/**
+ * @brief The deepest validated depth no deeper than @p ceiling, or C1 when there is none.
+ */
+static uint32_t processor_sleep_deepest_validated_at_or_below(uint32_t ceiling)
+{
+    for (uint32_t candidate = ceiling; candidate > PROCESSOR_SLEEP_DEPTH_C1; --candidate)
+        if (((processor_sleep_validated_depths >> candidate) & 1u) != 0u)
+            return candidate;
+    return PROCESSOR_SLEEP_DEPTH_C1;
+}
+
+/**
+ * @brief The depth a sleep until an interrupt enters: the active one while a probe is open or once validated, the
+ *        deepest validated below it otherwise.
+ */
+static uint32_t processor_sleep_entered_depth(void)
+{
+    if (processor_sleep_probing || ((processor_sleep_validated_depths >> processor_sleep_depth) & 1u) != 0u)
+        return processor_sleep_depth;
+    return processor_sleep_deepest_validated_at_or_below(processor_sleep_depth);
+}
+
+/**
+ * @brief The depths of @p ladder a sleep may enter without a probe: every one but its port reads.
+ */
+static uint32_t processor_sleep_depths_without_ports(const ProcessorSleepLadder_t *ladder)
+{
+    uint32_t validated = 1u;
+
+    for (uint32_t depth = PROCESSOR_SLEEP_DEPTH_C1 + 1u; depth < PROCESSOR_SLEEP_DEPTHS; ++depth)
+        if (((ladder->available >> depth) & 1u) != 0u && ladder->depths[depth].entry != PROCESSOR_SLEEP_ENTRY_PORT)
+            validated |= 1u << depth;
+    return validated;
+}
 
 /**
  * @brief The deepest available depth no deeper than @p ceiling, or C1 when there is none.
@@ -215,6 +257,8 @@ static void processor_sleep_adopt(const ProcessorSleepLadder_t *ladder)
 {
     processor_sleep_ladder = *ladder;
     processor_sleep_available_depths = ladder->available | 1u;
+    processor_sleep_validated_depths = processor_sleep_depths_without_ports(ladder);
+    processor_sleep_probing = false;
     processor_sleep_depth = PROCESSOR_SLEEP_DEPTH_C1;
     processor_sleep_refused = 0u;
 }
@@ -364,7 +408,8 @@ void kernel_processor_sleep_build_ladder(const ProcessorSleepLadderFacts_t *fact
     memset(out_ladder, 0, sizeof(*out_ladder));
     out_ladder->available = 1u;
     processor_sleep_ladder_c1(facts, &out_ladder->depths[PROCESSOR_SLEEP_DEPTH_C1]);
-    if (facts->intel && facts->monitor && (facts->usable_hints >> (PROCESSOR_SLEEP_HINT_C1 + 1u)) != 0u)
+    const bool deep_hints = facts->monitor && (facts->usable_hints >> (PROCESSOR_SLEEP_HINT_C1 + 1u)) != 0u;
+    if (deep_hints && facts->intel)
     {
         out_ladder->ports = PROCESSOR_SLEEP_PORTS_MONITOR_WAIT;
         processor_sleep_ladder_hints(facts, out_ladder);
@@ -373,6 +418,11 @@ void kernel_processor_sleep_build_ladder(const ProcessorSleepLadderFacts_t *fact
     out_ladder->ports = processor_sleep_ladder_ports_gate(facts);
     if (out_ladder->ports == PROCESSOR_SLEEP_PORTS_TAKEN)
         processor_sleep_ladder_ports(facts, out_ladder);
+    if (deep_hints && out_ladder->available == 1u)
+    {
+        out_ladder->ports = PROCESSOR_SLEEP_PORTS_MONITOR_WAIT;
+        processor_sleep_ladder_hints(facts, out_ladder);
+    }
 }
 
 void kernel_processor_sleep_read_ladder_facts(ProcessorSleepLadderFacts_t *out_facts)
@@ -458,7 +508,7 @@ ProcessorSleepMode_t processor_sleep_until_write(const volatile uint32_t *watche
 ProcessorSleepOutcome_t processor_sleep_until_interrupt(void)
 {
     return processor_sleep_masked(&processor_sleep_idle_line, NULL, NULL,
-                                  &processor_sleep_ladder.depths[processor_sleep_depth]);
+                                  &processor_sleep_ladder.depths[processor_sleep_entered_depth()]);
 }
 
 bool processor_sleep_unless(ProcessorSleepCondition_t done, void *context)
@@ -552,17 +602,37 @@ bool kernel_processor_sleep_refuse_depth(uint32_t depth)
         return false;
 
     processor_sleep_available_depths &= ~(1u << depth);
+    processor_sleep_validated_depths &= ~(1u << depth);
     ++processor_sleep_refused;
     if (processor_sleep_depth >= depth)
         processor_sleep_depth = processor_sleep_deepest_available_at_or_below(depth);
     return true;
 }
 
-uint32_t kernel_processor_sleep_refused_depths(void) { return processor_sleep_refused; }
+uint32_t kernel_processor_sleep_refused_depth_count(void) { return processor_sleep_refused; }
+
+uint32_t kernel_processor_sleep_depth_awaiting_probe(void)
+{
+    return ((processor_sleep_validated_depths >> processor_sleep_depth) & 1u) != 0u ? PROCESSOR_SLEEP_NO_DEPTH :
+                                                                                      processor_sleep_depth;
+}
+
+void kernel_processor_sleep_begin_probe(void) { processor_sleep_probing = true; }
+
+void kernel_processor_sleep_end_probe(bool stops)
+{
+    processor_sleep_probing = false;
+    if (kernel_processor_sleep_depth_awaiting_probe() == PROCESSOR_SLEEP_NO_DEPTH)
+        return;
+    if (stops)
+        processor_sleep_validated_depths |= 1u << processor_sleep_depth;
+    else
+        (void) kernel_processor_sleep_refuse_depth(processor_sleep_depth);
+}
 
 uint32_t kernel_processor_sleep_port_sleep_count(void) { return processor_sleep_port_sleeps; }
 
-uint32_t kernel_processor_sleep_depth(void) { return processor_sleep_depth; }
+uint32_t kernel_processor_sleep_depth(void) { return processor_sleep_entered_depth(); }
 
 uint32_t kernel_processor_sleep_clamped_count(void) { return processor_sleep_clamped; }
 

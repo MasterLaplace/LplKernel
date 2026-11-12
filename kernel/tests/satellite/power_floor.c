@@ -285,7 +285,7 @@ KERNEL_TEST(the_idle_loop_sleeps_under_its_ceiling)
     kernel_test_measure(test, "sleep_depths_available", kernel_processor_sleep_available_depths());
     kernel_test_measure(test, "sleep_depth_active", kernel_processor_sleep_depth());
     kernel_test_measure(test, "sleep_depth_clamped", kernel_processor_sleep_clamped_count());
-    kernel_test_measure(test, "sleep_depths_refused", kernel_processor_sleep_refused_depths());
+    kernel_test_measure(test, "sleep_depths_refused", kernel_processor_sleep_refused_depth_count());
     kernel_test_measure(test, "port_sleeps", kernel_processor_sleep_port_sleep_count());
     kernel_test_measure(test, "interrupt_break", kernel_processor_sleep_has_interrupt_break() ? 1u : 0u);
     kernel_test_measure(test, "scaling_available", report->scaling_available);

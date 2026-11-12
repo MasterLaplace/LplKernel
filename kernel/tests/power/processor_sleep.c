@@ -1,5 +1,7 @@
+#include <kernel/acpi/processor_idle.h>
 #include <kernel/cpu/apic_ipi.h>
 #include <kernel/cpu/apic_timer.h>
+#include <kernel/cpu/cpu_identity.h>
 #include <kernel/cpu/device_interrupt.h>
 #include <kernel/cpu/irq.h>
 #include <kernel/drivers/keyboard.h>
@@ -757,18 +759,24 @@ KERNEL_TEST(a_refused_port_depth_lowers_the_active_depth)
     processor_sleep_test_idle.states[2].type = 2u;
     kernel_processor_sleep_build_ladder(&processor_sleep_test_facts, &processor_sleep_test_ladder);
     kernel_processor_sleep_debug_adopt_ladder(&processor_sleep_test_ladder);
-    const uint32_t refused_before = kernel_processor_sleep_refused_depths();
+    const uint32_t refused_before = kernel_processor_sleep_refused_depth_count();
     const bool granted = kernel_processor_sleep_request_depth(PROCESSOR_SLEEP_DEPTH_DEEPEST);
 
-    kernel_test_check(test, !granted && kernel_processor_sleep_depth() == 2u, "the deepest asked for is depth 2");
+    kernel_test_check(test, !granted && kernel_processor_sleep_depth_awaiting_probe() == 2u,
+                      "the deepest asked for is depth 2, which awaits a probe");
+    kernel_test_check(test, kernel_processor_sleep_depth() == 0u, "so sleeps enter C1 meanwhile");
     kernel_test_check(test, kernel_processor_sleep_refuse_depth(2u), "depth 2 is refused");
-    kernel_test_check(test, kernel_processor_sleep_depth() == 1u && kernel_processor_sleep_available_depths() == 0x3u,
-                      "the active depth falls to 1, and 2 is no longer available");
+    kernel_test_check(
+        test, kernel_processor_sleep_depth_awaiting_probe() == 1u && kernel_processor_sleep_available_depths() == 0x3u,
+        "the active depth falls to 1, and 2 is no longer available");
     kernel_test_check(test, !kernel_processor_sleep_refuse_depth(2u), "nor refused twice");
     kernel_test_check(test, !kernel_processor_sleep_refuse_depth(0u), "C1 is never refused");
-    kernel_test_check(test, kernel_processor_sleep_refused_depths() == refused_before + 1u, "one refusal is counted");
-    kernel_test_check(test, kernel_processor_sleep_refuse_depth(1u) && kernel_processor_sleep_depth() == 0u,
-                      "refusing depth 1 leaves C1");
+    kernel_test_check(test, kernel_processor_sleep_refused_depth_count() == refused_before + 1u,
+                      "one refusal is counted");
+    kernel_test_check(test,
+                      kernel_processor_sleep_refuse_depth(1u) && kernel_processor_sleep_depth() == 0u &&
+                          kernel_processor_sleep_depth_awaiting_probe() == PROCESSOR_SLEEP_NO_DEPTH,
+                      "refusing depth 1 leaves C1, which awaits nothing");
 
     processor_sleep_test_facts.intel = true;
     processor_sleep_test_facts.usable_hints = 0x5u;
@@ -781,4 +789,146 @@ KERNEL_TEST(a_refused_port_depth_lowers_the_active_depth)
     kernel_processor_sleep_debug_adopt_ladder(&processor_sleep_test_ladder);
     kernel_test_check(test, !kernel_processor_sleep_refuse_depth(0u), "nor C1, whatever enters it");
     kernel_processor_sleep_initialize();
+}
+
+/**
+ * @brief A port depth is entered only once a probe validates it, a closed probe that found it does not stop refusing
+ *        it, and every adoption leaves it unvalidated again.
+ */
+KERNEL_TEST(a_port_depth_is_entered_only_once_a_probe_validates_it)
+{
+    processor_sleep_test_amd();
+    kernel_processor_sleep_build_ladder(&processor_sleep_test_facts, &processor_sleep_test_ladder);
+    kernel_processor_sleep_debug_adopt_ladder(&processor_sleep_test_ladder);
+    (void) kernel_processor_sleep_request_depth(1u);
+
+    kernel_test_check(test, kernel_processor_sleep_depth() == 0u, "an unprobed port depth is not entered");
+    kernel_processor_sleep_begin_probe();
+    kernel_test_check(test, kernel_processor_sleep_depth() == 1u, "a probe enters it");
+    kernel_processor_sleep_end_probe(true);
+    kernel_test_check(test,
+                      kernel_processor_sleep_depth() == 1u &&
+                          kernel_processor_sleep_depth_awaiting_probe() == PROCESSOR_SLEEP_NO_DEPTH,
+                      "one that found it stops validates it");
+
+    kernel_processor_sleep_debug_adopt_ladder(&processor_sleep_test_ladder);
+    (void) kernel_processor_sleep_request_depth(1u);
+    kernel_test_check(test, kernel_processor_sleep_depth_awaiting_probe() == 1u, "an adoption leaves it unvalidated");
+    kernel_processor_sleep_begin_probe();
+    kernel_processor_sleep_end_probe(false);
+    kernel_test_check(test, kernel_processor_sleep_depth() == 0u && kernel_processor_sleep_available_depths() == 0x1u,
+                      "and a probe that found it does not stop refuses it");
+    kernel_processor_sleep_initialize();
+}
+
+/** The port the made-up depth below reads: nothing decodes it on QEMU's q35, whose power management lies at 0x600. */
+#define PROCESSOR_SLEEP_TEST_UNDECODED_PORT 0x414u
+
+/**
+ * @brief Whether @p done's caller should stop waiting: never, so that a conditional sleep sleeps.
+ * @param context Unused.
+ * @return false.
+ */
+static bool processor_sleep_test_never_done(void *context)
+{
+    (void) context;
+    return false;
+}
+
+/**
+ * @brief Sleeps once until an interrupt this processor sends itself, interrupts masked, the vector pending.
+ * @param vector The vector.
+ * @return How the processor slept.
+ */
+static ProcessorSleepOutcome_t processor_sleep_test_sleep_on_a_pending(uint8_t vector)
+{
+    const uint32_t flags = asmutils_save_flags_and_disable_interrupts();
+    (void) advanced_pic_ipi_send_fixed(0u, vector, ADVANCED_PIC_IPI_SHORT_SELF);
+    const ProcessorSleepOutcome_t outcome = processor_sleep_until_interrupt();
+    asmutils_restore_flags(flags);
+    return outcome;
+}
+
+/**
+ * @brief Under a hypervisor, an unprobed port depth is never read, whatever stops the tick or not; once validated, a
+ *        sleep until an interrupt reads its port, interrupts masked, and handles the pending interrupt before it
+ *        returns; a watched sleep and a conditional one never read a port, whatever the active depth. Skipped on a
+ *        real processor, whose port may stop it.
+ */
+KERNEL_TEST(a_port_is_read_only_at_a_validated_depth_and_never_by_a_watched_or_conditional_sleep)
+{
+    static ProcessorSleepLadder_t ladder;
+    static volatile uint32_t word = 0u;
+    CpuIdentity_t identity;
+    uint8_t vector = 0u;
+    uint64_t quarter_tick = 0u;
+
+    cpu_identity_read(&identity);
+    if (!identity.hypervisor)
+    {
+        kernel_test_skip(test, "a real processor: the made-up port may well stop it");
+        return;
+    }
+    if (!processor_sleep_test_take_a_vector(test, &vector, &quarter_tick))
+        return;
+
+    ladder = *kernel_processor_sleep_ladder();
+    ladder.available |= 1u << 1u;
+    ladder.depths[1] = (ProcessorSleepDepth_t){.entry = PROCESSOR_SLEEP_ENTRY_PORT,
+                                               .port = PROCESSOR_SLEEP_TEST_UNDECODED_PORT,
+                                               .latency_published = true,
+                                               .latency = 18u};
+    kernel_processor_sleep_debug_adopt_ladder(&ladder);
+    (void) kernel_processor_sleep_request_depth(1u);
+    const uint32_t ports_before = kernel_processor_sleep_port_sleep_count();
+    const ProcessorSleepOutcome_t unprobed = processor_sleep_test_sleep_on_a_pending(vector);
+    const uint32_t ports_unprobed = kernel_processor_sleep_port_sleep_count() - ports_before;
+
+    kernel_processor_sleep_begin_probe();
+    kernel_processor_sleep_end_probe(true);
+    processor_sleep_test_runs = 0u;
+    const ProcessorSleepOutcome_t validated = processor_sleep_test_sleep_on_a_pending(vector);
+    const uint32_t runs_validated = processor_sleep_test_runs;
+    const uint32_t ports_validated = kernel_processor_sleep_port_sleep_count() - ports_before;
+
+    word = 0u;
+    processor_sleep_test_written = &word;
+    const uint32_t flags = asmutils_save_flags_and_disable_interrupts();
+    (void) advanced_pic_ipi_send_fixed(0u, vector, ADVANCED_PIC_IPI_SHORT_SELF);
+    const ProcessorSleepMode_t watched = processor_sleep_until_write(&word, 0u);
+    (void) advanced_pic_ipi_send_fixed(0u, vector, ADVANCED_PIC_IPI_SHORT_SELF);
+    (void) processor_sleep_unless(processor_sleep_test_never_done, NULL);
+    asmutils_restore_flags(flags);
+    processor_sleep_test_written = NULL;
+    const uint32_t ports_after = kernel_processor_sleep_port_sleep_count() - ports_before;
+    device_interrupt_release(vector);
+    kernel_processor_sleep_initialize();
+
+    kernel_test_check(test, unprobed.mode != PROCESSOR_SLEEP_PORT && ports_unprobed == 0u,
+                      "an unprobed port depth is not read");
+    kernel_test_check(test, validated.mode == PROCESSOR_SLEEP_PORT && ports_validated == 1u,
+                      "a validated one is, once");
+    kernel_test_check(test, validated.interrupted && runs_validated == 1u,
+                      "the interrupt pending at the read is handled before the sleep returns");
+    kernel_test_check(test, watched != PROCESSOR_SLEEP_PORT && watched != PROCESSOR_SLEEP_NONE && ports_after == 1u,
+                      "a watched sleep and a conditional one read no port");
+}
+
+/**
+ * @brief A processor not Intel's whose MWAIT reaches past C1 and whose slot gives no port depth keeps its hints, as it
+ *        did before ports were read.
+ */
+KERNEL_TEST(a_processor_not_intel_s_without_port_depths_keeps_its_deep_hints)
+{
+    processor_sleep_test_amd();
+    processor_sleep_test_facts.usable_hints = 0x3u;
+    processor_sleep_test_facts.counter_invariant = false;
+    kernel_processor_sleep_build_ladder(&processor_sleep_test_facts, &processor_sleep_test_ladder);
+
+    kernel_test_check(test,
+                      processor_sleep_test_ladder.available == 0x3u &&
+                          processor_sleep_test_ladder.ports == PROCESSOR_SLEEP_PORTS_MONITOR_WAIT,
+                      "a TSC that is not invariant refuses the ports, and the hints are the depths");
+    kernel_test_check(test, processor_sleep_test_ladder.depths[1].entry == PROCESSOR_SLEEP_ENTRY_MONITOR_WAIT,
+                      "depth 1 is MWAIT hint 1");
 }
