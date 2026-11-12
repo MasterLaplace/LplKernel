@@ -1,3 +1,4 @@
+#include <kernel/acpi/tables.h>
 #include <kernel/cpu/apic.h>
 #include <kernel/cpu/apic_ipi.h>
 #include <kernel/cpu/cpu_identity.h>
@@ -24,16 +25,17 @@ KERNEL_TEST_SUITE(processor_park, KERNEL_TEST_STAGE_BOOTED);
 static bool processor_park_test_judge_alike(ProcessorParkJudge_t *judge, uint32_t reads, bool requested,
                                             bool still_requested, uint64_t cycles)
 {
+    const ProcessorParkRead_t read = {.cycles = cycles, .requested = requested, .still_requested = still_requested};
     bool refused = false;
 
-    for (uint32_t read = 0u; read < reads; ++read)
-        refused |=
-            kernel_processor_park_judge(judge, requested, still_requested, cycles, PROCESSOR_PARK_TEST_QUICK_CYCLES);
+    for (uint32_t index = 0u; index < reads; ++index)
+        refused |= kernel_processor_park_judge(judge, &read, PROCESSOR_PARK_TEST_QUICK_CYCLES);
     return refused;
 }
 
 /**
- * @brief A ladder as an AMD processor builds it: C1 by MWAIT 0, then port 0x414 at depth 1 and 0x415 at depth 2.
+ * @brief A ladder as an AMD processor builds it: C1 by MWAIT 0, then port 0x414 at depth 1 and 0x415 at depth 2, the
+ *        latter, a C3, behind the bus-master check.
  */
 static ProcessorSleepLadder_t processor_park_test_amd_ladder(void)
 {
@@ -44,8 +46,9 @@ static ProcessorSleepLadder_t processor_park_test_amd_ladder(void)
     ladder.depths[0] = (ProcessorSleepDepth_t){.entry = PROCESSOR_SLEEP_ENTRY_MONITOR_WAIT};
     ladder.depths[1] =
         (ProcessorSleepDepth_t){.entry = PROCESSOR_SLEEP_ENTRY_PORT, .port = PROCESSOR_PARK_TEST_C2_PORT};
-    ladder.depths[2] =
-        (ProcessorSleepDepth_t){.entry = PROCESSOR_SLEEP_ENTRY_PORT, .port = PROCESSOR_PARK_TEST_C3_PORT};
+    ladder.depths[2] = (ProcessorSleepDepth_t){.entry = PROCESSOR_SLEEP_ENTRY_PORT,
+                                               .port = PROCESSOR_PARK_TEST_C3_PORT,
+                                               .bus_master_check = true};
     return ladder;
 }
 
@@ -77,8 +80,7 @@ KERNEL_TEST(seven_quick_reads_keep_a_port_depth_and_the_eighth_refuses_it)
                                                        PROCESSOR_PARK_TEST_QUICK_CYCLES - 1u),
                       "seven quick reads keep it");
     kernel_test_check(test,
-                      kernel_processor_park_judge(&judge, false, false, PROCESSOR_PARK_TEST_QUICK_CYCLES - 1u,
-                                                  PROCESSOR_PARK_TEST_QUICK_CYCLES),
+                      processor_park_test_judge_alike(&judge, 1u, false, false, PROCESSOR_PARK_TEST_QUICK_CYCLES - 1u),
                       "the eighth refuses it");
     kernel_test_check(test,
                       !processor_park_test_judge_alike(&judge, KERNEL_PROCESSOR_PARK_QUICK_LIMIT - 1u, false, false,
@@ -128,6 +130,22 @@ KERNEL_TEST(reads_whose_interrupt_is_never_taken_refuse_a_port_depth)
 }
 
 /**
+ * @brief A quick read after which BM_STS is set is no quick read, and starts the streak again: a bus master's request
+ *        ends a C3 once BM_RLD is set (ACPI 6.6 §8.1.4), so that bus-master traffic refuses no C3.
+ */
+KERNEL_TEST(a_quick_read_a_bus_master_ended_is_no_quick_read)
+{
+    ProcessorParkJudge_t judge = {0};
+    const ProcessorParkRead_t bus_mastered = {.cycles = 0u, .bus_mastered = true};
+    bool refused = processor_park_test_judge_alike(&judge, KERNEL_PROCESSOR_PARK_QUICK_LIMIT - 1u, false, false, 0u);
+
+    for (uint32_t index = 0u; index < 4u * KERNEL_PROCESSOR_PARK_QUICK_LIMIT; ++index)
+        refused |= kernel_processor_park_judge(&judge, &bus_mastered, PROCESSOR_PARK_TEST_QUICK_CYCLES);
+    refused |= processor_park_test_judge_alike(&judge, KERNEL_PROCESSOR_PARK_QUICK_LIMIT - 1u, false, false, 0u);
+    kernel_test_check(test, !refused, "reads a bus master ended neither count nor keep the streak");
+}
+
+/**
  * @brief Without a clock no read is quick, so the guard refuses nothing on time alone.
  */
 KERNEL_TEST(without_a_threshold_no_read_is_quick)
@@ -135,8 +153,10 @@ KERNEL_TEST(without_a_threshold_no_read_is_quick)
     ProcessorParkJudge_t judge = {0};
     bool refused = false;
 
-    for (uint32_t read = 0u; read < 4u * KERNEL_PROCESSOR_PARK_QUICK_LIMIT; ++read)
-        refused |= kernel_processor_park_judge(&judge, false, false, 0u, 0u);
+    const ProcessorParkRead_t read = {.cycles = 0u};
+
+    for (uint32_t index = 0u; index < 4u * KERNEL_PROCESSOR_PARK_QUICK_LIMIT; ++index)
+        refused |= kernel_processor_park_judge(&judge, &read, 0u);
     kernel_test_check(test, !refused, "a read of 0 cycles against a threshold of 0 is not quick");
 }
 
@@ -191,6 +211,36 @@ KERNEL_TEST(a_parked_processor_targets_the_deepest_depth_it_may_enter)
     kernel_test_check(test, kernel_processor_park_target(&gap, 0x4u, 0u, true) == 2u, "a gap below is skipped");
     kernel_test_check(test, kernel_processor_park_target(&amd, 0x40u, 0u, true) == 0u,
                       "an inherited bit past the ladder is no depth");
+}
+
+/**
+ * @brief A parked processor may enter every available depth that is not a port depth, and each port depth inherited
+ *        and not refused while the clock is known; the bus-master check demotes its C3 over those depths, to the C2
+ *        it may enter, to C1 when its C2 is refused.
+ */
+KERNEL_TEST(a_parked_processor_s_c3_is_demoted_over_the_depths_it_may_enter)
+{
+    const ProcessorSleepLadder_t amd = processor_park_test_amd_ladder();
+    const ProcessorSleepLadder_t intel = processor_park_test_intel_ladder();
+    const uint32_t active = ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_BUS_MASTER_STATUS;
+
+    kernel_test_check(test, kernel_processor_park_allowed_depths(&intel, 0u, 0u, false) == 0xBu,
+                      "Intel: every hint, no verdict and no clock needed");
+    kernel_test_check(test, kernel_processor_park_allowed_depths(&amd, 0x6u, 0u, true) == 0x7u,
+                      "AMD: C1, and both ports inherited");
+    kernel_test_check(test, kernel_processor_park_allowed_depths(&amd, 0x6u, 0x2u, true) == 0x5u,
+                      "C2 refused: C1 and C3");
+    kernel_test_check(test, kernel_processor_park_allowed_depths(&amd, 0x6u, 0u, false) == 0x1u, "no clock: C1 alone");
+    kernel_test_check(test, kernel_processor_park_allowed_depths(&amd, 0x46u, 0u, true) == 0x7u,
+                      "an inherited bit past the ladder adds nothing");
+    kernel_test_check(test,
+                      kernel_processor_sleep_depth_after_the_bus_master_check(
+                          &amd, kernel_processor_park_allowed_depths(&amd, 0x6u, 0u, true), 2u, active) == 1u,
+                      "bus masters active: the C2");
+    kernel_test_check(test,
+                      kernel_processor_sleep_depth_after_the_bus_master_check(
+                          &amd, kernel_processor_park_allowed_depths(&amd, 0x6u, 0x2u, true), 2u, active) == 0u,
+                      "with the C2 refused: C1");
 }
 
 /**

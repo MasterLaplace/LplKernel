@@ -57,7 +57,7 @@ readonly LADDER_PORTS_TYPE_3='[LPLTLM] sleep.depths available=0x00000007 ports=t
 [LPLTLM] sleep.depth depth=2 entry=port target=0x00000415 latency_us=350 bus_master_check=1'
 readonly LADDER_NO_COUNTER='[LPLTLM] sleep.depths available=0x00000001 ports=counter_may_stop ports_refused=0
 [LPLTLM] sleep.depth depth=0 latency_us=1 bus_master_check=0'
-readonly PARKED='[LPLTLM] park slot=1 depth=0 inherited=0x00000000 refused=0x00000000 turns=some port_reads=0 quick=0 stuck=0'
+readonly PARKED='[LPLTLM] park slot=1 depth=0 inherited=0x00000000 refused=0x00000000 turns=some port_reads=0 quick=0 stuck=0 bus_mastered=0 demotions=0'
 
 # Whether the serial log $1 holds all the boot is waited for: the C-states and the record after the ladder, then, when
 # BOOT_TESTS is set, the tests' totals.

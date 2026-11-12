@@ -75,7 +75,9 @@ extern "C" {
  *          - `inherited`: its port depths a validated verdict of this processor's probe names;
  *          - `refused`: those its guard refused;
  *          - `turns`: the sleeps its park entered; `port_reads`, and of them `quick` (returned quick, no interrupt
- *            requested) and `stuck` (an interrupt still requested once interrupts were enabled).
+ *            requested), `stuck` (an interrupt still requested once interrupts were enabled) and `bus_mastered` (BM_STS
+ *            set after a read with the bus-master check);
+ *          - `demotions`: the turns the bus-master check demoted from a C3.
  *
  *          Called once the local timer is set up, since `usable` and the ladder read whether it always runs.
  *

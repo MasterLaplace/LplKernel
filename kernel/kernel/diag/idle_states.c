@@ -93,6 +93,8 @@ static void idle_states_write_park(Serial_t *serial, uint32_t slot, const Proces
     kernel_telemetry_write_unsigned("port_reads", record->port_reads);
     kernel_telemetry_write_unsigned("quick", record->quick);
     kernel_telemetry_write_unsigned("stuck", record->stuck);
+    kernel_telemetry_write_unsigned("bus_mastered", record->bus_mastered);
+    kernel_telemetry_write_unsigned("demotions", record->demotions);
     kernel_telemetry_end_record();
 }
 
