@@ -14,8 +14,10 @@ machine-dependent keys, `monitor`, `enumerated` and `usable`, are printed and no
 With --ports, the table is tools/acpi/boot-cst-ports.asl, whose processors list AMD's C1, C2 and C3, the last two as
 port reads. Then `cstates` publishes hint 0, `cstate` gives it 1 us, and the `[LPLTLM] sleep.depths` and
 `[LPLTLM] sleep.depth` records give the ladder the `[LPLTLM] machine` record calls for: where the processor offers no
-invariant TSC, C1 alone and `ports=counter_may_stop`; where it does, C1 then port 0x414 of 18 us, the C3 refused.
-Depth 0's entry, HLT or MWAIT 0, is printed and not compared. The accelerator arguments then default to
+invariant TSC, C1 alone and `ports=counter_may_stop`; where it does, C1 then port 0x414 of 18 us, then, where
+`sleep.depths` says the processor enters a type 3 behind the bus-master check (`type_3=1`), port 0x415 of 350 us with
+the check, and the C3 refused otherwise. Depth 0's entry, HLT or MWAIT 0, and `type_3`, which the vendor rule decides,
+are printed and not compared. The accelerator arguments then default to
 `-accel kvm -cpu host,+invtsc` where /dev/kvm is writable, `-accel tcg -cpu max` otherwise, whose TCG offers no
 invariant TSC.
 
@@ -47,10 +49,14 @@ readonly EXPECTED='[LPLTLM] cstate hint=0 latency_us=1 residency_us=1 residency_
 [LPLTLM] cstate hint=3 latency_us=10 residency_us=10 residency_source=rule'
 readonly EXPECTED_PORTS='[LPLTLM] cstate hint=0 latency_us=1 residency_us=1 residency_source=rule'
 readonly LADDER_PORTS='[LPLTLM] sleep.depths available=0x00000003 ports=taken ports_refused=1
-[LPLTLM] sleep.depth depth=0 latency_us=1
-[LPLTLM] sleep.depth depth=1 entry=port target=0x00000414 latency_us=18'
+[LPLTLM] sleep.depth depth=0 latency_us=1 bus_master_check=0
+[LPLTLM] sleep.depth depth=1 entry=port target=0x00000414 latency_us=18 bus_master_check=0'
+readonly LADDER_PORTS_TYPE_3='[LPLTLM] sleep.depths available=0x00000007 ports=taken ports_refused=0
+[LPLTLM] sleep.depth depth=0 latency_us=1 bus_master_check=0
+[LPLTLM] sleep.depth depth=1 entry=port target=0x00000414 latency_us=18 bus_master_check=0
+[LPLTLM] sleep.depth depth=2 entry=port target=0x00000415 latency_us=350 bus_master_check=1'
 readonly LADDER_NO_COUNTER='[LPLTLM] sleep.depths available=0x00000001 ports=counter_may_stop ports_refused=0
-[LPLTLM] sleep.depth depth=0 latency_us=1'
+[LPLTLM] sleep.depth depth=0 latency_us=1 bus_master_check=0'
 readonly PARKED='[LPLTLM] park slot=1 depth=0 inherited=0x00000000 refused=0x00000000 turns=some port_reads=0 quick=0 stuck=0'
 
 # Whether the serial log $1 holds all the boot is waited for: the C-states and the record after the ladder, then, when
@@ -78,9 +84,10 @@ boot() {
     wait "$qemu" 2>/dev/null
 }
 
-# The ladder records of the serial log $1, the entry and the target of depth 0 left out.
+# The ladder records of the serial log $1, the entry and the target of depth 0 and the processor's type-3 rule left out.
 ladder() {
-    grep -a '^\[LPLTLM\] sleep\.depth' "$1" | sed -E 's/^(\[LPLTLM\] sleep\.depth depth=0) entry=[a-z]+ target=0x[0-9A-F]+/\1/'
+    grep -a '^\[LPLTLM\] sleep\.depth' "$1" |
+        sed -E 's/^(\[LPLTLM\] sleep\.depth depth=0) entry=[a-z]+ target=0x[0-9A-F]+/\1/; s/ type_3=[01]$//'
 }
 
 # The park records of the serial log $1, their entry and target, which depend on the machine, left out, and their turns
@@ -135,6 +142,7 @@ main() {
     fi
     if [[ $ports -eq 1 ]]; then
         wanted="$LADDER_PORTS"
+        grep -aq '^\[LPLTLM\] sleep\.depths .* type_3=1$' "$work/serial.log" && wanted="$LADDER_PORTS_TYPE_3"
         [[ " $machine " == *" tsc_invariant=0 "* ]] && wanted="$LADDER_NO_COUNTER"
         ladder "$work/serial.log"
         if [[ "$(ladder "$work/serial.log")" != "$wanted" ]]; then

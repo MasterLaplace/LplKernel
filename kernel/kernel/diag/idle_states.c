@@ -58,6 +58,7 @@ static void idle_states_write_depth(Serial_t *serial, uint32_t depth, const Proc
         kernel_telemetry_write_unsigned("latency_us", entered->latency);
     else
         kernel_telemetry_write_text("latency_us", "none");
+    kernel_telemetry_write_unsigned("bus_master_check", entered->bus_master_check ? 1u : 0u);
     kernel_telemetry_end_record();
 }
 
@@ -72,6 +73,7 @@ static void idle_states_write_ladder(Serial_t *serial)
     kernel_telemetry_write_hexadecimal("available", ladder.available);
     kernel_telemetry_write_text("ports", kernel_processor_sleep_ports_name(ladder.ports));
     kernel_telemetry_write_unsigned("ports_refused", ladder.ports_refused);
+    kernel_telemetry_write_unsigned("type_3", facts.bus_master_check ? 1u : 0u);
     kernel_telemetry_end_record();
     for (uint32_t depth = 0u; depth < PROCESSOR_SLEEP_DEPTHS; ++depth)
         if (((ladder.available >> depth) & 1u) != 0u)

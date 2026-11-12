@@ -1,4 +1,5 @@
 #include <kernel/acpi/processor_idle.h>
+#include <kernel/acpi/tables.h>
 #include <kernel/cpu/apic_ipi.h>
 #include <kernel/cpu/apic_timer.h>
 #include <kernel/cpu/cpu_identity.h>
@@ -519,7 +520,8 @@ KERNEL_TEST(without_an_always_running_timer_no_hint_goes_past_c1)
 static bool processor_sleep_test_depths_equal(const ProcessorSleepDepth_t *left, const ProcessorSleepDepth_t *right)
 {
     return left->entry == right->entry && left->hint == right->hint && left->port == right->port &&
-           left->latency_published == right->latency_published && left->latency == right->latency;
+           left->latency_published == right->latency_published && left->latency == right->latency &&
+           left->bus_master_check == right->bus_master_check;
 }
 
 /**
@@ -528,7 +530,9 @@ static bool processor_sleep_test_depths_equal(const ProcessorSleepDepth_t *left,
 static bool processor_sleep_test_ladders_equal(const ProcessorSleepLadder_t *left, const ProcessorSleepLadder_t *right)
 {
     if (left->available != right->available || left->ports != right->ports ||
-        left->ports_refused != right->ports_refused)
+        left->ports_refused != right->ports_refused ||
+        left->bus_master_status_ports[0] != right->bus_master_status_ports[0] ||
+        left->bus_master_status_ports[1] != right->bus_master_status_ports[1])
         return false;
     for (uint32_t depth = 0u; depth < PROCESSOR_SLEEP_DEPTHS; ++depth)
         if (!processor_sleep_test_depths_equal(&left->depths[depth], &right->depths[depth]))
@@ -631,7 +635,8 @@ static bool processor_sleep_test_depth_is(uint32_t depth, uint32_t entry, uint32
 
 /**
  * @brief An AMD processor, whose MWAIT reaches C1 alone, sleeps at C1 by MWAIT 0, then at its slot's C2 by a read of
- *        port 0x414 with its 18 us; its C3 is refused (#839) and counted.
+ *        port 0x414 with its 18 us; its C3 is refused and counted where the facts say it does not enter one behind
+ *        the bus-master check.
  */
 KERNEL_TEST(an_amd_processor_s_ladder_is_c1_then_the_port_states_of_its_slot)
 {
@@ -1062,4 +1067,201 @@ KERNEL_TEST(the_timed_read_reads_its_port_between_two_fenced_counter_reads)
     kernel_test_measure(test, "read_ns_mean",
                         (uint32_t) (kernel_tickless_nanoseconds_from_cycles(total) / PROCESSOR_SLEEP_TEST_TIMED_READS));
     kernel_test_measure(test, "read_ns_longest", (uint32_t) kernel_tickless_nanoseconds_from_cycles(longest));
+}
+
+/**
+ * @brief A processor identity of @p vendor, family @p family, model @p model and stepping @p stepping.
+ */
+static CpuIdentity_t processor_sleep_test_identity(const char *vendor, uint32_t family, uint32_t model,
+                                                   uint32_t stepping)
+{
+    CpuIdentity_t identity;
+
+    memset(&identity, 0, sizeof(identity));
+    memcpy(identity.vendor, vendor, CPU_IDENTITY_SIGNATURE_SIZE);
+    identity.family = family;
+    identity.model = model;
+    identity.stepping = stepping;
+    return identity;
+}
+
+/**
+ * @brief Whether the vendor rule says a processor of @p vendor, @p family, @p model and @p stepping enters a type 3
+ *        behind the bus-master check.
+ */
+static bool processor_sleep_test_checks_bus_masters(const char *vendor, uint32_t family, uint32_t model,
+                                                    uint32_t stepping)
+{
+    const CpuIdentity_t identity = processor_sleep_test_identity(vendor, family, model, stepping);
+
+    return kernel_processor_sleep_enters_type_3_behind_the_bus_master_check(&identity);
+}
+
+/**
+ * @brief The processors that enter a type 3 behind the bus-master check alone are those Linux sets bm_check and
+ *        clears bm_control for (v6.12 `acpi_processor_power_init_bm_check`): Intel from family 0x10 or family 6 model
+ *        0x0F, Centaur past family 6 or family 6 model 0x0F stepping 0x0E, Zhaoxin, AMD from family 0x17; each
+ *        boundary is checked on both sides, and Hygon and an unknown vendor are not.
+ */
+KERNEL_TEST(the_vendor_rule_names_the_processors_that_enter_type_3_behind_the_bus_master_check)
+{
+    kernel_test_check(test, !processor_sleep_test_checks_bus_masters("GenuineIntel", 6u, 0x0Eu, 0u),
+                      "Intel 6/0x0E, before Core 2, does not");
+    kernel_test_check(test, processor_sleep_test_checks_bus_masters("GenuineIntel", 6u, 0x0Fu, 0u),
+                      "Intel 6/0x0F does");
+    kernel_test_check(test, processor_sleep_test_checks_bus_masters("GenuineIntel", 6u, 170u, 4u),
+                      "Intel 6/170, the bench's, does");
+    kernel_test_check(test, !processor_sleep_test_checks_bus_masters("GenuineIntel", 0x0Fu, 0x06u, 0u),
+                      "Intel family 0x0F, NetBurst, does not");
+    kernel_test_check(test, processor_sleep_test_checks_bus_masters("GenuineIntel", 0x10u, 0u, 0u),
+                      "Intel family 0x10 does");
+    kernel_test_check(test, !processor_sleep_test_checks_bus_masters("GenuineIntel", 5u, 0x0Fu, 0u),
+                      "Intel family 5 does not, whatever its model");
+    kernel_test_check(test, !processor_sleep_test_checks_bus_masters("AuthenticAMD", 0x16u, 0u, 0u),
+                      "AMD family 0x16 does not");
+    kernel_test_check(test, processor_sleep_test_checks_bus_masters("AuthenticAMD", 0x17u, 0u, 0u),
+                      "AMD family 0x17, Zen, does");
+    kernel_test_check(test, processor_sleep_test_checks_bus_masters("AuthenticAMD", 0x19u, 0x61u, 2u),
+                      "AMD family 0x19 does");
+    kernel_test_check(test, !processor_sleep_test_checks_bus_masters("AuthenticAMD", 6u, 6u, 3u),
+                      "TCG's AMD 6/6 does not");
+    kernel_test_check(test, !processor_sleep_test_checks_bus_masters("HygonGenuine", 0x18u, 0u, 0u),
+                      "Hygon 0x18 does not: Linux tests AMD's vendor alone");
+    kernel_test_check(test, !processor_sleep_test_checks_bus_masters("CentaurHauls", 6u, 0x0Fu, 0x0Du),
+                      "Centaur 6/0x0F stepping 0x0D does not");
+    kernel_test_check(test, processor_sleep_test_checks_bus_masters("CentaurHauls", 6u, 0x0Fu, 0x0Eu),
+                      "Centaur 6/0x0F stepping 0x0E does");
+    kernel_test_check(test, !processor_sleep_test_checks_bus_masters("CentaurHauls", 6u, 0x0Eu, 0x0Fu),
+                      "Centaur 6/0x0E does not, whatever its stepping");
+    kernel_test_check(test, !processor_sleep_test_checks_bus_masters("CentaurHauls", 6u, 0x10u, 0x0Fu),
+                      "nor Centaur 6/0x10: Linux names model 0x0F alone");
+    kernel_test_check(test, processor_sleep_test_checks_bus_masters("CentaurHauls", 7u, 0u, 0u),
+                      "Centaur family 7 does");
+    kernel_test_check(test, processor_sleep_test_checks_bus_masters("  Shanghai  ", 6u, 0x0Fu, 0u), "Zhaoxin does");
+    kernel_test_check(test, !processor_sleep_test_checks_bus_masters("GenuineIotel", 6u, 0x0Fu, 0u),
+                      "a vendor the rule does not name does not");
+}
+
+/**
+ * @brief A normalised FADT whose PM1a event block, at 0x800, is 4 bytes and whose PM1a control block is at 0x804, as
+ *        AMD's FCH gives them.
+ */
+static void processor_sleep_test_fadt(AdvancedConfigurationAndPowerInterfaceFixedDescription_t *fadt)
+{
+    memset(fadt, 0, sizeof(*fadt));
+    fadt->present = true;
+    fadt->power_management_event_blocks[0] =
+        (AdvancedConfigurationAndPowerInterfaceGenericAddress_t){.address = 0x800u,
+                                                                 .space = PROCESSOR_SLEEP_TEST_SYSTEM_IO,
+                                                                 .bit_width = 32u};
+    fadt->power_management_control_blocks[0] =
+        (AdvancedConfigurationAndPowerInterfaceGenericAddress_t){.address = 0x804u,
+                                                                 .space = PROCESSOR_SLEEP_TEST_SYSTEM_IO,
+                                                                 .bit_width = 16u};
+}
+
+/**
+ * @brief A Zen processor, which enters a type 3 behind the bus-master check, sleeps at its slot's C3 too, a read of
+ *        port 0x415 with its 350 us, at depth 2; that depth alone has the check, and the ladder names PM1a's status
+ *        register at 0x800, and no PM1b's. Without a PM1 status register in the FADT, the C3 is refused.
+ */
+KERNEL_TEST(a_zen_processor_s_ladder_takes_its_c3_behind_the_bus_master_check)
+{
+    static AdvancedConfigurationAndPowerInterfaceFixedDescription_t fadt;
+    const ProcessorSleepDepth_t c3 = {.entry = PROCESSOR_SLEEP_ENTRY_PORT,
+                                      .port = 0x415u,
+                                      .latency_published = true,
+                                      .latency = 350u,
+                                      .bus_master_check = true};
+
+    processor_sleep_test_amd();
+    processor_sleep_test_fadt(&fadt);
+    processor_sleep_test_facts.fadt = &fadt;
+    processor_sleep_test_facts.bus_master_check = true;
+    kernel_processor_sleep_build_ladder(&processor_sleep_test_facts, &processor_sleep_test_ladder);
+
+    kernel_test_check(test, processor_sleep_test_ladder.available == 0x7u, "three depths: C1, C2 and C3");
+    kernel_test_check(test, processor_sleep_test_depth_is(1u, PROCESSOR_SLEEP_ENTRY_PORT, 0u, 0x414u, 18u),
+                      "depth 1 reads port 0x414, 18 us, without the check");
+    kernel_test_check(test, processor_sleep_test_depths_equal(&processor_sleep_test_ladder.depths[2], &c3),
+                      "depth 2 reads port 0x415, 350 us, behind the check");
+    kernel_test_check(test, !processor_sleep_test_ladder.depths[0].bus_master_check, "C1 has no check");
+    kernel_test_check(test,
+                      processor_sleep_test_ladder.bus_master_status_ports[0] == 0x800u &&
+                          processor_sleep_test_ladder.bus_master_status_ports[1] == 0u,
+                      "the check reads PM1a_STS at 0x800, and no PM1b_STS");
+    kernel_test_check(test, processor_sleep_test_ladder.ports_refused == 0u, "nothing is refused");
+
+    fadt.power_management_event_blocks[0].bit_width = 16u;
+    kernel_processor_sleep_build_ladder(&processor_sleep_test_facts, &processor_sleep_test_ladder);
+    kernel_test_check(test,
+                      processor_sleep_test_ladder.available == 0x3u &&
+                          processor_sleep_test_ladder.ports_refused == 1u &&
+                          processor_sleep_test_ladder.bus_master_status_ports[0] == 0u,
+                      "a 2-byte PM1a event block refuses the C3, and names no status register");
+}
+
+/**
+ * @brief An initialisation sets BM_RLD in PM1 control where its ladder holds a depth with the bus-master check, as the
+ *        port fixture's C3 gives it on a processor the vendor rule names, and says so; elsewhere it writes nothing and
+ *        says it was not needed.
+ */
+KERNEL_TEST(an_initialisation_sets_bus_master_reload_where_its_ladder_checks_bus_masters)
+{
+    uint16_t control[2];
+    bool checks = false;
+
+    kernel_processor_sleep_initialize();
+    const ProcessorSleepLadder_t *ladder = kernel_processor_sleep_ladder();
+    for (uint32_t depth = 0u; depth < PROCESSOR_SLEEP_DEPTHS; ++depth)
+        checks = checks || (((ladder->available >> depth) & 1u) != 0u && ladder->depths[depth].bus_master_check);
+    advanced_configuration_and_power_interface_power_management_control_ports(
+        &advanced_configuration_and_power_interface_directory()->fixed_description, control);
+
+    kernel_test_measure(test, "checks_bus_masters", checks ? 1u : 0u);
+    kernel_test_measure(test, "bus_master_reload", kernel_processor_sleep_bus_master_reload());
+    if (!checks)
+    {
+        kernel_test_check(test,
+                          kernel_processor_sleep_bus_master_reload() == PROCESSOR_SLEEP_BUS_MASTER_RELOAD_UNNEEDED,
+                          "a ladder without the check needs no BM_RLD");
+        return;
+    }
+    kernel_test_check(test, kernel_processor_sleep_bus_master_reload() == PROCESSOR_SLEEP_BUS_MASTER_RELOAD_SET,
+                      "a ladder with the check sets BM_RLD");
+    kernel_test_check(test,
+                      control[0] != 0u && (asmutils_input_word(control[0]) &
+                                           ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_BUS_MASTER_RELOAD) != 0u,
+                      "PM1a_CNT reads BM_RLD set");
+}
+
+/**
+ * @brief Whether @p name reads @p expected, no more and no less.
+ */
+static bool processor_sleep_test_named(const char *name, const char *expected)
+{
+    return strlen(name) == strlen(expected) && memcmp(name, expected, strlen(expected)) == 0;
+}
+
+/**
+ * @brief The names the telemetry gives what an initialisation did of BM_RLD.
+ */
+KERNEL_TEST(each_bus_master_reload_has_its_name)
+{
+    kernel_test_check(
+        test,
+        processor_sleep_test_named(
+            kernel_processor_sleep_bus_master_reload_name(PROCESSOR_SLEEP_BUS_MASTER_RELOAD_UNNEEDED), "unneeded"),
+        "unneeded");
+    kernel_test_check(test,
+                      processor_sleep_test_named(
+                          kernel_processor_sleep_bus_master_reload_name(PROCESSOR_SLEEP_BUS_MASTER_RELOAD_SET), "set"),
+                      "set");
+    kernel_test_check(
+        test,
+        processor_sleep_test_named(
+            kernel_processor_sleep_bus_master_reload_name(PROCESSOR_SLEEP_BUS_MASTER_RELOAD_UNWRITTEN), "unwritten"),
+        "unwritten");
+    kernel_test_check(test, processor_sleep_test_named(kernel_processor_sleep_bus_master_reload_name(3u), "unknown"),
+                      "anything else is unknown");
 }

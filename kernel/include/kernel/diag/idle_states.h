@@ -58,13 +58,16 @@ extern "C" {
  *          - `ports`: whether the slot's port states are the depths past C1, `taken`, or why not: `monitor_wait`
  *            (MWAIT reaches past C1, and its hints are the depths), `no_slot`, `timer_may_stop`, `counter_may_stop` or
  *            `not_handed_over`;
- *          - `ports_refused`: the port states of type 2 or 3 the slot lists that are no depth, when they are taken.
+ *          - `ports_refused`: the port states of type 2 or 3 the slot lists that are no depth, when they are taken;
+ *          - `type_3`: 1 where the processor enters a type 3 behind the bus-master check alone
+ *            (kernel_processor_sleep_enters_type_3_behind_the_bus_master_check), 0 otherwise.
  *
  *          Keys of `sleep.depth`:
  *          - `depth`;
  *          - `entry`: `halt`, `mwait` or `port`;
  *          - `target`: the MWAIT hint, the port read, or 0 for HLT;
- *          - `latency_us`: the latency _CST publishes for it, `none` where it publishes none.
+ *          - `latency_us`: the latency _CST publishes for it, `none` where it publishes none;
+ *          - `bus_master_check`: 1 where a sleep reads BM_STS before entering it, a port state of type 3, 0 otherwise.
  *
  *          Then a `park` record per online application processor, what its park did so far
  *          (kernel/power/processor_park.h):

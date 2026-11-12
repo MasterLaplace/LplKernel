@@ -1,5 +1,6 @@
 #include <kernel/power/processor_sleep.h>
 
+#include <kernel/acpi/host.h>
 #include <kernel/acpi/initialization.h>
 #include <kernel/acpi/processor_idle.h>
 #include <kernel/acpi/tables.h>
@@ -35,6 +36,17 @@
 /** CPUID leaf 5, ECX bit 1: MWAIT may be given the break-on-masked-interrupt extension. */
 #define PROCESSOR_SLEEP_CPUID_INTERRUPT_BREAK_BIT (1u << 1)
 
+/**
+ * @name The families and models Linux's vendor rule for C3 names (v6.12 `acpi_processor_power_init_bm_check`)
+ * @{
+ */
+#define PROCESSOR_SLEEP_FAMILY_6             6u    /**< The P6 family, Intel's and Centaur's. */
+#define PROCESSOR_SLEEP_FAMILY_NETBURST      0x0Fu /**< Intel's NetBurst family, past which every family is. */
+#define PROCESSOR_SLEEP_MODEL_CORE_2_OR_NANO 0x0Fu /**< Family 6 model 0x0F: Intel's Core 2, Centaur's Nano. */
+#define PROCESSOR_SLEEP_STEPPING_NANO        0x0Eu /**< Centaur's first stepping of it the rule names. */
+#define PROCESSOR_SLEEP_FAMILY_ZEN           0x17u /**< AMD's Zen family, from which every family is. */
+/** @} */
+
 static bool processor_sleep_monitor_available = false;
 static uint32_t processor_sleep_monitor_line = 0u;
 static uint32_t processor_sleep_sleeps = 0u;
@@ -53,6 +65,7 @@ static uint32_t processor_sleep_refused = 0u;
 static uint32_t processor_sleep_port_sleeps = 0u;
 static bool processor_sleep_interrupt_break = false;
 static volatile uint32_t processor_sleep_published_duty = KERNEL_PROCESSOR_SLEEP_DUTY_UNMEASURED;
+static uint32_t processor_sleep_bus_master_reload = PROCESSOR_SLEEP_BUS_MASTER_RELOAD_UNNEEDED;
 
 /**
  * @brief Charges the time since the last wake-up to the awake total.
@@ -187,11 +200,19 @@ static uint32_t processor_sleep_deepest_available_at_or_below(uint32_t ceiling)
 }
 
 /**
+ * @brief Whether the processor's vendor string is @p vendor, of CPU_IDENTITY_SIGNATURE_SIZE bytes with its terminator.
+ */
+static bool processor_sleep_vendor_is(const CpuIdentity_t *identity, const char *vendor)
+{
+    return memcmp(identity->vendor, vendor, CPU_IDENTITY_SIGNATURE_SIZE) == 0;
+}
+
+/**
  * @brief Whether the processor's vendor string is Intel's.
  */
 static bool processor_sleep_is_intel(const CpuIdentity_t *identity)
 {
-    return memcmp(identity->vendor, "GenuineIntel", sizeof("GenuineIntel")) == 0;
+    return processor_sleep_vendor_is(identity, "GenuineIntel");
 }
 
 /**
@@ -249,7 +270,10 @@ static void processor_sleep_ladder_ports(const ProcessorSleepLadderFacts_t *fact
 {
     AdvancedConfigurationAndPowerInterfaceIdlePorts_t ports;
 
-    advanced_configuration_and_power_interface_processor_idle_ports(facts->idle, facts->fadt, &ports);
+    bool checks_bus_masters = false;
+
+    advanced_configuration_and_power_interface_processor_idle_ports(facts->idle, facts->fadt, facts->bus_master_check,
+                                                                    &ports);
     out_ladder->ports_refused = ports.refused;
     for (uint32_t index = 0u; index < ports.count; ++index)
     {
@@ -260,7 +284,44 @@ static void processor_sleep_ladder_ports(const ProcessorSleepLadderFacts_t *fact
         depth->port = ports.ports[index].port;
         depth->latency_published = true;
         depth->latency = ports.ports[index].latency;
+        depth->bus_master_check =
+            ports.ports[index].type == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_PROCESSOR_IDLE_TYPE_3;
+        checks_bus_masters = checks_bus_masters || depth->bus_master_check;
     }
+    if (checks_bus_masters)
+        (void) advanced_configuration_and_power_interface_power_management_status_ports(
+            facts->fadt, out_ladder->bus_master_status_ports);
+}
+
+/**
+ * @brief Whether a depth @p ladder holds has the bus-master check.
+ */
+static bool processor_sleep_ladder_checks_bus_masters(const ProcessorSleepLadder_t *ladder)
+{
+    for (uint32_t depth = PROCESSOR_SLEEP_DEPTH_C1 + 1u; depth < PROCESSOR_SLEEP_DEPTHS; ++depth)
+        if (((ladder->available >> depth) & 1u) != 0u && ladder->depths[depth].bus_master_check)
+            return true;
+    return false;
+}
+
+/**
+ * @brief Sets BM_RLD in @p fadt's PM1 control registers where @p ladder holds a depth with the bus-master check.
+ * @return A ProcessorSleepBusMasterReload_t.
+ */
+static uint32_t
+processor_sleep_set_bus_master_reload(const ProcessorSleepLadder_t *ladder,
+                                      const AdvancedConfigurationAndPowerInterfaceFixedDescription_t *fadt)
+{
+    uint16_t control[2];
+
+    if (!processor_sleep_ladder_checks_bus_masters(ladder))
+        return PROCESSOR_SLEEP_BUS_MASTER_RELOAD_UNNEEDED;
+    advanced_configuration_and_power_interface_power_management_control_ports(fadt, control);
+    return advanced_configuration_and_power_interface_set_power_management_control_bits(
+               &advanced_configuration_and_power_interface_machine_host, control,
+               ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_BUS_MASTER_RELOAD) ?
+               PROCESSOR_SLEEP_BUS_MASTER_RELOAD_SET :
+               PROCESSOR_SLEEP_BUS_MASTER_RELOAD_UNWRITTEN;
 }
 
 /**
@@ -424,6 +485,32 @@ void kernel_processor_sleep_initialize(void)
     kernel_processor_sleep_read_ladder_facts(&facts);
     kernel_processor_sleep_build_ladder(&facts, &ladder);
     processor_sleep_adopt(&ladder);
+    processor_sleep_bus_master_reload = processor_sleep_set_bus_master_reload(&ladder, facts.fadt);
+}
+
+bool kernel_processor_sleep_enters_type_3_behind_the_bus_master_check(const CpuIdentity_t *identity)
+{
+    const bool family_6 = identity->family == PROCESSOR_SLEEP_FAMILY_6;
+
+    if (processor_sleep_is_intel(identity))
+        return identity->family > PROCESSOR_SLEEP_FAMILY_NETBURST ||
+               (family_6 && identity->model >= PROCESSOR_SLEEP_MODEL_CORE_2_OR_NANO);
+    if (processor_sleep_vendor_is(identity, "CentaurHauls"))
+        return identity->family > PROCESSOR_SLEEP_FAMILY_6 ||
+               (family_6 && identity->model == PROCESSOR_SLEEP_MODEL_CORE_2_OR_NANO &&
+                identity->stepping >= PROCESSOR_SLEEP_STEPPING_NANO);
+    if (processor_sleep_vendor_is(identity, "AuthenticAMD"))
+        return identity->family >= PROCESSOR_SLEEP_FAMILY_ZEN;
+    return processor_sleep_vendor_is(identity, "  Shanghai  ");
+}
+
+uint32_t kernel_processor_sleep_bus_master_reload(void) { return processor_sleep_bus_master_reload; }
+
+const char *kernel_processor_sleep_bus_master_reload_name(uint32_t reload)
+{
+    static const char *const names[] = {"unneeded", "set", "unwritten"};
+
+    return reload < sizeof(names) / sizeof(names[0]) ? names[reload] : "unknown";
 }
 
 void kernel_processor_sleep_build_ladder(const ProcessorSleepLadderFacts_t *facts, ProcessorSleepLadder_t *out_ladder)
@@ -459,6 +546,7 @@ void kernel_processor_sleep_read_ladder_facts(ProcessorSleepLadderFacts_t *out_f
     cpu_identity_read(&identity);
     out_facts->monitor = processor_sleep_read_monitor(&line, &ecx, &edx);
     out_facts->intel = processor_sleep_is_intel(&identity);
+    out_facts->bus_master_check = kernel_processor_sleep_enters_type_3_behind_the_bus_master_check(&identity);
     out_facts->timer_always_runs = advanced_pic_timer_backend_always_runs() != 0u;
     out_facts->counter_invariant = advanced_pic_timer_backend_has_invariant_timestamp_counter() != 0u;
     out_facts->usable_hints = out_facts->monitor ?
