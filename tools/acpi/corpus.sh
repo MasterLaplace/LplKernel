@@ -782,11 +782,12 @@ records_cost_check() {
 # the kernel's code: the processor objects and their CPU slots from acpiexec's namespace and the decoded MADT, their
 # states from the _CST acpiexec evaluates after the same handshake (specification §8.6), each hint's latency and
 # residency from those states by Linux's rules (tools/acpi/oracles/linux_idle_hints.py), and the port states they give a
-# processor whose MWAIT reaches no state past C1 (tools/acpi/oracles/linux_idle_ports.py).
+# processor whose MWAIT reaches no state past C1 and that enters C3 behind the bus-master check
+# (tools/acpi/oracles/linux_idle_ports.py).
 idle_check() {
     [[ -x "$ACPICA_BIN/acpiexec" ]] || { echo "idle: no acpiexec, run fetch acpica first" >&2; exit 1; }
     (cd "$ROOT" && xmake build -q test-acpi)
-    local number=0 agree=0 none=0 stopped=0 slots=0 states=0 hints=0 mwait=0 fixed=0 ports=0 given=0 subject ours
+    local number=0 agree=0 none=0 stopped=0 slots=0 states=0 hints=0 mwait=0 fixed=0 ports=0 given=0 given_type_3=0 subject ours
     local theirs madt fadt tables
     ours="$(mktemp)" theirs="$(mktemp)" madt="$(mktemp)" fadt="$(mktemp)" tables="$(mktemp -d)"
     while IFS= read -r subject; do
@@ -816,6 +817,7 @@ idle_check() {
             fixed=$((fixed + $(grep -c '^aml idle state .* space=0x7F ' "$ours" || true)))
             ports=$((ports + $(grep -c '^aml idle state .* space=0x01 ' "$ours" || true)))
             given=$((given + $(grep -c '^aml idle port ' "$ours" || true)))
+            given_type_3=$((given_type_3 + $(grep -c '^aml idle port .* type=3 ' "$ours" || true)))
             echo "ok $number $subject"
         else
             echo "not ok $number $subject"
@@ -827,7 +829,8 @@ idle_check() {
         "$none publishing none on both sides; acpiexec stops before the evaluations it was given on $stopped"
     echo "# idle: of those states, $mwait enter by MWAIT (FFixedHW class 2), $((fixed - mwait)) by another FFixedHW" \
         "class, $ports by a port read (SystemIO) and $((states - fixed - ports)) by another space; $given port states" \
-        "given a processor whose MWAIT reaches no state past C1"
+        "given a processor whose MWAIT reaches no state past C1 and that enters C3 behind the bus-master check," \
+        "$given_type_3 of type 3"
     [[ "$hints" -gt 0 ]] || echo "idle: no MWAIT hint compared, so no latency nor residency was checked"
     [[ "$given" -gt 0 ]] || echo "idle: no port state compared, so no state a port read enters was checked"
     [[ "$agree" -eq $((number - stopped)) ]] && [[ "$hints" -gt 0 ]] && [[ "$given" -gt 0 ]]

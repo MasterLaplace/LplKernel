@@ -32,8 +32,8 @@
 #define PROCESSOR_IDLE_HINT_MASK      0xFu  /**< Its width. */
 #define PROCESSOR_IDLE_DEEPER_FACTOR  3u    /**< A deeper state's residency over its latency, as intel_idle reads it. */
 #define PROCESSOR_IDLE_SYSTEM_IO      0x01u /**< SystemIO: a register in the I/O space. */
-#define PROCESSOR_IDLE_C2             2u    /**< The type of C2, the one port states the sleep path takes have. */
-#define PROCESSOR_IDLE_C3             3u    /**< The type of C3, whose port states #839 enters. */
+#define PROCESSOR_IDLE_C2             2u    /**< The type of C2, whose port states the sleep path takes. */
+#define PROCESSOR_IDLE_C3             ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_PROCESSOR_IDLE_TYPE_3
 /** The port states a slot gives the sleep path at most. */
 #define PROCESSOR_IDLE_PORT_STATES   ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_PROCESSOR_IDLE_PORTS
 #define PROCESSOR_IDLE_BITS_PER_BYTE 8u /**< Bits a register's width counts per byte. */
@@ -164,26 +164,39 @@ static bool processor_idle_port_readable(uint64_t port, const ProcessorIdleFixed
 }
 
 /**
- * @brief Whether Linux's acpi_idle keeps @p state on a processor whose MWAIT reaches no state past C1, as the sleep
- *        path takes it: a C1 of FFixedHW or SystemIO, or a C2 read from a port it may read.
+ * @brief Whether @p fadt gives the status register the bus-master check reads BM_STS from before a C3.
  */
-static bool processor_idle_port_path_keeps(const ProcessorIdleState_t *state,
-                                           const ProcessorIdleFixedDescription_t *fadt)
+static bool processor_idle_bus_masters_checkable(const ProcessorIdleFixedDescription_t *fadt)
 {
-    if (state->type == PROCESSOR_IDLE_C1)
-        return state->entry.space == PROCESSOR_IDLE_FIXED_HARDWARE || state->entry.space == PROCESSOR_IDLE_SYSTEM_IO;
-    return state->type == PROCESSOR_IDLE_C2 && state->entry.space == PROCESSOR_IDLE_SYSTEM_IO &&
-           processor_idle_port_readable(state->entry.address, fadt);
+    uint16_t status[2];
+
+    return fadt != NULL && fadt->present &&
+           advanced_configuration_and_power_interface_power_management_status_ports(fadt, status);
 }
 
 /**
- * @brief Whether @p state is a port read of type 2 or 3 the sleep path does not take.
+ * @brief Whether Linux's acpi_idle keeps @p state on a processor whose MWAIT reaches no state past C1, as the sleep
+ *        path takes it: a C1 of FFixedHW or SystemIO, a C2 read from a port it may read, or such a C3 when @p type_3
+ *        says the processor enters one behind the bus-master check and @p fadt gives BM_STS.
  */
-static bool processor_idle_port_refused(const ProcessorIdleState_t *state, const ProcessorIdleFixedDescription_t *fadt)
+static bool processor_idle_port_path_keeps(const ProcessorIdleState_t *state,
+                                           const ProcessorIdleFixedDescription_t *fadt, bool type_3)
+{
+    if (state->type == PROCESSOR_IDLE_C1)
+        return state->entry.space == PROCESSOR_IDLE_FIXED_HARDWARE || state->entry.space == PROCESSOR_IDLE_SYSTEM_IO;
+    if (state->entry.space != PROCESSOR_IDLE_SYSTEM_IO || !processor_idle_port_readable(state->entry.address, fadt))
+        return false;
+    return state->type == PROCESSOR_IDLE_C2 ||
+           (state->type == PROCESSOR_IDLE_C3 && type_3 && processor_idle_bus_masters_checkable(fadt));
+}
+
+/**
+ * @brief Whether @p state is a port read of type 2 or 3, which the sleep path takes as a depth or refuses.
+ */
+static bool processor_idle_is_port_state(const ProcessorIdleState_t *state)
 {
     return state->entry.space == PROCESSOR_IDLE_SYSTEM_IO &&
-           (state->type == PROCESSOR_IDLE_C2 || state->type == PROCESSOR_IDLE_C3) &&
-           !processor_idle_port_path_keeps(state, fadt);
+           (state->type == PROCESSOR_IDLE_C2 || state->type == PROCESSOR_IDLE_C3);
 }
 
 /**
@@ -815,22 +828,26 @@ bool advanced_configuration_and_power_interface_processor_idle_costs(
 
 void advanced_configuration_and_power_interface_processor_idle_ports(const ProcessorIdle_t *idle,
                                                                      const ProcessorIdleFixedDescription_t *fadt,
-                                                                     ProcessorIdlePorts_t *out_ports)
+                                                                     bool type_3, ProcessorIdlePorts_t *out_ports)
 {
     const ProcessorIdleState_t *kept[PROCESSOR_IDLE_MAX_STATES];
     uint32_t types[PROCESSOR_IDLE_MAX_STATES];
     uint32_t latencies[PROCESSOR_IDLE_MAX_STATES];
     uint32_t count = 0u;
+    uint32_t deepest_port_type = 0u;
 
     memset(out_ports, 0, sizeof(*out_ports));
     for (uint32_t index = 0u; idle != NULL && index < processor_idle_published_count(idle); ++index)
     {
         const ProcessorIdleState_t *state = &idle->states[index];
+        const bool port_state = processor_idle_is_port_state(state);
+        const bool keeps =
+            processor_idle_port_path_keeps(state, fadt, type_3) && (!port_state || state->type >= deepest_port_type);
 
-        if (processor_idle_port_refused(state, fadt))
-            ++out_ports->refused;
-        if (!processor_idle_port_path_keeps(state, fadt))
+        out_ports->refused += port_state && !keeps ? 1u : 0u;
+        if (!keeps)
             continue;
+        deepest_port_type = port_state ? state->type : deepest_port_type;
         kept[count] = state;
         types[count] = state->type;
         latencies[count++] = state->latency;
@@ -839,7 +856,7 @@ void advanced_configuration_and_power_interface_processor_idle_ports(const Proce
         processor_idle_sort_latencies(latencies, count);
     for (uint32_t index = 0u; index < count; ++index)
     {
-        if (types[index] != PROCESSOR_IDLE_C2)
+        if (types[index] == PROCESSOR_IDLE_C1)
             continue;
         if (out_ports->count == PROCESSOR_IDLE_PORT_STATES)
         {
