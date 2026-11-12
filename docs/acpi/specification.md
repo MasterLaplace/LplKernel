@@ -746,7 +746,8 @@ Notifies queued since. A table loaded during step 8 or step 9 that gives a proce
   are out of order (`acpi_cst_latency_sort`). It gives a state of type 3 too where Linux enters C3 behind the
   bus-master check alone, its caches kept coherent without a flush and ARB_DIS unused
   (`acpi_processor_power_init_bm_check`: Intel from family 0x10 or 6/0x0F, Centaur's Nano, Zhaoxin, AMD from family
-  0x17), and where the FADT gives the PM1 status register BM_STS is read from: PM1a's event block of 4 bytes at least.
+  0x17), and where the FADT gives the PM1 status register BM_STS is read from: PM1a's event block of 4 bytes at least,
+  in the I/O space and reaching no protected port, and PM1b's under the same rule when it gives one.
   A SystemIO state of type 2 or 3 is refused and counted when it is a type 3 outside that rule or without that
   register, when its type is below that of one given before it, when its port is 0 or passes 0xFFFF, lies in a
   register block of the FADT or is its SMI_CMD, belongs to a device the kernel drives (the PIT, the keyboard
@@ -757,12 +758,14 @@ Notifies queued since. A table loaded during step 8 or step 9 that gives a proce
   whose ladder holds a type 3 sets BM_RLD in PM1 control, through the helper the global lock's GBL_RLS uses, and
   leaves it set, as Linux does (`acpi_processor_power_verify_c3`). Each sleep at a type 3 reads BM_STS first, as
   `acpi_idle_enter_bm` does: set, it is cleared and the sleep enters the deepest validated depth below without the
-  check, C1 when none, and the wake-up teaches that depth; a probe skips the check, as Linux's s2idle does, so that each
-  of its reads reads the port it judges. An application processor parks at the deepest depth of its own slot's ladder:
-  an MWAIT hint as it is, a port depth once that probe has validated the port, behind the same check for a type 3, and
-  only until 8 of its reads in a row come back within 256 us with no interrupt requested in its local APIC and BM_STS
-  clear, or 64 find the interrupt that ended them still requested once interrupts are enabled; a refusal lasts as long
-  as the verdict (`kernel/power/processor_park.h`). The boot prints one
+  check, C1 when none, and the wake-up teaches that depth; the first stop of the tick probes that depth too, so that a
+  demotion lands on C2 once it stops the processor, as ACPI demotes C3; a probe skips the check, as Linux's s2idle
+  does, so that each of its reads reads the port it judges, and refuses a C3 whose read a bus master ends early, the
+  bootstrap processor keeping no guard once its probe is over. An application processor parks at the deepest depth
+  of its own slot's ladder: an MWAIT hint as it is, a port depth once that probe has validated the port, behind the
+  same check for a type 3, and only until 8 of its reads in a row come back within 256 us with no interrupt requested
+  in its local APIC and BM_STS clear, or 64 find the interrupt that ended them still requested once interrupts are
+  enabled; a refusal lasts as long as the verdict (`kernel/power/processor_park.h`). The boot prints one
   `[LPLTLM] sleep.depths` line, then one `[LPLTLM] sleep.depth` line per depth, then one `[LPLTLM] park` line per
   application processor; `tools/acpi/corpus.sh idle` compares each slot's port states with
   `tools/acpi/oracles/linux_idle_ports.py`, and `tools/acpi/boot-cst.sh --ports` checks the depths and the park on a
