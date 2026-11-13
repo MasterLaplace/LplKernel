@@ -177,6 +177,17 @@ static void satellite_govern_on_measured_duty(SatelliteReport_t *report)
     report->effective_permille = kernel_frequency_scaling_measured_permille();
 }
 
+/**
+ * @brief The microjoules of @p nanojoules, the largest value past 32 bits, 4294 J: a loop longer than the counter's
+ *        one wrap is measured short in any case (kernel/power/energy_counter.h).
+ */
+static uint32_t satellite_microjoules_of(uint64_t nanojoules)
+{
+    const uint64_t microjoules = nanojoules / SATELLITE_NANOJOULES_PER_MICROJOULE;
+
+    return microjoules > UINT32_MAX ? UINT32_MAX : (uint32_t) microjoules;
+}
+
 bool kernel_satellite_app_run(uint32_t iterations, SatelliteReport_t *out)
 {
     if (out == NULL)
@@ -219,10 +230,10 @@ bool kernel_satellite_app_run(uint32_t iterations, SatelliteReport_t *out)
     }
     report.loop_microseconds = kernel_tickless_microseconds_from_cycles(asmutils_read_timestamp_counter() - loop_began);
     report.package_energy_known = energy_began && kernel_energy_counter_sample(&energy_after) ? 1u : 0u;
-    report.package_microjoules = report.package_energy_known != 0u ?
-                                     (uint32_t) (kernel_energy_counter_nanojoules_between(energy_before, energy_after) /
-                                                 SATELLITE_NANOJOULES_PER_MICROJOULE) :
-                                     0u;
+    report.package_microjoules =
+        report.package_energy_known != 0u ?
+            satellite_microjoules_of(kernel_energy_counter_nanojoules_between(energy_before, energy_after)) :
+            0u;
 
     kernel_processor_sleep_close_session();
     report.frames_captured = (written != NULL) ? (*written - written_before) : 0u;

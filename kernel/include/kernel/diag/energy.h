@@ -35,9 +35,12 @@ extern "C" {
  *
  * @details Keys:
  *          - `backend`: `intel_core`, `intel_atom`, `amd` or `none`;
- *          - `state`: `present`, or why not: `not_listed`, `faulted`, `no_unit`, `frozen`, `untimed`, `not_detected`;
- *          - `esu` and `pu`: the energy and power unit exponents its unit register gives, `none` before it read;
- *          - `tdp_mw` and `pl1_mw`: Intel's thermal design power and power limit 1, `none` where unknown.
+ *          - `state`: `present`, or why not: `not_listed`, `unit_faulted`, `no_unit`, `counter_faulted`, `frozen`,
+ *            `untimed`, `not_detected`;
+ *          - `esu` and `pu`: the energy and power unit exponents its unit register gives, `none` where it did not read;
+ *          - `tdp_mw`, `pl1_mw` and `pl1_enabled`: Intel's thermal design power, power limit 1 and whether that limit
+ * is enabled, `none` where unknown;
+ *          - `refused_reads`: the MSR reads the #GP handler turned into a refusal since the boot.
  *
  * @param serial Output port.
  */

@@ -296,8 +296,9 @@ extern uint64_t asmutils_read_model_specific_register(uint32_t msr_id);
  *          raises for an MSR the processor or its hypervisor does not implement (Intel SDM vol. 2B, RDMSR), is not a
  *          panic: the #GP handler resumes at asmutils_read_model_specific_register_or_refuse_refusal, and the call
  *          returns false, as Linux's `rdmsrl_safe` fixes an exception-table entry up (v6.12
- *          arch/x86/include/asm/msr.h, arch/x86/mm/extable.c). Nothing shared is written, so any processor may call
- *          it, interrupts on or off, and a read costs what RDMSR costs.
+ *          arch/x86/include/asm/msr.h, arch/x86/mm/extable.c). It writes nothing shared but the count of refusals,
+ *          which the handler adds to atomically, so any processor may call it, interrupts on or off, and a read costs
+ *          what RDMSR costs.
  *
  * @param msr_id    The MSR identifier.
  * @param out_value Receives the value; untouched on a refusal.

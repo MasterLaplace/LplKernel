@@ -158,10 +158,11 @@ typedef struct {
     uint32_t msrs[ENERGY_COUNTER_TEST_REGISTERS];   /**< The registers it gives. */
     uint64_t values[ENERGY_COUNTER_TEST_REGISTERS]; /**< Their values. */
     uint32_t count;                                 /**< How many. */
-    uint32_t package_msr;                           /**< The package counter, which moves after each wait. */
+    uint32_t package_register;                      /**< The package counter, which moves after each wait. */
     uint32_t package_step;                          /**< By how much. */
     uint32_t package_value;                         /**< Its value now. */
     bool timed;                                     /**< Whether a wait can be timed. */
+    bool package_fails_after_a_wait;                /**< Whether the package counter faults once a wait passed. */
     uint32_t waits;                                 /**< Waits asked. */
 } EnergyCounterTestMachine_t;
 
@@ -169,8 +170,10 @@ static bool energy_counter_test_read(void *context, uint32_t msr, uint64_t *out_
 {
     const EnergyCounterTestMachine_t *machine = (const EnergyCounterTestMachine_t *) context;
 
-    if (msr == machine->package_msr && machine->package_msr != 0u)
+    if (msr == machine->package_register && machine->package_register != 0u)
     {
+        if (machine->package_fails_after_a_wait && machine->waits != 0u)
+            return false;
         *out_value = machine->package_value;
         return true;
     }
@@ -201,14 +204,14 @@ static EnergyCounterTestMachine_t energy_counter_test_skylake(void)
     EnergyCounterTestMachine_t machine;
 
     memset(&machine, 0, sizeof(machine));
-    machine.msrs[0] = KERNEL_ENERGY_COUNTER_INTEL_UNIT_MSR;
+    machine.msrs[0] = KERNEL_ENERGY_COUNTER_INTEL_UNIT_REGISTER;
     machine.values[0] = ENERGY_COUNTER_TEST_SKYLAKE_UNITS;
-    machine.msrs[1] = KERNEL_ENERGY_COUNTER_INTEL_POWER_INFO_MSR;
+    machine.msrs[1] = KERNEL_ENERGY_COUNTER_INTEL_POWER_INFO_REGISTER;
     machine.values[1] = 0x12340078u;
-    machine.msrs[2] = KERNEL_ENERGY_COUNTER_INTEL_POWER_LIMIT_MSR;
+    machine.msrs[2] = KERNEL_ENERGY_COUNTER_INTEL_POWER_LIMIT_REGISTER;
     machine.values[2] = 0x000080C8u;
     machine.count = 3u;
-    machine.package_msr = KERNEL_ENERGY_COUNTER_INTEL_PACKAGE_MSR;
+    machine.package_register = KERNEL_ENERGY_COUNTER_INTEL_PACKAGE_REGISTER;
     machine.package_step = 33u;
     machine.package_value = 0xFFFFFFF0u;
     machine.timed = true;
@@ -230,12 +233,13 @@ KERNEL_TEST(a_counter_that_gives_a_unit_and_moves_is_present)
     kernel_test_check(test, found.state == KERNEL_ENERGY_COUNTER_PRESENT, "present");
     kernel_test_check(test,
                       found.energy_unit_exponent == 14u && found.power_unit_exponent == 3u &&
-                          found.package_msr == KERNEL_ENERGY_COUNTER_INTEL_PACKAGE_MSR,
+                          found.package_register == KERNEL_ENERGY_COUNTER_INTEL_PACKAGE_REGISTER,
                       "ESU 14, PU 3, Intel's package counter");
     kernel_test_check(test, found.thermal_design_power_known && found.thermal_design_power_milliwatts == 15000u,
                       "a TDP of 120 units is 15 W");
-    kernel_test_check(test, found.power_limit_known && found.power_limit_milliwatts == 25000u,
-                      "a power limit of 200 units is 25 W");
+    kernel_test_check(test,
+                      found.power_limit_known && found.power_limit_milliwatts == 25000u && found.power_limit_enabled,
+                      "a power limit of 200 units is 25 W, enabled by bit 15");
     kernel_test_check(test, machine.waits == 1u, "after one settling wait");
 
     machine = energy_counter_test_skylake();
@@ -259,13 +263,13 @@ KERNEL_TEST(a_counter_that_cannot_be_trusted_is_absent_by_its_reason)
 
     kernel_energy_counter_detect(KERNEL_ENERGY_COUNTER_BACKEND_NONE, energy_counter_test_read, energy_counter_test_wait,
                                  &machine, &found);
-    kernel_test_check(test, found.state == KERNEL_ENERGY_COUNTER_NOT_LISTED && found.package_msr == 0u,
+    kernel_test_check(test, found.state == KERNEL_ENERGY_COUNTER_NOT_LISTED && found.package_register == 0u,
                       "no backend: not listed, and no register read");
 
     machine.msrs[0] = 0u;
     kernel_energy_counter_detect(KERNEL_ENERGY_COUNTER_BACKEND_INTEL_CORE, energy_counter_test_read,
                                  energy_counter_test_wait, &machine, &found);
-    kernel_test_check(test, found.state == KERNEL_ENERGY_COUNTER_FAULTED, "a unit register that faults");
+    kernel_test_check(test, found.state == KERNEL_ENERGY_COUNTER_UNIT_FAULTED, "a unit register that faults");
 
     machine = energy_counter_test_skylake();
     machine.values[0] = 0u;
@@ -275,10 +279,25 @@ KERNEL_TEST(a_counter_that_cannot_be_trusted_is_absent_by_its_reason)
     kernel_test_check(test, found.state == KERNEL_ENERGY_COUNTER_NO_UNIT, "a unit register of 0, as KVM's: no unit");
 
     machine = energy_counter_test_skylake();
-    machine.package_msr = 0u;
+    machine.values[0] = 0u;
+    kernel_energy_counter_detect(KERNEL_ENERGY_COUNTER_BACKEND_INTEL_ATOM, energy_counter_test_read,
+                                 energy_counter_test_wait, &machine, &found);
+    kernel_test_check(test, found.state == KERNEL_ENERGY_COUNTER_PRESENT && found.energy_unit_exponent == 0u,
+                      "but on an Atom ESU 0 is 1 uJ, and a counter that moves is present");
+
+    machine = energy_counter_test_skylake();
+    machine.package_register = 0u;
     kernel_energy_counter_detect(KERNEL_ENERGY_COUNTER_BACKEND_INTEL_CORE, energy_counter_test_read,
                                  energy_counter_test_wait, &machine, &found);
-    kernel_test_check(test, found.state == KERNEL_ENERGY_COUNTER_FAULTED, "a counter that faults");
+    kernel_test_check(test, found.state == KERNEL_ENERGY_COUNTER_COUNTER_FAULTED && found.energy_unit_exponent == 14u,
+                      "a counter that faults, its unit read");
+
+    machine = energy_counter_test_skylake();
+    machine.package_fails_after_a_wait = true;
+    kernel_energy_counter_detect(KERNEL_ENERGY_COUNTER_BACKEND_INTEL_CORE, energy_counter_test_read,
+                                 energy_counter_test_wait, &machine, &found);
+    kernel_test_check(test, found.state == KERNEL_ENERGY_COUNTER_COUNTER_FAULTED,
+                      "a counter that faults at its second read only");
 
     machine = energy_counter_test_skylake();
     machine.package_step = 0u;
@@ -302,14 +321,14 @@ KERNEL_TEST(amd_s_counter_is_read_at_amd_s_registers)
     static KernelEnergyCounter_t found;
     EnergyCounterTestMachine_t machine = energy_counter_test_skylake();
 
-    machine.msrs[0] = KERNEL_ENERGY_COUNTER_AMD_UNIT_MSR;
+    machine.msrs[0] = KERNEL_ENERGY_COUNTER_AMD_UNIT_REGISTER;
     machine.values[0] = 0x000A1003u;
-    machine.package_msr = KERNEL_ENERGY_COUNTER_AMD_PACKAGE_MSR;
+    machine.package_register = KERNEL_ENERGY_COUNTER_AMD_PACKAGE_REGISTER;
     kernel_energy_counter_detect(KERNEL_ENERGY_COUNTER_BACKEND_AMD, energy_counter_test_read, energy_counter_test_wait,
                                  &machine, &found);
     kernel_test_check(test,
                       found.state == KERNEL_ENERGY_COUNTER_PRESENT &&
-                          found.package_msr == KERNEL_ENERGY_COUNTER_AMD_PACKAGE_MSR &&
+                          found.package_register == KERNEL_ENERGY_COUNTER_AMD_PACKAGE_REGISTER &&
                           found.energy_unit_exponent == 16u,
                       "present at AMD's registers, ESU 16");
     kernel_test_check(test, !found.thermal_design_power_known && !found.power_limit_known,
@@ -318,8 +337,8 @@ KERNEL_TEST(amd_s_counter_is_read_at_amd_s_registers)
 
 /**
  * @brief The boot detected this processor's counter, with the backend its identity calls for, read apart; a counter
- *        that is not present gives no sample. Under KVM, whose unit register reads 0, it has no unit; under TCG, whose
- *        AMD model sets no RAPL bit, it is not listed.
+ *        that is not present gives no sample. Under KVM, whose unit register reads 0, it has no unit, unless the host
+ *        passes RAPL through; under TCG, whose AMD model sets no RAPL bit, it is not listed.
  */
 KERNEL_TEST(the_boot_detected_this_processor_s_counter)
 {
@@ -342,7 +361,28 @@ KERNEL_TEST(the_boot_detected_this_processor_s_counter)
                       "and no sample where it is not present");
     if (identity.hypervisor && memcmp(identity.hypervisor_signature, "KVMKVMKVM", sizeof("KVMKVMKVM")) == 0 &&
         found->backend != KERNEL_ENERGY_COUNTER_BACKEND_NONE)
-        kernel_test_check(test, found->state == KERNEL_ENERGY_COUNTER_NO_UNIT, "KVM's unit register of 0: no unit");
+        kernel_test_check(
+            test, found->state == KERNEL_ENERGY_COUNTER_NO_UNIT || found->state == KERNEL_ENERGY_COUNTER_PRESENT,
+            "KVM's unit register of 0 has no unit; one RAPL passes through to (rapl=true) is present");
     kernel_test_measure(test, "backend", found->backend);
     kernel_test_measure(test, "state", found->state);
+}
+
+/**
+ * @brief The nanojoules between two samples of a present counter are its units between them, one wrap allowed; a
+ *        counter that is not present gives none.
+ */
+KERNEL_TEST(the_energy_between_two_samples_is_the_present_counter_s_alone)
+{
+    KernelEnergyCounter_t found;
+
+    memset(&found, 0, sizeof(found));
+    found.backend = KERNEL_ENERGY_COUNTER_BACKEND_INTEL_CORE;
+    found.energy_unit_exponent = 14u;
+    found.state = KERNEL_ENERGY_COUNTER_PRESENT;
+    kernel_test_check(test, kernel_energy_counter_nanojoules_between_of(&found, 0xFFFFFFF0u, 0x10u) == 1953125u,
+                      "32 units across a wrap at ESU 14: 1953125 nJ");
+    found.state = KERNEL_ENERGY_COUNTER_FROZEN;
+    kernel_test_check(test, kernel_energy_counter_nanojoules_between_of(&found, 0xFFFFFFF0u, 0x10u) == 0u,
+                      "a counter that is not present: none");
 }

@@ -2,6 +2,7 @@
 
 #include <kernel/cpu/apic_timer.h>
 #include <kernel/lib/asmutils.h>
+#include <kernel/power/tickless.h>
 
 #include <string.h>
 
@@ -13,10 +14,10 @@
 #define ENERGY_COUNTER_ENERGY_UNIT_MASK          0x1Fu       /**< Its width. */
 #define ENERGY_COUNTER_POWER_UNIT_MASK           0x0Fu       /**< PU, bits 3:0 of the unit register. */
 #define ENERGY_COUNTER_POWER_FIELD_MASK          0x7FFFu /**< A power field, bits 14:0 of the power info or limit. */
+#define ENERGY_COUNTER_POWER_LIMIT_ENABLE        0x8000u /**< Power limit 1's enable, bit 15 of the power limit. */
 #define ENERGY_COUNTER_NANOJOULES_PER_JOULE      1000000000ull /**< Nanojoules in a joule. */
 #define ENERGY_COUNTER_NANOJOULES_PER_MICROJOULE 1000ull       /**< Nanojoules in a microjoule. */
 #define ENERGY_COUNTER_MILLIWATTS_PER_WATT       1000ull       /**< Milliwatts in a watt. */
-#define ENERGY_COUNTER_MICROSECONDS_PER_SECOND   1000000ull    /**< Microseconds in a second. */
 
 /**
  * @brief An Intel model of Linux v6.12's `rapl_ids` (drivers/powercap/intel_rapl_common.c), its family 6 implied.
@@ -113,19 +114,19 @@ static uint32_t energy_counter_intel_backend(uint32_t model)
 /**
  * @brief The unit register of @p backend.
  */
-static uint32_t energy_counter_unit_msr(uint32_t backend)
+static uint32_t energy_counter_unit_register(uint32_t backend)
 {
-    return backend == KERNEL_ENERGY_COUNTER_BACKEND_AMD ? KERNEL_ENERGY_COUNTER_AMD_UNIT_MSR :
-                                                          KERNEL_ENERGY_COUNTER_INTEL_UNIT_MSR;
+    return backend == KERNEL_ENERGY_COUNTER_BACKEND_AMD ? KERNEL_ENERGY_COUNTER_AMD_UNIT_REGISTER :
+                                                          KERNEL_ENERGY_COUNTER_INTEL_UNIT_REGISTER;
 }
 
 /**
  * @brief The package counter of @p backend.
  */
-static uint32_t energy_counter_package_msr(uint32_t backend)
+static uint32_t energy_counter_package_register(uint32_t backend)
 {
-    return backend == KERNEL_ENERGY_COUNTER_BACKEND_AMD ? KERNEL_ENERGY_COUNTER_AMD_PACKAGE_MSR :
-                                                          KERNEL_ENERGY_COUNTER_INTEL_PACKAGE_MSR;
+    return backend == KERNEL_ENERGY_COUNTER_BACKEND_AMD ? KERNEL_ENERGY_COUNTER_AMD_PACKAGE_REGISTER :
+                                                          KERNEL_ENERGY_COUNTER_INTEL_PACKAGE_REGISTER;
 }
 
 /**
@@ -150,9 +151,15 @@ static void energy_counter_read_intel_power(KernelEnergyCounter_t *found, Kernel
                                             void *context)
 {
     found->thermal_design_power_known = energy_counter_read_power_field(
-        found, read, context, KERNEL_ENERGY_COUNTER_INTEL_POWER_INFO_MSR, &found->thermal_design_power_milliwatts);
-    found->power_limit_known = energy_counter_read_power_field(
-        found, read, context, KERNEL_ENERGY_COUNTER_INTEL_POWER_LIMIT_MSR, &found->power_limit_milliwatts);
+        found, read, context, KERNEL_ENERGY_COUNTER_INTEL_POWER_INFO_REGISTER, &found->thermal_design_power_milliwatts);
+    uint64_t limit = 0u;
+
+    found->power_limit_known = read(context, KERNEL_ENERGY_COUNTER_INTEL_POWER_LIMIT_REGISTER, &limit);
+    if (!found->power_limit_known)
+        return;
+    found->power_limit_milliwatts = kernel_energy_counter_milliwatts(
+        found->backend, found->power_unit_exponent, (uint32_t) limit & ENERGY_COUNTER_POWER_FIELD_MASK);
+    found->power_limit_enabled = ((uint32_t) limit & ENERGY_COUNTER_POWER_LIMIT_ENABLE) != 0u;
 }
 
 /**
@@ -164,12 +171,12 @@ static uint32_t energy_counter_settle(const KernelEnergyCounter_t *found, Kernel
     uint64_t before = 0u;
     uint64_t after = 0u;
 
-    if (!read(context, found->package_msr, &before))
-        return KERNEL_ENERGY_COUNTER_FAULTED;
+    if (!read(context, found->package_register, &before))
+        return KERNEL_ENERGY_COUNTER_COUNTER_FAULTED;
     if (!wait(context, KERNEL_ENERGY_COUNTER_SETTLE_MICROSECONDS))
         return KERNEL_ENERGY_COUNTER_UNTIMED;
-    if (!read(context, found->package_msr, &after))
-        return KERNEL_ENERGY_COUNTER_FAULTED;
+    if (!read(context, found->package_register, &after))
+        return KERNEL_ENERGY_COUNTER_COUNTER_FAULTED;
     return (uint32_t) before == (uint32_t) after ? KERNEL_ENERGY_COUNTER_FROZEN : KERNEL_ENERGY_COUNTER_PRESENT;
 }
 
@@ -193,8 +200,7 @@ static bool energy_counter_wait_machine(void *context, uint32_t microseconds)
     if (hertz == 0u)
         return false;
 
-    const uint64_t until =
-        asmutils_read_timestamp_counter() + (hertz * microseconds) / ENERGY_COUNTER_MICROSECONDS_PER_SECOND;
+    const uint64_t until = asmutils_read_timestamp_counter() + kernel_tickless_cycles_from_microseconds(microseconds);
     while (asmutils_read_timestamp_counter() < until)
         asmutils_pause();
     return true;
@@ -262,15 +268,15 @@ void kernel_energy_counter_detect(uint32_t backend, KernelEnergyCounterReader_t 
     out->state = KERNEL_ENERGY_COUNTER_NOT_LISTED;
     if (backend == KERNEL_ENERGY_COUNTER_BACKEND_NONE)
         return;
-    out->package_msr = energy_counter_package_msr(backend);
-    out->state = KERNEL_ENERGY_COUNTER_FAULTED;
-    if (!read(context, energy_counter_unit_msr(backend), &units))
+    out->package_register = energy_counter_package_register(backend);
+    out->state = KERNEL_ENERGY_COUNTER_UNIT_FAULTED;
+    if (!read(context, energy_counter_unit_register(backend), &units))
         return;
     out->energy_unit_exponent =
         (uint32_t) (units >> ENERGY_COUNTER_ENERGY_UNIT_SHIFT) & ENERGY_COUNTER_ENERGY_UNIT_MASK;
     out->power_unit_exponent = (uint32_t) units & ENERGY_COUNTER_POWER_UNIT_MASK;
     out->state = KERNEL_ENERGY_COUNTER_NO_UNIT;
-    if (out->energy_unit_exponent == 0u)
+    if (out->energy_unit_exponent == 0u && backend != KERNEL_ENERGY_COUNTER_BACKEND_INTEL_ATOM)
         return;
     out->state = energy_counter_settle(out, read, wait, context);
     if (out->state == KERNEL_ENERGY_COUNTER_PRESENT && backend != KERNEL_ENERGY_COUNTER_BACKEND_AMD)
@@ -293,18 +299,24 @@ bool kernel_energy_counter_sample(uint32_t *out_counts)
     uint64_t value = 0u;
 
     if (energy_counter_found.state != KERNEL_ENERGY_COUNTER_PRESENT ||
-        !asmutils_read_model_specific_register_or_refuse(energy_counter_found.package_msr, &value))
+        !asmutils_read_model_specific_register_or_refuse(energy_counter_found.package_register, &value))
         return false;
     *out_counts = (uint32_t) value;
     return true;
 }
 
+uint64_t kernel_energy_counter_nanojoules_between_of(const KernelEnergyCounter_t *found, uint32_t before,
+                                                     uint32_t after)
+{
+    if (found->state != KERNEL_ENERGY_COUNTER_PRESENT)
+        return 0u;
+    return kernel_energy_counter_nanojoules(found->backend, found->energy_unit_exponent,
+                                            kernel_energy_counter_counts_between(before, after));
+}
+
 uint64_t kernel_energy_counter_nanojoules_between(uint32_t before, uint32_t after)
 {
-    if (energy_counter_found.state != KERNEL_ENERGY_COUNTER_PRESENT)
-        return 0u;
-    return kernel_energy_counter_nanojoules(energy_counter_found.backend, energy_counter_found.energy_unit_exponent,
-                                            kernel_energy_counter_counts_between(before, after));
+    return kernel_energy_counter_nanojoules_between_of(&energy_counter_found, before, after);
 }
 
 const char *kernel_energy_counter_backend_name(uint32_t backend)
@@ -316,8 +328,8 @@ const char *kernel_energy_counter_backend_name(uint32_t backend)
 
 const char *kernel_energy_counter_state_name(uint32_t state)
 {
-    static const char *const names[] = {"present", "not_detected", "not_listed", "faulted",
-                                        "no_unit", "frozen",       "untimed"};
+    static const char *const names[] = {"present", "not_detected", "not_listed", "unit_faulted",
+                                        "no_unit", "frozen",       "untimed",    "counter_faulted"};
 
     return state < sizeof(names) / sizeof(names[0]) ? names[state] : "unknown";
 }

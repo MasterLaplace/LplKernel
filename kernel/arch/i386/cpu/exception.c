@@ -88,7 +88,9 @@ static void exception_handle_invalid_opcode(const InterruptFrame_t *frame)
     exception_halt_forever();
 }
 
-static volatile uint32_t exception_refused_model_specific_register_reads = 0u;
+#define EXCEPTION_PRIVILEGE_MASK 0x3u /**< A selector's requested privilege level, the low two bits of CS. */
+
+static uint32_t exception_refused_model_specific_register_reads = 0u;
 
 /**
  * @brief Turns a #GP of the fault-tolerant RDMSR into its refusal: resumes past it, counted.
@@ -96,9 +98,9 @@ static volatile uint32_t exception_refused_model_specific_register_reads = 0u;
  */
 static bool exception_refuse_model_specific_register_read(const InterruptFrame_t *frame)
 {
-    if (frame->eip != (uint32_t) (uintptr_t) asmutils_read_model_specific_register_or_refuse_fault_point)
+    if (!interrupt_exception_resumes_model_specific_register_read(frame->eip, frame->cs))
         return false;
-    ++exception_refused_model_specific_register_reads;
+    (void) __atomic_fetch_add(&exception_refused_model_specific_register_reads, 1u, __ATOMIC_RELAXED);
     interrupt_frame_set_resume_address(frame,
                                        (uint32_t) (uintptr_t) asmutils_read_model_specific_register_or_refuse_refusal);
     return true;
@@ -187,9 +189,15 @@ static void exception_handle_page_fault(const InterruptFrame_t *frame)
     exception_halt_forever();
 }
 
+bool interrupt_exception_resumes_model_specific_register_read(uint32_t instruction_pointer, uint32_t code_segment)
+{
+    return instruction_pointer == (uint32_t) (uintptr_t) asmutils_read_model_specific_register_or_refuse_fault_point &&
+           (code_segment & EXCEPTION_PRIVILEGE_MASK) == 0u;
+}
+
 uint32_t interrupt_exception_refused_model_specific_register_reads(void)
 {
-    return exception_refused_model_specific_register_reads;
+    return __atomic_load_n(&exception_refused_model_specific_register_reads, __ATOMIC_RELAXED);
 }
 
 void interrupt_exception_initialize(void)

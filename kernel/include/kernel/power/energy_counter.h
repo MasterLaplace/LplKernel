@@ -43,12 +43,12 @@ extern "C" {
  * @name RAPL's registers (Linux v6.12 arch/x86/include/asm/msr-index.h)
  * @{
  */
-#define KERNEL_ENERGY_COUNTER_INTEL_UNIT_MSR        0x606u      /**< MSR_RAPL_POWER_UNIT. */
-#define KERNEL_ENERGY_COUNTER_INTEL_POWER_LIMIT_MSR 0x610u      /**< MSR_PKG_POWER_LIMIT. */
-#define KERNEL_ENERGY_COUNTER_INTEL_PACKAGE_MSR     0x611u      /**< MSR_PKG_ENERGY_STATUS. */
-#define KERNEL_ENERGY_COUNTER_INTEL_POWER_INFO_MSR  0x614u      /**< MSR_PKG_POWER_INFO. */
-#define KERNEL_ENERGY_COUNTER_AMD_UNIT_MSR          0xC0010299u /**< MSR_AMD_RAPL_POWER_UNIT. */
-#define KERNEL_ENERGY_COUNTER_AMD_PACKAGE_MSR       0xC001029Bu /**< MSR_AMD_PKG_ENERGY_STATUS. */
+#define KERNEL_ENERGY_COUNTER_INTEL_UNIT_REGISTER        0x606u      /**< MSR_RAPL_POWER_UNIT. */
+#define KERNEL_ENERGY_COUNTER_INTEL_POWER_LIMIT_REGISTER 0x610u      /**< MSR_PKG_POWER_LIMIT. */
+#define KERNEL_ENERGY_COUNTER_INTEL_PACKAGE_REGISTER     0x611u      /**< MSR_PKG_ENERGY_STATUS. */
+#define KERNEL_ENERGY_COUNTER_INTEL_POWER_INFO_REGISTER  0x614u      /**< MSR_PKG_POWER_INFO. */
+#define KERNEL_ENERGY_COUNTER_AMD_UNIT_REGISTER          0xC0010299u /**< MSR_AMD_RAPL_POWER_UNIT. */
+#define KERNEL_ENERGY_COUNTER_AMD_PACKAGE_REGISTER       0xC001029Bu /**< MSR_AMD_PKG_ENERGY_STATUS. */
 /** @} */
 
 /**
@@ -73,13 +73,14 @@ typedef enum {
  * @brief Whether the counter is read, and why not.
  */
 typedef enum {
-    KERNEL_ENERGY_COUNTER_PRESENT = 0,      /**< It is. */
-    KERNEL_ENERGY_COUNTER_NOT_DETECTED = 1, /**< No detection ran yet. */
-    KERNEL_ENERGY_COUNTER_NOT_LISTED = 2,   /**< The processor is no RAPL one the kernel knows of. */
-    KERNEL_ENERGY_COUNTER_FAULTED = 3,      /**< Its unit register or its counter faulted. */
-    KERNEL_ENERGY_COUNTER_NO_UNIT = 4,      /**< Its unit register gives no energy unit, as KVM's reads 0. */
-    KERNEL_ENERGY_COUNTER_FROZEN = 5,       /**< Its counter did not move across the settling wait. */
-    KERNEL_ENERGY_COUNTER_UNTIMED = 6,      /**< No calibrated clock could time the settling wait. */
+    KERNEL_ENERGY_COUNTER_PRESENT = 0,         /**< It is. */
+    KERNEL_ENERGY_COUNTER_NOT_DETECTED = 1,    /**< No detection ran yet. */
+    KERNEL_ENERGY_COUNTER_NOT_LISTED = 2,      /**< The processor is no RAPL one the kernel knows of. */
+    KERNEL_ENERGY_COUNTER_UNIT_FAULTED = 3,    /**< Its unit register faulted. */
+    KERNEL_ENERGY_COUNTER_NO_UNIT = 4,         /**< Its unit register gives no energy unit, as KVM's reads 0. */
+    KERNEL_ENERGY_COUNTER_FROZEN = 5,          /**< Its counter did not move across the settling wait. */
+    KERNEL_ENERGY_COUNTER_UNTIMED = 6,         /**< No calibrated clock could time the settling wait. */
+    KERNEL_ENERGY_COUNTER_COUNTER_FAULTED = 7, /**< Its unit register read, and its counter faulted. */
 } KernelEnergyCounterState_t;
 
 /**
@@ -88,13 +89,14 @@ typedef enum {
 typedef struct KernelEnergyCounter {
     uint32_t backend;                         /**< A KernelEnergyCounterBackend_t. */
     uint32_t state;                           /**< A KernelEnergyCounterState_t. */
-    uint32_t package_msr;                     /**< The package counter's MSR; 0 without a backend. */
+    uint32_t package_register;                /**< The package counter's MSR; 0 without a backend. */
     uint32_t energy_unit_exponent;            /**< ESU, bits 12:8 of the unit register; 0 before it is read. */
     uint32_t power_unit_exponent;             /**< PU, bits 3:0 of the unit register. */
     uint32_t thermal_design_power_milliwatts; /**< Intel's power info, bits 14:0, when known. */
     uint32_t power_limit_milliwatts;          /**< Intel's power limit 1, bits 14:0, when known. */
     bool thermal_design_power_known;          /**< Whether the power info read, on Intel. */
     bool power_limit_known;                   /**< Whether the power limit read, on Intel. */
+    bool power_limit_enabled;                 /**< Whether that limit is enabled, bit 15 of the power limit. */
 } KernelEnergyCounter_t;
 
 /**
@@ -155,8 +157,9 @@ uint32_t kernel_energy_counter_milliwatts(uint32_t backend, uint32_t power_unit_
 
 /**
  * @brief Detects the counter of @p backend through @p read and @p wait: its unit register must read and give an energy
- *        unit, and its counter must read twice, KERNEL_ENERGY_COUNTER_SETTLE_MICROSECONDS apart, and move; then, on
- *        Intel, the power info and the power limit are read, each known only where it reads.
+ *        unit, ESU 0 being none but on an Atom, where it is 1 uJ; its counter must read twice,
+ *        KERNEL_ENERGY_COUNTER_SETTLE_MICROSECONDS apart, and move; then, on Intel, the power info and the power limit
+ *        are read, each known only where it reads.
  * @param backend A KernelEnergyCounterBackend_t.
  * @param read    Reads one register.
  * @param wait    Times the settling wait.
@@ -195,6 +198,16 @@ bool kernel_energy_counter_sample(uint32_t *out_counts);
 uint64_t kernel_energy_counter_nanojoules_between(uint32_t before, uint32_t after);
 
 /**
+ * @brief The nanojoules a counter @p found used between two samples, one wrap allowed.
+ * @param found  What a detection found.
+ * @param before The earlier sample.
+ * @param after  The later one.
+ * @return The nanojoules; 0 when @p found is not present.
+ */
+uint64_t kernel_energy_counter_nanojoules_between_of(const KernelEnergyCounter_t *found, uint32_t before,
+                                                     uint32_t after);
+
+/**
  * @brief The name the telemetry gives a backend.
  * @param backend A KernelEnergyCounterBackend_t.
  * @return "none", "intel_core", "intel_atom" or "amd"; "unknown" otherwise.
@@ -204,7 +217,8 @@ const char *kernel_energy_counter_backend_name(uint32_t backend);
 /**
  * @brief The name the telemetry gives a state.
  * @param state A KernelEnergyCounterState_t.
- * @return "present", "not_detected", "not_listed", "faulted", "no_unit", "frozen" or "untimed"; "unknown" otherwise.
+ * @return "present", "not_detected", "not_listed", "unit_faulted", "no_unit", "frozen", "untimed" or
+ *         "counter_faulted"; "unknown" otherwise.
  */
 const char *kernel_energy_counter_state_name(uint32_t state);
 
