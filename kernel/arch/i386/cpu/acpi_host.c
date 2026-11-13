@@ -15,6 +15,7 @@
 #include <kernel/memory/vmm.h>
 #include <kernel/power/processor_sleep.h>
 
+#include <stdatomic.h>
 #include <stdbool.h>
 #include <stddef.h>
 
@@ -127,8 +128,7 @@ static uint32_t acpi_host_compare_exchange(void *context, void *address, uint64_
 
     (void) context;
     (void) physical_address;
-    __atomic_compare_exchange_n((volatile uint32_t *) address, &held, desired, false, __ATOMIC_SEQ_CST,
-                                __ATOMIC_SEQ_CST);
+    atomic_compare_exchange((volatile uint32_t *) address, &held, desired);
     return held;
 }
 

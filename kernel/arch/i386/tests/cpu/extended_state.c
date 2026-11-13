@@ -7,6 +7,7 @@
 #include <kernel/lib/asmutils.h>
 #include <kernel/testing/test.h>
 
+#include <stdatomic.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -79,7 +80,7 @@ __attribute__((target("fxsr"))) static void extended_state_test_read(ExtendedSta
                                    ((uint32_t) image[EXTENDED_STATE_TEST_FXSAVE_MXCSR + 1u] << 8u) |
                                    ((uint32_t) image[EXTENDED_STATE_TEST_FXSAVE_MXCSR + 2u] << 16u) |
                                    ((uint32_t) image[EXTENDED_STATE_TEST_FXSAVE_MXCSR + 3u] << 24u);
-    __atomic_store_n(&reading->answered, 1u, __ATOMIC_RELEASE);
+    atomic_store_release(&reading->answered, 1u);
 }
 
 /**
@@ -161,14 +162,14 @@ static bool extended_state_test_ask(uint32_t slot, uint8_t vector)
 {
     InterruptRequestDeadline_t deadline;
 
-    __atomic_store_n(&extended_state_test_readings[slot].answered, 0u, __ATOMIC_RELAXED);
+    atomic_store_relaxed(&extended_state_test_readings[slot].answered, 0u);
     if (advanced_pic_ipi_send_fixed(cpu_topology_get_apic_id_at_slot(slot), vector, ADVANCED_PIC_IPI_SHORT_NONE) == 0u)
         return false;
     interrupt_request_deadline_start(&deadline, EXTENDED_STATE_TEST_WAIT_MICROSECONDS);
-    while (__atomic_load_n(&extended_state_test_readings[slot].answered, __ATOMIC_ACQUIRE) == 0u &&
+    while (atomic_load_acquire(&extended_state_test_readings[slot].answered) == 0u &&
            !interrupt_request_deadline_passed(&deadline))
         asmutils_pause();
-    return __atomic_load_n(&extended_state_test_readings[slot].answered, __ATOMIC_ACQUIRE) != 0u;
+    return atomic_load_acquire(&extended_state_test_readings[slot].answered) != 0u;
 }
 
 /**
