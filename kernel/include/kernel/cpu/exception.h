@@ -39,4 +39,11 @@
  */
 extern void interrupt_exception_initialize(void);
 
+/**
+ * @brief The #GP faults asmutils_read_model_specific_register_or_refuse raised and the #GP handler turned into a
+ *        refusal, since the boot.
+ * @return The count.
+ */
+extern uint32_t interrupt_exception_refused_model_specific_register_reads(void);
+
 #endif /* KERNEL_CPU_EXCEPTION_H */

@@ -88,8 +88,27 @@ static void exception_handle_invalid_opcode(const InterruptFrame_t *frame)
     exception_halt_forever();
 }
 
+static volatile uint32_t exception_refused_model_specific_register_reads = 0u;
+
+/**
+ * @brief Turns a #GP of the fault-tolerant RDMSR into its refusal: resumes past it, counted.
+ * @return Whether the fault was that RDMSR's.
+ */
+static bool exception_refuse_model_specific_register_read(const InterruptFrame_t *frame)
+{
+    if (frame->eip != (uint32_t) (uintptr_t) asmutils_read_model_specific_register_or_refuse_fault_point)
+        return false;
+    ++exception_refused_model_specific_register_reads;
+    interrupt_frame_set_resume_address(frame,
+                                       (uint32_t) (uintptr_t) asmutils_read_model_specific_register_or_refuse_refusal);
+    return true;
+}
+
 static void exception_handle_general_protection_fault(const InterruptFrame_t *frame)
 {
+    if (exception_refuse_model_specific_register_read(frame))
+        return;
+
     const uint32_t error_code = frame->err_code;
     const uint32_t selector_index = error_code >> 3u;
     const uint32_t is_external = error_code & 0x1u;
@@ -166,6 +185,11 @@ static void exception_handle_page_fault(const InterruptFrame_t *frame)
     exception_write_string(kernel_stack_guard_intact() ? "intact" : "CLOBBERED (stack overflow?)");
     exception_write_string("\r\n");
     exception_halt_forever();
+}
+
+uint32_t interrupt_exception_refused_model_specific_register_reads(void)
+{
+    return exception_refused_model_specific_register_reads;
 }
 
 void interrupt_exception_initialize(void)
