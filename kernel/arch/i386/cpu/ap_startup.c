@@ -2,6 +2,7 @@
 #include <kernel/cpu/apic_timer.h>
 #include <kernel/cpu/extended_state.h>
 #include <kernel/cpu/idt.h>
+#include <kernel/power/processor_park.h>
 
 /**
  * @brief The control registers one application processor read on itself as it entered C.
@@ -150,11 +151,4 @@ uint32_t application_processor_startup_get_logical_slot(void) { return ap_local_
 
 uint8_t application_processor_startup_is_initialized(void) { return ap_local_context.initialized; }
 
-void application_processor_startup_main_loop(void)
-{
-    asmutils_enable_interrupts();
-    while (1)
-    {
-        asmutils_halt();
-    }
-}
+void application_processor_startup_main_loop(void) { kernel_processor_park(); }

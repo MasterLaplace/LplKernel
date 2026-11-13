@@ -5,7 +5,9 @@
 #include <kernel/acpi/tables.h>
 #include <kernel/cpu/apic.h>
 #include <kernel/cpu/apic_timer.h>
+#include <kernel/cpu/cpu_topology.h>
 #include <kernel/diag/telemetry.h>
+#include <kernel/power/processor_park.h>
 #include <kernel/power/processor_sleep.h>
 
 #include <stddef.h>
@@ -76,6 +78,32 @@ static void idle_states_write_ladder(Serial_t *serial)
             idle_states_write_depth(serial, depth, &ladder.depths[depth]);
 }
 
+static void idle_states_write_park(Serial_t *serial, uint32_t slot, const ProcessorParkRecord_t *record)
+{
+    kernel_telemetry_begin_record(serial, "park");
+    kernel_telemetry_write_unsigned("slot", slot);
+    kernel_telemetry_write_unsigned("depth", record->depth);
+    kernel_telemetry_write_text("entry", kernel_processor_sleep_entry_name(record->entry));
+    kernel_telemetry_write_hexadecimal("target", record->target);
+    kernel_telemetry_write_hexadecimal("inherited", record->inherited);
+    kernel_telemetry_write_hexadecimal("refused", record->refused);
+    kernel_telemetry_write_unsigned("turns", record->turns);
+    kernel_telemetry_write_unsigned("port_reads", record->port_reads);
+    kernel_telemetry_write_unsigned("quick", record->quick);
+    kernel_telemetry_write_unsigned("stuck", record->stuck);
+    kernel_telemetry_end_record();
+}
+
+static void idle_states_write_parks(Serial_t *serial)
+{
+    const uint32_t here = apic_is_running() ? cpu_topology_get_slot_for_apic_id(apic_get_id()) : 0u;
+    ProcessorParkRecord_t record;
+
+    for (uint32_t slot = 0u; slot < CPU_TOPOLOGY_MAX_LOGICAL_CPUS_PUBLIC; ++slot)
+        if (slot != here && cpu_topology_is_logical_slot_online(slot) && kernel_processor_park_record(slot, &record))
+            idle_states_write_park(serial, slot, &record);
+}
+
 void kernel_idle_states_report(Serial_t *serial)
 {
     const IdleStatesTable_t *table = advanced_configuration_and_power_interface_processor_idle();
@@ -98,4 +126,5 @@ void kernel_idle_states_report(Serial_t *serial)
         if (advanced_configuration_and_power_interface_processor_idle_costs(idle, hint, &costs))
             idle_states_write_hint(serial, hint, &costs);
     idle_states_write_ladder(serial);
+    idle_states_write_parks(serial);
 }

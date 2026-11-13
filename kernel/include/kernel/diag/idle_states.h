@@ -66,6 +66,14 @@ extern "C" {
  *          - `target`: the MWAIT hint, the port read, or 0 for HLT;
  *          - `latency_us`: the latency _CST publishes for it, `none` where it publishes none.
  *
+ *          Then a `park` record per online application processor, what its park did so far
+ *          (kernel/power/processor_park.h):
+ *          - `slot`; `depth`, `entry` and `target` of its last sleep, as in `sleep.depth`;
+ *          - `inherited`: its port depths a validated verdict of this processor's probe names;
+ *          - `refused`: those its guard refused;
+ *          - `turns`: the sleeps its park entered; `port_reads`, and of them `quick` (returned quick, no interrupt
+ *            requested) and `stuck` (an interrupt still requested once interrupts were enabled).
+ *
  *          Called once the local timer is set up, since `usable` and the ladder read whether it always runs.
  *
  * @param serial Output port.

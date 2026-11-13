@@ -1,3 +1,4 @@
+#include <kernel/cpu/ap_bootstrap.h>
 #include <kernel/cpu/isr.h>
 #include <kernel/power/wakeup_accounting.h>
 
@@ -135,7 +136,8 @@ isr_handler_t interrupt_service_routine_get_handler(uint8_t interrupt_vector) { 
 
 void interrupt_service_routine_dispatch(InterruptFrame_t *frame)
 {
-    kernel_wakeup_accounting_attribute((uint8_t) frame->int_no);
+    if (!application_processor_bootstrap_is_stack_address((uintptr_t) frame))
+        kernel_wakeup_accounting_attribute((uint8_t) frame->int_no);
 
     isr_handler_t handler = g_isr_table[frame->int_no];
     if (handler)

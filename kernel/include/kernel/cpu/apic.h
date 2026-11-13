@@ -49,6 +49,10 @@
 #define LAPIC_REG_TIMER_CUR   0x0390u
 #define LAPIC_REG_TIMER_DIV   0x03E0u
 
+#define LAPIC_REG_IRR        0x0200u /**< The first of the 8 words of the interrupt request register. */
+#define LAPIC_REG_IRR_STRIDE 0x0010u /**< The distance between two of its words. */
+#define LAPIC_REG_IRR_WORDS  8u      /**< Its words, 32 vectors each. */
+
 #define X2APIC_MSR_BASE 0x800u
 
 /**
@@ -143,6 +147,17 @@ bool apic_initialize_on_cpu(uint32_t mmio_virtual_base);
  * @return Register value.
  */
 uint32_t apic_read(uint32_t reg_offset);
+
+/**
+ * @brief Whether this processor's local APIC holds an interrupt it has accepted and not yet handed over.
+ *
+ * @details Reads the interrupt request register's words for vectors 32 to 255, the only ones an interrupt can
+ *          arrive on. With interrupts masked, an interrupt that ended a C-state is still requested there; it moves to
+ *          the in-service register only once the processor takes it. NMI, SMI and INIT never appear in it.
+ *
+ * @return true when one is requested.
+ */
+bool apic_interrupt_requested(void);
 
 /**
  * @brief Write to a Local APIC register.

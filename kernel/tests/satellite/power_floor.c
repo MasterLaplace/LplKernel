@@ -1,5 +1,6 @@
 #include <kernel/acpi/interrupt_routing.h>
 #include <kernel/core/reconciler.h>
+#include <kernel/cpu/apic.h>
 #include <kernel/cpu/cpu_topology.h>
 #include <kernel/cpu/device_interrupt.h>
 #include <kernel/cpu/ioapic.h>
@@ -12,6 +13,7 @@
 #include <kernel/hal/hal_audio.h>
 #include <kernel/lib/asmutils.h>
 #include <kernel/power/frequency_scaling.h>
+#include <kernel/power/processor_park.h>
 #include <kernel/power/processor_sleep.h>
 #include <kernel/power/tickless.h>
 #include <kernel/power/wakeup_accounting.h>
@@ -238,6 +240,38 @@ static void power_floor_check_capture_line(KernelTest_t *test, const PeripheralC
 }
 
 /**
+ * @brief What the other processors' parks hold once the session's probe has judged its port depths.
+ */
+typedef struct {
+    uint32_t parked;    /**< Online application processors that took a turn of their park. */
+    uint32_t past_c1;   /**< Of them, those whose last sleep is deeper than C1. */
+    uint32_t inherited; /**< Those that took a port the session's probe validated. */
+    uint32_t refused;   /**< Those whose guard refused one. */
+} PowerFloorParks_t;
+
+/**
+ * @brief Counts what the online application processors' parks hold.
+ */
+static PowerFloorParks_t power_floor_parks(void)
+{
+    const uint32_t here = cpu_topology_get_slot_for_apic_id(apic_get_id());
+    PowerFloorParks_t parks = {0};
+    ProcessorParkRecord_t record;
+
+    for (uint32_t slot = 0u; slot < CPU_TOPOLOGY_MAX_LOGICAL_CPUS_PUBLIC; ++slot)
+    {
+        if (slot == here || !cpu_topology_is_logical_slot_online(slot) ||
+            !kernel_processor_park_record(slot, &record) || record.turns == 0u)
+            continue;
+        ++parks.parked;
+        parks.past_c1 += record.depth != PROCESSOR_SLEEP_DEPTH_C1 ? 1u : 0u;
+        parks.inherited += record.inherited != 0u ? 1u : 0u;
+        parks.refused += record.refused != 0u ? 1u : 0u;
+    }
+    return parks;
+}
+
+/**
  * @brief The power floor, measured rather than promised: the processor really slept, ticks were
  *        avoided and counted against the tick in force, the session spent most of its time asleep,
  *        and the tick came back to the timer that owned it, at the rate it was taken.
@@ -250,6 +284,7 @@ static void power_floor_check_capture_line(KernelTest_t *test, const PeripheralC
 KERNEL_TEST(the_idle_loop_sleeps_under_its_ceiling)
 {
     const SatelliteReport_t *const report = power_floor_run_once();
+    const PowerFloorParks_t parks = power_floor_parks();
 
     kernel_test_check(test, report != NULL, "the power floor comes up");
     if (report == NULL)
@@ -287,6 +322,10 @@ KERNEL_TEST(the_idle_loop_sleeps_under_its_ceiling)
     kernel_test_measure(test, "sleep_depth_clamped", kernel_processor_sleep_clamped_count());
     kernel_test_measure(test, "sleep_depths_refused", kernel_processor_sleep_refused_depth_count());
     kernel_test_measure(test, "port_sleeps", kernel_processor_sleep_port_sleep_count());
+    kernel_test_measure(test, "parks", parks.parked);
+    kernel_test_measure(test, "parks_past_c1", parks.past_c1);
+    kernel_test_measure(test, "parks_inherited", parks.inherited);
+    kernel_test_measure(test, "parks_refused", parks.refused);
     kernel_test_measure(test, "interrupt_break", kernel_processor_sleep_has_interrupt_break() ? 1u : 0u);
     kernel_test_measure(test, "scaling_available", report->scaling_available);
     kernel_test_measure(test, "scaling_refused", report->scaling_refused);

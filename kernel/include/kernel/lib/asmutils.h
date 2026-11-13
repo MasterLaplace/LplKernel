@@ -161,6 +161,21 @@ extern void asmutils_enable_interrupts_and_halt(void);
 extern void asmutils_input_byte_then_enable_interrupts(uint16_t port);
 
 /**
+ * @brief Reads a byte from an I/O port and says how long the read took, interrupts left as they are.
+ *
+ * @details LFENCE, RDTSC, IN, LFENCE, RDTSC: RDTSC waits for nothing before it (Intel SDM vol. 2B, RDTSC), so each
+ *          read of the counter comes after an LFENCE, which lets no later instruction start before every earlier one
+ *          has completed locally; the second read therefore follows the end of IN. On AMD, LFENCE holds RDTSC back
+ *          only once it is dispatch serializing, which Linux makes it (v6.12 arch/x86/kernel/cpu/amd.c,
+ *          `MSR_AMD64_DE_CFG_LFENCE_SERIALIZE_BIT`) and this kernel does not yet: there a read that slept may be timed
+ *          short, which errs towards refusing a depth, never towards keeping one.
+ *
+ * @param port The port.
+ * @return The TSC cycles from before the read to after it.
+ */
+extern uint64_t asmutils_timed_input_byte(uint16_t port);
+
+/**
  * @brief Execute a CPU no-operation instruction.
  *
  * @details
@@ -285,6 +300,23 @@ extern uint64_t asmutils_read_model_specific_register(uint32_t msr_id);
  * a #GP (General Protection fault) exception may occur.
  */
 extern void asmutils_write_model_specific_register(uint32_t msr_id, uint64_t value);
+
+/**
+ * @brief Writes a model-specific register once every earlier store is visible to the other processors: MFENCE, LFENCE,
+ *        WRMSR.
+ *
+ * @details Most WRMSRs serialize, but those to the x2APIC registers and IA32_TSC_DEADLINE do not, and MFENCE alone
+ *          does not hold WRMSR back, since WRMSR is no load or store; the LFENCE does. An interprocessor interrupt
+ *          sent by a WRMSR to the x2APIC ICR could otherwise reach a processor before the data it announces. Linux
+ *          puts the same pair before each x2APIC interrupt (`weak_wrmsr_fence`, v6.12
+ *          arch/x86/include/asm/processor.h), except on AMD and Hygon, whose writes need none (v6.12
+ *          arch/x86/kernel/cpu/amd.c, `X86_FEATURE_APIC_MSRS_FENCE`); here the pair is written on every processor,
+ *          for tens of cycles an interrupt.
+ *
+ * @param msr_id The register.
+ * @param value  What it receives.
+ */
+extern void asmutils_write_model_specific_register_after_a_fence(uint32_t msr_id, uint64_t value);
 
 /**
  * @brief Reads the full 64-bit timestamp counter.

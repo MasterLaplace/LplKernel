@@ -8,6 +8,7 @@
 #include <kernel/cpu/cpu_identity.h>
 
 #include <kernel/lib/asmutils.h>
+#include <kernel/memory/spsc_ring.h>
 #include <kernel/power/wakeup_accounting.h>
 
 #include <string.h>
@@ -76,13 +77,15 @@ static void processor_sleep_charge_asleep_since(uint64_t before)
 
 /**
  * @brief The line size the monitor watches, as CPUID leaves 1 and 5 give it: zero when leaf 1 does not advertise the
- *        pair.
+ *        pair, or when that line is larger than the idle line, which it would then share with other data.
  */
 static uint32_t processor_sleep_monitor_line_of(uint32_t leaf1_ecx, uint32_t leaf5_ebx)
 {
-    if ((leaf1_ecx & PROCESSOR_SLEEP_CPUID_MONITOR_BIT) == 0u)
+    const uint32_t line = leaf5_ebx & PROCESSOR_SLEEP_MONITOR_LINE_BITS;
+
+    if ((leaf1_ecx & PROCESSOR_SLEEP_CPUID_MONITOR_BIT) == 0u || !kernel_processor_sleep_monitor_line_fits(line))
         return 0u;
-    return leaf5_ebx & PROCESSOR_SLEEP_MONITOR_LINE_BITS;
+    return line;
 }
 
 /**
@@ -109,10 +112,20 @@ static bool processor_sleep_read_monitor(uint32_t *out_line, uint32_t *out_ecx, 
 }
 
 /**
- * A line nothing in the kernel writes. Armed as the monitor target, it turns MWAIT into
- * the same wait as HLT — only an interrupt ends it — except at the requested depth.
+ * @brief A line nothing in the kernel writes, alone in its interference span. Armed as the monitor target, it turns
+ *        MWAIT into the same wait as HLT, only an interrupt ending it, except at the requested depth.
  */
-static volatile uint32_t processor_sleep_idle_line = 0u;
+typedef struct __attribute__((aligned(KERNEL_SPSC_RING_INTERFERENCE_SIZE))) ProcessorSleepIdleLine {
+    uint32_t word; /**< What MONITOR watches. */
+} ProcessorSleepIdleLine_t;
+
+_Static_assert(sizeof(ProcessorSleepIdleLine_t) == KERNEL_SPSC_RING_INTERFERENCE_SIZE,
+               "the idle line spans its interference size and no more");
+
+static volatile ProcessorSleepIdleLine_t processor_sleep_idle_line;
+
+/** What the probes since the last adoption found of this ladder's ports: a word per depth past C1, 0 where none. */
+static volatile uint32_t processor_sleep_port_verdict_words[PROCESSOR_SLEEP_PORT_VERDICTS];
 
 _Static_assert(PROCESSOR_SLEEP_DEPTHS == PROCESSOR_SLEEP_HINT_MAX + 1u, "a ladder holds a depth per MWAIT hint");
 _Static_assert(PROCESSOR_SLEEP_DEPTHS == ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_PROCESSOR_IDLE_PORTS + 1u,
@@ -251,7 +264,15 @@ static void processor_sleep_ladder_ports(const ProcessorSleepLadderFacts_t *fact
 }
 
 /**
- * @brief Adopts @p ladder: every depth available, C1 active, no refusal counted.
+ * @brief Publishes what a probe found of port depth @p depth's port, for the parked processors.
+ */
+static void processor_sleep_publish_verdict(uint32_t depth, uint32_t verdict)
+{
+    processor_sleep_port_verdict_words[depth - 1u] = (uint32_t) processor_sleep_ladder.depths[depth].port | verdict;
+}
+
+/**
+ * @brief Adopts @p ladder: every depth available, C1 active, no refusal counted, no verdict published.
  */
 static void processor_sleep_adopt(const ProcessorSleepLadder_t *ladder)
 {
@@ -261,6 +282,8 @@ static void processor_sleep_adopt(const ProcessorSleepLadder_t *ladder)
     processor_sleep_probing = false;
     processor_sleep_depth = PROCESSOR_SLEEP_DEPTH_C1;
     processor_sleep_refused = 0u;
+    for (uint32_t index = 0u; index < PROCESSOR_SLEEP_PORT_VERDICTS; ++index)
+        processor_sleep_port_verdict_words[index] = 0u;
 }
 
 /**
@@ -603,6 +626,7 @@ bool kernel_processor_sleep_refuse_depth(uint32_t depth)
 
     processor_sleep_available_depths &= ~(1u << depth);
     processor_sleep_validated_depths &= ~(1u << depth);
+    processor_sleep_publish_verdict(depth, PROCESSOR_SLEEP_PORT_VERDICT_REFUSED);
     ++processor_sleep_refused;
     if (processor_sleep_depth >= depth)
         processor_sleep_depth = processor_sleep_deepest_available_at_or_below(depth);
@@ -625,7 +649,10 @@ void kernel_processor_sleep_end_probe(bool stops)
     if (kernel_processor_sleep_depth_awaiting_probe() == PROCESSOR_SLEEP_NO_DEPTH)
         return;
     if (stops)
+    {
         processor_sleep_validated_depths |= 1u << processor_sleep_depth;
+        processor_sleep_publish_verdict(processor_sleep_depth, PROCESSOR_SLEEP_PORT_VERDICT_VALIDATED);
+    }
     else
         (void) kernel_processor_sleep_refuse_depth(processor_sleep_depth);
 }
@@ -649,6 +676,21 @@ const char *kernel_processor_sleep_entry_name(uint32_t entry)
     static const char *const names[] = {"halt", "mwait", "port"};
 
     return entry < sizeof(names) / sizeof(names[0]) ? names[entry] : "unknown";
+}
+
+const volatile void *kernel_processor_sleep_idle_line(void) { return &processor_sleep_idle_line; }
+
+uint32_t kernel_processor_sleep_idle_line_bytes(void) { return (uint32_t) sizeof(processor_sleep_idle_line); }
+
+bool kernel_processor_sleep_monitor_line_fits(uint32_t largest_line_bytes)
+{
+    return largest_line_bytes <= sizeof(processor_sleep_idle_line);
+}
+
+void kernel_processor_sleep_port_verdicts(uint32_t out_verdicts[PROCESSOR_SLEEP_PORT_VERDICTS])
+{
+    for (uint32_t index = 0u; index < PROCESSOR_SLEEP_PORT_VERDICTS; ++index)
+        out_verdicts[index] = processor_sleep_port_verdict_words[index];
 }
 
 #if defined(LPL_KERNEL_ENABLE_SMOKE_TESTS)

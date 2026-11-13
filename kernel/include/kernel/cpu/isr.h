@@ -171,6 +171,11 @@ extern void interrupt_frame_set_resume_address(const InterruptFrame_t *frame, ui
  * Called from the assembly `isr_common_stub`.  Should not be called directly
  * from C code.
  *
+ * @details A frame the bootstrap processor pushed is first attributed to the wake-up accounting, which is that
+ *          processor's: a frame on an application processor's stack
+ *          (@ref application_processor_bootstrap_is_stack_address) is not, so that an interrupt another processor takes
+ *          never ends the bootstrap processor's sleep in its books.
+ *
  * @param frame Pointer to the interrupt frame on the kernel stack.
  */
 extern void interrupt_service_routine_dispatch(InterruptFrame_t *frame);

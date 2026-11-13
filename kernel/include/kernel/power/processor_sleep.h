@@ -102,6 +102,11 @@ typedef struct ProcessorSleepOutcome {
 #define PROCESSOR_SLEEP_DEPTH_DEEPEST (PROCESSOR_SLEEP_DEPTHS - 1u) /**< The deepest depth a request can name. */
 #define PROCESSOR_SLEEP_NO_DEPTH      0xFFFFFFFFu                   /**< What names no depth, outside every depth. */
 
+#define PROCESSOR_SLEEP_PORT_VERDICTS          (PROCESSOR_SLEEP_DEPTHS - 1u) /**< A verdict word per depth past C1. */
+#define PROCESSOR_SLEEP_PORT_VERDICT_PORT      0x0000FFFFu                   /**< A verdict word's port. */
+#define PROCESSOR_SLEEP_PORT_VERDICT_VALIDATED (1u << 16) /**< A probe found that port's read stops the processor. */
+#define PROCESSOR_SLEEP_PORT_VERDICT_REFUSED   (1u << 17) /**< A probe found that it does not. */
+
 /**
  * @enum ProcessorSleepEntry_t
  * @brief How a depth is entered.
@@ -238,7 +243,8 @@ bool kernel_processor_sleep_has_monitor(void);
  *        module: every sleep keeps the instruction it had.
  *
  * @return What kernel_processor_sleep_has_monitor answers once kernel_processor_sleep_initialize has
- *         run: true when CPUID leaf 1 advertises the pair and leaf 5 gives a non-zero line size.
+ *         run: true when CPUID leaf 1 advertises the pair and leaf 5 gives a non-zero line size that
+ *         @ref kernel_processor_sleep_monitor_line_fits.
  */
 bool kernel_processor_sleep_monitor_implemented(void);
 
@@ -247,6 +253,28 @@ bool kernel_processor_sleep_monitor_implemented(void);
  * @return The size, or 0 when the pair is unavailable.
  */
 uint32_t kernel_processor_sleep_monitor_line_bytes(void);
+
+/**
+ * @brief The line a sleep that only an interrupt should end hands MONITOR, on every processor: nothing writes it, and
+ *        nothing else lies in its @ref kernel_processor_sleep_idle_line_bytes, since a store anywhere in the monitored
+ *        line, this processor's own after MONITOR included, ends MWAIT at once.
+ * @return The line.
+ */
+const volatile void *kernel_processor_sleep_idle_line(void);
+
+/**
+ * @brief The bytes the idle line spans, aligned to them.
+ * @return KERNEL_SPSC_RING_INTERFERENCE_SIZE.
+ */
+uint32_t kernel_processor_sleep_idle_line_bytes(void);
+
+/**
+ * @brief Whether a monitor whose largest line is @p largest_line_bytes watches the idle line alone.
+ * @param largest_line_bytes CPUID.05H:EBX[15:0].
+ * @return true when it is no larger than @ref kernel_processor_sleep_idle_line_bytes; the monitor is not used
+ *         otherwise, every MWAIT depth with it.
+ */
+bool kernel_processor_sleep_monitor_line_fits(uint32_t largest_line_bytes);
 
 /**
  * @brief Which MWAIT hints this CPUID word enumerates, as a bit per hint.
@@ -267,7 +295,7 @@ uint32_t kernel_processor_sleep_enumerated_hints(uint32_t leaf5_edx);
 /**
  * @brief Which MWAIT hints CPUID leaves 1 and 5 enumerate, as a bit per hint, read as
  *        @ref kernel_processor_sleep_initialize reads them: none unless leaf 1 advertises the pair and leaf 5 gives a
- *        non-zero line size.
+ *        non-zero line size that @ref kernel_processor_sleep_monitor_line_fits.
  *
  * @details Pure, like @ref kernel_processor_sleep_enumerated_hints, so that a test hands it what no emulator gives.
  *
@@ -357,6 +385,19 @@ void kernel_processor_sleep_begin_probe(void);
  * @param stops Whether the probe found that the depth's read stops the processor.
  */
 void kernel_processor_sleep_end_probe(bool stops);
+
+/**
+ * @brief What the probes since the last initialisation found of the ports of this ladder, for the parked processors
+ *        to take: per port depth judged, its port with PROCESSOR_SLEEP_PORT_VERDICT_VALIDATED or
+ *        PROCESSOR_SLEEP_PORT_VERDICT_REFUSED; 0 where no probe judged.
+ *
+ * @details Written by @ref kernel_processor_sleep_end_probe and @ref kernel_processor_sleep_refuse_depth, cleared by
+ *          @ref kernel_processor_sleep_initialize; each word is read once, whole, so that another processor reading
+ *          while the bootstrap processor writes sees a word before or after, never between.
+ *
+ * @param out_verdicts Receives PROCESSOR_SLEEP_PORT_VERDICTS words.
+ */
+void kernel_processor_sleep_port_verdicts(uint32_t out_verdicts[PROCESSOR_SLEEP_PORT_VERDICTS]);
 
 /**
  * @brief Sleeps entered by a port read since the accounting began.

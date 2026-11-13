@@ -8,6 +8,7 @@
 #include <kernel/testing/test.h>
 
 #include <stdint.h>
+#include <string.h>
 
 KERNEL_TEST_SUITE(interprocessor_interrupts, KERNEL_TEST_STAGE_PUBLISHED);
 
@@ -272,4 +273,77 @@ KERNEL_TEST(every_processor_finds_its_own_slot)
     kernel_test_measure(test, "asked", asked);
     kernel_test_measure(test, "in_their_slot", in_their_slot);
     kernel_test_measure(test, "in_their_domain", in_their_domain);
+}
+
+/**
+ * Reads of the request register the request test makes before it gives up: the interrupt is requested once its send
+ * returns, which waits for its delivery, and the tick that bounds other waits is masked there.
+ */
+#define INTERPROCESSOR_INTERRUPTS_TEST_REQUEST_READS 1000u
+
+/** Runs of the handler the request test's self-interrupt reaches. */
+static volatile uint32_t interprocessor_interrupts_test_requested_runs = 0u;
+
+/**
+ * @brief Run on the processor the request test's vector reached: counts the run.
+ */
+static void interprocessor_interrupts_test_count_run(void *context)
+{
+    (void) context;
+    ++interprocessor_interrupts_test_requested_runs;
+}
+
+/**
+ * @brief An interrupt sent while interrupts are masked is requested in the local APIC until the processor takes it:
+ *        the IRR, not the in-service register, and on a vector past the first 32.
+ *
+ * @details The parked processors judge a port read by this: an interrupt that ended it is still requested when it
+ *          returns, interrupts masked. A self-interrupt stands for the one that would have ended the read.
+ */
+KERNEL_TEST(a_masked_interrupt_is_requested_until_the_processor_takes_it)
+{
+    uint8_t vector = 0u;
+    bool requested = false;
+
+    if (!advanced_pic_ipi_is_ready())
+    {
+        kernel_test_skip(test, "the local APIC sends no interprocessor interrupt");
+        return;
+    }
+    if (!device_interrupt_allocate(interprocessor_interrupts_test_count_run, NULL, &vector))
+    {
+        kernel_test_check(test, false, "a vector is free");
+        return;
+    }
+    interprocessor_interrupts_test_requested_runs = 0u;
+    asmutils_disable_interrupts();
+    (void) advanced_pic_ipi_send_fixed(0u, vector, ADVANCED_PIC_IPI_SHORT_SELF);
+    for (uint32_t read = 0u; read < INTERPROCESSOR_INTERRUPTS_TEST_REQUEST_READS && !requested; ++read)
+        requested = apic_interrupt_requested();
+    const uint32_t runs_masked = interprocessor_interrupts_test_requested_runs;
+    asmutils_enable_interrupts();
+    asmutils_no_operation();
+    const uint32_t runs_after = interprocessor_interrupts_test_requested_runs;
+    const bool requested_after = apic_interrupt_requested();
+    device_interrupt_release(vector);
+
+    kernel_test_check(test, requested && runs_masked == 0u, "masked, it is requested and not taken");
+    kernel_test_check(test, runs_after == 1u, "unmasked, it is taken once");
+    kernel_test_check(test, !requested_after, "and no longer requested");
+    kernel_test_measure(test, "vector", vector);
+}
+
+/**
+ * @brief The fenced write of a model-specific register is MFENCE, LFENCE, WRMSR, right after its arguments are loaded:
+ *        the x2APIC interrupt it sends follows every earlier store.
+ */
+KERNEL_TEST(the_fenced_register_write_fences_before_its_wrmsr)
+{
+    static const uint8_t fences_then_wrmsr[] = {0x0Fu, 0xAEu, 0xF0u, 0x0Fu, 0xAEu, 0xE8u, 0x0Fu, 0x30u, 0xC3u};
+    const uint8_t *routine = (const uint8_t *) (uintptr_t) asmutils_write_model_specific_register_after_a_fence;
+    bool found = false;
+
+    for (uint32_t offset = 0u; offset < 16u && !found; ++offset)
+        found = memcmp(routine + offset, fences_then_wrmsr, sizeof(fences_then_wrmsr)) == 0;
+    kernel_test_check(test, found, "mfence; lfence; wrmsr; ret");
 }

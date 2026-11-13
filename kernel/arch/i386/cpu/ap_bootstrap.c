@@ -105,3 +105,10 @@ ApplicationProcessorBootstrapEntry_t *application_processor_bootstrap_next_unboo
 
     return NULL;
 }
+
+bool application_processor_bootstrap_is_stack_address(uintptr_t address)
+{
+    const uintptr_t first = (uintptr_t) ap_bootstrap_static_stacks;
+
+    return address >= first && address - first < sizeof(ap_bootstrap_static_stacks);
+}

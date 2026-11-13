@@ -168,6 +168,7 @@ kernel/ai/model_slot.o \
 kernel/ai/inference_budget.o \
 kernel/dialogue/dialogue_channel.o \
 kernel/power/processor_sleep.o \
+kernel/power/processor_park.o \
 kernel/power/tickless.o \
 kernel/power/frequency_scaling.o \
 kernel/power/wakeup_accounting.o \
