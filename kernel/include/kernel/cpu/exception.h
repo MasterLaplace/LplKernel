@@ -39,4 +39,21 @@
  */
 extern void interrupt_exception_initialize(void);
 
+/**
+ * @brief Whether the #GP handler resumes a fault as asmutils_read_model_specific_register_or_refuse's refusal: one
+ *        raised in ring 0 at that routine's RDMSR, and no other, so that every other #GP still panics.
+ * @param instruction_pointer The faulting EIP.
+ * @param code_segment        The faulting CS, whose low two bits are its privilege level.
+ * @return true for that RDMSR's fault.
+ */
+extern bool interrupt_exception_resumes_model_specific_register_read(uint32_t instruction_pointer,
+                                                                     uint32_t code_segment);
+
+/**
+ * @brief The #GP faults asmutils_read_model_specific_register_or_refuse raised and the #GP handler turned into a
+ *        refusal, since the boot, counted atomically by whichever processor took them.
+ * @return The count.
+ */
+extern uint32_t interrupt_exception_refused_model_specific_register_reads(void);
+
 #endif /* KERNEL_CPU_EXCEPTION_H */

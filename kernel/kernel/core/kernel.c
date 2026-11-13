@@ -53,12 +53,14 @@
 #include <kernel/memory/stack_allocator.h>
 #include <kernel/memory/tlsf.h>
 #include <kernel/memory/vmm.h>
+#include <kernel/power/energy_counter.h>
 #include <kernel/power/processor_sleep.h>
 
 #include <kernel/core/console.h>
 #include <kernel/core/reconciler.h>
 #include <kernel/core/smp.h>
 #include <kernel/core/splash.h>
+#include <kernel/diag/energy.h>
 #include <kernel/diag/idle_states.h>
 #include <kernel/diag/machine.h>
 #include <kernel/diag/sysmon.h>
@@ -495,6 +497,8 @@ __attribute__((constructor)) void kernel_initialize(void)
     write_peripheral_component_interconnect_function_records(&com1);
     kernel_machine_report(&com1);
     kernel_idle_states_report(&com1);
+    kernel_energy_counter_initialize();
+    kernel_energy_report(&com1);
     kernel_splash_update("PCI Bus Enumeration");
 
     kernel_bring_up_virtio_display();

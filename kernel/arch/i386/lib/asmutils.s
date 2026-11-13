@@ -332,3 +332,24 @@ asmutils_store_zero_with_resume_address:
     movb $0x00, (%edx)
 1:
     ret
+
+.globl asmutils_read_model_specific_register_or_refuse
+.globl asmutils_read_model_specific_register_or_refuse_fault_point
+.globl asmutils_read_model_specific_register_or_refuse_refusal
+.type asmutils_read_model_specific_register_or_refuse, @function
+asmutils_read_model_specific_register_or_refuse:
+    pushl %ebx
+    movl 8(%esp), %ecx
+    movl 12(%esp), %ebx
+# A #GP here resumes at the refusal below, ESP and EBX as they are now (exception.c).
+asmutils_read_model_specific_register_or_refuse_fault_point:
+    rdmsr
+    movl %eax, (%ebx)
+    movl %edx, 4(%ebx)
+    movl $1, %eax
+    popl %ebx
+    ret
+asmutils_read_model_specific_register_or_refuse_refusal:
+    xorl %eax, %eax
+    popl %ebx
+    ret

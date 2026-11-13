@@ -23,6 +23,7 @@
 #ifndef KERNEL_LIB_ASMUTILS_H
 #define KERNEL_LIB_ASMUTILS_H
 
+#include <stdbool.h>
 #include <stdint.h>
 
 /**
@@ -287,6 +288,29 @@ extern void asmutils_cpuid(uint32_t leaf, uint32_t subleaf, uint32_t *out_eax, u
  * a #GP (General Protection fault) exception may occur.
  */
 extern uint64_t asmutils_read_model_specific_register(uint32_t msr_id);
+
+/**
+ * @brief Reads a Model-Specific Register the processor may not have, and says whether it has it.
+ *
+ * @details One RDMSR, at asmutils_read_model_specific_register_or_refuse_fault_point. A #GP it raises, which RDMSR
+ *          raises for an MSR the processor or its hypervisor does not implement (Intel SDM vol. 2B, RDMSR), is not a
+ *          panic: the #GP handler resumes at asmutils_read_model_specific_register_or_refuse_refusal, and the call
+ *          returns false, as Linux's `rdmsrl_safe` fixes an exception-table entry up (v6.12
+ *          arch/x86/include/asm/msr.h, arch/x86/mm/extable.c). It writes nothing shared but the count of refusals,
+ *          which the handler adds to atomically, so any processor may call it, interrupts on or off, and a read costs
+ *          what RDMSR costs.
+ *
+ * @param msr_id    The MSR identifier.
+ * @param out_value Receives the value; untouched on a refusal.
+ * @return true when the processor gave the register.
+ */
+extern bool asmutils_read_model_specific_register_or_refuse(uint32_t msr_id, uint64_t *out_value);
+
+/** The RDMSR of asmutils_read_model_specific_register_or_refuse, for the #GP handler to recognise. */
+extern const char asmutils_read_model_specific_register_or_refuse_fault_point[];
+
+/** Where the #GP handler resumes that RDMSR's fault: the routine's return of false. */
+extern const char asmutils_read_model_specific_register_or_refuse_refusal[];
 
 /**
  * @brief Write a Model-Specific Register (MSR).

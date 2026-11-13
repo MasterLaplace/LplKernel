@@ -1,6 +1,7 @@
 #include <kernel/cpu/exception.h>
 #include <kernel/cpu/stack_guard.h>
 #include <kernel/memory/section_protection.h>
+#include <stdatomic.h>
 
 #define EXCEPTION_VECTOR_DOUBLE_FAULT             8u
 #define EXCEPTION_VECTOR_DEBUG_EXCEPTION          1u
@@ -88,8 +89,29 @@ static void exception_handle_invalid_opcode(const InterruptFrame_t *frame)
     exception_halt_forever();
 }
 
+#define EXCEPTION_PRIVILEGE_MASK 0x3u /**< A selector's requested privilege level, the low two bits of CS. */
+
+static uint32_t exception_refused_model_specific_register_reads = 0u;
+
+/**
+ * @brief Turns a #GP of the fault-tolerant RDMSR into its refusal: resumes past it, counted.
+ * @return Whether the fault was that RDMSR's.
+ */
+static bool exception_refuse_model_specific_register_read(const InterruptFrame_t *frame)
+{
+    if (!interrupt_exception_resumes_model_specific_register_read(frame->eip, frame->cs))
+        return false;
+    atomic_fetch_add(&exception_refused_model_specific_register_reads, 1u);
+    interrupt_frame_set_resume_address(frame,
+                                       (uint32_t) (uintptr_t) asmutils_read_model_specific_register_or_refuse_refusal);
+    return true;
+}
+
 static void exception_handle_general_protection_fault(const InterruptFrame_t *frame)
 {
+    if (exception_refuse_model_specific_register_read(frame))
+        return;
+
     const uint32_t error_code = frame->err_code;
     const uint32_t selector_index = error_code >> 3u;
     const uint32_t is_external = error_code & 0x1u;
@@ -166,6 +188,17 @@ static void exception_handle_page_fault(const InterruptFrame_t *frame)
     exception_write_string(kernel_stack_guard_intact() ? "intact" : "CLOBBERED (stack overflow?)");
     exception_write_string("\r\n");
     exception_halt_forever();
+}
+
+bool interrupt_exception_resumes_model_specific_register_read(uint32_t instruction_pointer, uint32_t code_segment)
+{
+    return instruction_pointer == (uint32_t) (uintptr_t) asmutils_read_model_specific_register_or_refuse_fault_point &&
+           (code_segment & EXCEPTION_PRIVILEGE_MASK) == 0u;
+}
+
+uint32_t interrupt_exception_refused_model_specific_register_reads(void)
+{
+    return atomic_load_relaxed(&exception_refused_model_specific_register_reads);
 }
 
 void interrupt_exception_initialize(void)
