@@ -247,6 +247,7 @@ typedef struct {
     uint32_t past_c1;   /**< Of them, those whose last sleep is deeper than C1. */
     uint32_t inherited; /**< Those that took a port the session's probe validated. */
     uint32_t refused;   /**< Those whose guard refused one. */
+    uint32_t demotions; /**< The turns the bus-master check demoted from a C3, all of them together. */
 } PowerFloorParks_t;
 
 /**
@@ -267,6 +268,7 @@ static PowerFloorParks_t power_floor_parks(void)
         parks.past_c1 += record.depth != PROCESSOR_SLEEP_DEPTH_C1 ? 1u : 0u;
         parks.inherited += record.inherited != 0u ? 1u : 0u;
         parks.refused += record.refused != 0u ? 1u : 0u;
+        parks.demotions += record.demotions;
     }
     return parks;
 }
@@ -322,10 +324,14 @@ KERNEL_TEST(the_idle_loop_sleeps_under_its_ceiling)
     kernel_test_measure(test, "sleep_depth_clamped", kernel_processor_sleep_clamped_count());
     kernel_test_measure(test, "sleep_depths_refused", kernel_processor_sleep_refused_depth_count());
     kernel_test_measure(test, "port_sleeps", kernel_processor_sleep_port_sleep_count());
+    kernel_test_measure(test, "bus_master_demotions", kernel_processor_sleep_bus_master_demotion_count());
+    kernel_test_measure(test, "unarmed_waits", kernel_processor_sleep_unarmed_wait_count());
+    kernel_test_measure(test, "bus_master_reload", kernel_processor_sleep_bus_master_reload());
     kernel_test_measure(test, "parks", parks.parked);
     kernel_test_measure(test, "parks_past_c1", parks.past_c1);
     kernel_test_measure(test, "parks_inherited", parks.inherited);
     kernel_test_measure(test, "parks_refused", parks.refused);
+    kernel_test_measure(test, "parks_demotions", parks.demotions);
     kernel_test_measure(test, "interrupt_break", kernel_processor_sleep_has_interrupt_break() ? 1u : 0u);
     kernel_test_measure(test, "scaling_available", report->scaling_available);
     kernel_test_measure(test, "scaling_refused", report->scaling_refused);

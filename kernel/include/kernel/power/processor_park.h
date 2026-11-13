@@ -22,9 +22,13 @@
  * read return at once. A refusal holds while the verdict that let the depth in does.
  *
  * The guard judges each port read by what the processor can see when the read returns, interrupts still masked: how
- * long it took, and whether an interrupt is requested in the local APIC. A read that slept until an interrupt finds
- * that interrupt requested; one that the hardware ended for another reason, which ACPI allows, slept first; one that
- * does not stop the processor returns at once with nothing requested.
+ * long it took, whether an interrupt is requested in the local APIC, and, after a C3, whether a bus master requested
+ * the bus. A read that slept until an interrupt finds that interrupt requested; one that a bus master ended, which
+ * ACPI requires of C3 once BM_RLD is set, finds BM_STS set; one that the hardware ended for another reason, which ACPI
+ * allows, slept first; one that does not stop the processor returns at once with nothing requested.
+ *
+ * A C3 is entered behind the bus-master check, as the bootstrap processor's sleeps are: where a bus master was active
+ * since the last check, the park enters the deepest depth below it it may, without the check.
  *
  * @author @MasterLaplace
  * @version 0.0.0
@@ -69,6 +73,16 @@ typedef struct ProcessorParkJudge {
 } ProcessorParkJudge_t;
 
 /**
+ * @brief What a parked processor saw when one of its port reads returned, interrupts masked.
+ */
+typedef struct ProcessorParkRead {
+    uint64_t cycles;      /**< The read's length, in TSC cycles. */
+    bool requested;       /**< Whether an interrupt was requested in the local APIC. */
+    bool still_requested; /**< Whether one was still once interrupts were enabled again; read only when requested. */
+    bool bus_mastered;    /**< Whether BM_STS was set after a read of a depth with the bus-master check. */
+} ProcessorParkRead_t;
+
+/**
  * @brief What one parked processor did, each field written by that processor alone and a 32-bit word, never torn.
  */
 typedef struct ProcessorParkRecord {
@@ -81,22 +95,34 @@ typedef struct ProcessorParkRecord {
     volatile uint32_t port_reads; /**< The port reads it made. */
     volatile uint32_t quick;      /**< Of them, those that returned quick with no interrupt requested. */
     volatile uint32_t stuck; /**< Of them, those whose interrupt was still requested once interrupts were enabled. */
+    volatile uint32_t bus_mastered; /**< Of them, those after which BM_STS was set. */
+    volatile uint32_t demotions;    /**< Turns the bus-master check demoted from a C3. */
 } ProcessorParkRecord_t;
+
+/**
+ * @brief Whether a port read did not stop the processor: it returned sooner than @p quick_cycles with no interrupt
+ *        requested and no bus master seen.
+ *
+ * @param read         What the processor saw when the read returned.
+ * @param quick_cycles The length under which such a read did not stop the processor.
+ * @return true for a quick read, which the guard and the park's record both count.
+ */
+extern bool kernel_processor_park_read_is_quick(const ProcessorParkRead_t *read, uint64_t quick_cycles);
 
 /**
  * @brief Judges one read of a port depth's port, and says whether it refuses the depth.
  *
- * @param judge           The streaks of this depth, updated.
- * @param requested       Whether an interrupt was requested when the read returned, interrupts masked.
- * @param still_requested Whether one was still requested once interrupts were enabled again; read only when
- *                        @p requested.
- * @param cycles          The read's length, in TSC cycles.
- * @param quick_cycles    The length under which a read with no interrupt requested did not stop the processor.
+ * @details A read is quick as @ref kernel_processor_park_read_is_quick says; stuck when its interrupt was still
+ *          requested once interrupts were enabled.
+ *
+ * @param judge        The streaks of this depth, updated.
+ * @param read         What the processor saw when the read returned.
+ * @param quick_cycles The length under which a read with nothing requested did not stop the processor.
  * @return true when this read makes KERNEL_PROCESSOR_PARK_QUICK_LIMIT quick reads, or KERNEL_PROCESSOR_PARK_STUCK_LIMIT
  *         stuck ones, in a row; both streaks then start over.
  */
-extern bool kernel_processor_park_judge(ProcessorParkJudge_t *judge, bool requested, bool still_requested,
-                                        uint64_t cycles, uint64_t quick_cycles);
+extern bool kernel_processor_park_judge(ProcessorParkJudge_t *judge, const ProcessorParkRead_t *read,
+                                        uint64_t quick_cycles);
 
 /**
  * @brief The port depths of @p ladder whose port a validated verdict of @p verdicts names and no refused one does.
@@ -108,6 +134,19 @@ extern bool kernel_processor_park_judge(ProcessorParkJudge_t *judge, bool reques
  */
 extern uint32_t kernel_processor_park_inherited_depths(const ProcessorSleepLadder_t *ladder, const uint32_t *verdicts,
                                                        uint32_t count);
+
+/**
+ * @brief The depths of @p ladder a parked processor may enter: every available one that is not a port depth, and each
+ *        port depth inherited and not refused while the clock is known.
+ *
+ * @param ladder      Its ladder.
+ * @param inherited   Its port depths the bootstrap processor validated.
+ * @param refused     Its port depths its guard refused.
+ * @param clock_known Whether the guard can time a read; without it, no port depth.
+ * @return A mask of depths, C1's always set.
+ */
+extern uint32_t kernel_processor_park_allowed_depths(const ProcessorSleepLadder_t *ladder, uint32_t inherited,
+                                                     uint32_t refused, bool clock_known);
 
 /**
  * @brief The depth a parked processor sleeps at: the deepest available one of @p ladder it may enter.

@@ -7,22 +7,27 @@ Usage: python3 -I tools/acpi/oracles/acpiexec_idle.py ... | python3 -I tools/acp
        python3 -I tools/acpi/oracles/linux_idle_ports.py --self-test
 
 Every line read is printed again, and after a slot's last state and its hint lines, one line per state the processor
-enters by a port read, in _CST's order, `aml idle port <slot> <depth> port=0x<port> type=2 latency=<us>`, the first one
-depth 1, since depth 0 is C1; then `aml idle ports <slot> given=<n> refused=<n>`. F holds the `fadt` lines
-expected_fadt.py prints; without it, no port lies in the FADT's registers. The rules are Linux's acpi_idle, v6.12, on a
-processor whose MWAIT enumerates no state past C1 and whose C3 Linux refuses:
+enters by a port read, in _CST's order, `aml idle port <slot> <depth> port=0x<port> type=<2 or 3> latency=<us>`, the
+first one depth 1, since depth 0 is C1; then `aml idle ports <slot> given=<n> refused=<n>`. F holds the `fadt` lines
+expected_fadt.py prints; without it, no port lies in the FADT's registers and no PM1 status register is given. The
+rules are Linux's acpi_idle, v6.12, on a processor whose MWAIT enumerates no state past C1 and that enters C3 behind
+the bus-master check alone (bm_check set, bm_control clear, as on AMD from family 0x17,
+`acpi_processor_power_init_bm_check`, arch/x86/kernel/acpi/cstate.c):
 
   - a state of FFixedHW or SystemIO is kept, and any other space is skipped (`acpi_processor_evaluate_cst`,
     drivers/acpi/acpi_processor.c); a kept state of type 1 is valid; one of type 2 is valid when it is a port read of a
     port other than 0 (`acpi_processor_power_verify`, drivers/acpi/processor_idle.c), and one of FFixedHW is not, since
     MWAIT reaches no state past C1 (`acpi_processor_ffh_cstate_probe_cpu`, arch/x86/kernel/acpi/cstate.c); a C3 is
-    not (`acpi_processor_power_verify_c3`), nor is any other type;
+    valid as a C2 is, since _CST gives it (`acpi_processor_power_verify_c3`); no other type is;
   - when a valid state's type is at least the previous valid state's and its latency below that state's, the
     latencies of the valid states are sorted into increasing order, each state keeping its place and its register
     (`acpi_cst_latency_sort`);
-  - each valid state of type 2 is printed, with its sorted latency.
+  - each valid state of type 2 or 3 is printed, with its type and its sorted latency.
 
-The kernel's own rules, where Linux has none: C3 waits for the bus-master check (#839); a port past 0xFFFF, which
+The kernel's own rules, where Linux has none: a C3 needs a PM1 status register to read BM_STS from, PM1a's event block
+of 4 bytes at least and PM1b's, when it gives one, both port ranges that reach no protected port; a port state whose
+type is below that of one kept before it is not valid, so that the depths deepen with their order; a port past 0xFFFF,
+which
 Linux would cut to its low 16 bits, is not valid, nor is one in a register block of the FADT (PM1 event, PM1 control,
 PM timer, GPE blocks, the reset register) or its SMI_CMD, one of a device the kernel drives (the PIT, 0x40-0x43; the
 keyboard controller, 0x60 and 0x64; CMOS, 0x70-0x71; COM1, 0x3F8-0x3FF), or one the ACPI layer protects (the two
@@ -68,6 +73,27 @@ def fadt_ranges(lines):
     return ranges
 
 
+def status_register(space, width, address, required):
+    """Whether a PM1 event block gives a status register BM_STS is read from: a port range of 4 bytes at least that
+    reaches no protected port; an absent block gives none, which only PM1b's may."""
+    if address == 0:
+        return not required
+    return (space == SYSTEM_IO and width >= 32 and address + (width + 7) // 8 - 1 <= 0xFFFF
+            and not within(address, PROTECTED_PORTS) and not within(address + 1, PROTECTED_PORTS))
+
+
+def read_fadt(lines):
+    """The FADT's port ranges and whether it gives a PM1 status register, from expected_fadt.py's lines."""
+    blocks = {}
+    for line in lines:
+        block = FADT_BLOCK.match(line)
+        if block:
+            blocks[block.group(1)] = (int(block.group(2)), int(block.group(3)), int(block.group(4), 16))
+    status = (status_register(*blocks.get("pm1a_event", (0, 0, 0)), True) and
+              status_register(*blocks.get("pm1b_event", (0, 0, 0)), False))
+    return fadt_ranges(lines), status
+
+
 def within(port, ranges):
     """Whether @p port lies in one of @p ranges."""
     return any(first <= port <= last for first, last in ranges)
@@ -78,16 +104,32 @@ def readable(port, fadt):
     return 0 < port <= 0xFFFF and not within(port, PROTECTED_PORTS + DRIVEN_PORTS) and not within(port, fadt)
 
 
-def valid(kind, space, address, fadt):
-    """Whether acpi_idle keeps a state, on a processor whose MWAIT reaches no state past C1 and whose C3 it refuses."""
+def valid(kind, space, address, fadt, status):
+    """Whether acpi_idle keeps a state, on a processor whose MWAIT reaches no state past C1 and that enters C3 behind
+    the bus-master check, with the kernel's own rules: a C3 only beside a PM1 status register."""
     if kind == C1:
         return space in (FIXED_HARDWARE, SYSTEM_IO)
-    return kind == C2 and space == SYSTEM_IO and readable(address, fadt)
+    return space == SYSTEM_IO and readable(address, fadt) and (kind == C2 or (kind == C3 and status))
 
 
-def sorted_latencies(states, fadt):
+def kept_states(states, fadt, status):
+    """The indexes of the valid states of @p states, a port state whose type is below that of one kept before it
+    left out."""
+    kept, deepest = [], 0
+    for index, (kind, _, space, address) in enumerate(states):
+        if not valid(kind, space, address, fadt, status):
+            continue
+        if kind in (C2, C3):
+            if kind < deepest:
+                continue
+            deepest = kind
+        kept.append(index)
+    return kept
+
+
+def sorted_latencies(states, fadt, status):
     """The latency acpi_idle gives each valid state of @p states, (type, latency, space, address) in _CST's order."""
-    kept = [index for index, (kind, _, space, address) in enumerate(states) if valid(kind, space, address, fadt)]
+    kept = kept_states(states, fadt, status)
     latencies = [states[index][1] for index in kept]
     buggy, last_type, last_latency = False, 0, 0
     for index in kept:
@@ -100,14 +142,14 @@ def sorted_latencies(states, fadt):
     return dict(zip(kept, latencies))
 
 
-def port_lines(slot, states, fadt):
+def port_lines(slot, states, fadt, status):
     """The `aml idle port` and `aml idle ports` lines of a slot whose states are (type, latency, space, address)."""
-    latencies = sorted_latencies(states, fadt)
+    latencies = sorted_latencies(states, fadt, status)
     lines, refused = [], 0
     for index, (kind, _, space, address) in enumerate(states):
         if space == SYSTEM_IO and kind in (C2, C3) and index not in latencies:
             refused += 1
-        elif index in latencies and kind == C2:
+        elif index in latencies and kind in (C2, C3):
             if len(lines) == MAX_PORT_DEPTHS:
                 refused += 1
                 continue
@@ -116,12 +158,12 @@ def port_lines(slot, states, fadt):
     return lines + ["aml idle ports %u given=%u refused=%u" % (slot, len(lines), refused)]
 
 
-def annotate(lines, fadt=()):
+def annotate(lines, fadt=(), status=False):
     """Every line of `lines`, with the port lines of each slot after its states and its hint lines."""
     out, slot, states = [], None, []
     for line in lines:
         if slot is not None and not STATE.match(line) and not HINT.match(line):
-            out.extend(port_lines(slot, states, fadt))
+            out.extend(port_lines(slot, states, fadt, status))
             slot, states = None, []
         out.append(line)
         slot_match, state_match = SLOT.match(line), STATE.match(line)
@@ -131,7 +173,7 @@ def annotate(lines, fadt=()):
             states.append((int(state_match.group(2)), int(state_match.group(3)), int(state_match.group(4), 16),
                            int(state_match.group(5), 16)))
     if slot is not None:
-        out.extend(port_lines(slot, states, fadt))
+        out.extend(port_lines(slot, states, fadt, status))
     return out
 
 
@@ -142,9 +184,11 @@ def state(slot, index, kind, latency, space, address, offset=0):
 
 
 def ports(slot, given, refused, *entries):
-    """The lines a slot that gives @p entries, (port, latency), and refuses @p refused, prints."""
-    return (["aml idle port %u %u port=0x%04X type=2 latency=%u" % (slot, depth + 1, port, latency)
-             for depth, (port, latency) in enumerate(entries)] +
+    """The lines a slot that gives @p entries, (port, latency) of type 2 or (port, latency, type), and refuses
+    @p refused, prints."""
+    return (["aml idle port %u %u port=0x%04X type=%u latency=%u"
+             % (slot, depth + 1, entry[0], entry[2] if len(entry) > 2 else C2, entry[1])
+             for depth, entry in enumerate(entries)] +
             ["aml idle ports %u given=%u refused=%u" % (slot, given, refused)])
 
 
@@ -166,10 +210,10 @@ def self_test():
     """Checks annotate() on made-up slots; returns the count of cases that differ."""
     ffh, io = FIXED_HARDWARE, SYSTEM_IO
     cases = [
-        ("AMD's C1 by MWAIT, C2 by a port, C3 refused",
+        ("AMD's C1 by MWAIT, C2 by a port, C3 refused without a PM1 status register",
          [state(0, 1, 1, 1, ffh, 0, 2), state(0, 2, 2, 18, io, 0x414), state(0, 3, 3, 350, io, 0x415)],
          ports(0, 1, 1, (0x414, 18))),
-        ("a C2 slower than the refused C3 after it keeps its latency",
+        ("a C2 slower than the C3 after it, refused, keeps its latency",
          [state(1, 1, 1, 1, ffh, 0, 2), state(1, 2, 2, 400, io, 0x414), state(1, 3, 3, 350, io, 0x415)],
          ports(1, 1, 1, (0x414, 400))),
         ("two C2 of falling latency are sorted",
@@ -202,12 +246,32 @@ def self_test():
          [state(11, 1, 2, 1, io, port) for port in (0x400, 0x403, 0x404, 0x405, 0x408, 0x40B, 0x420, 0x427, 0xB0,
                                                        0x428)],
          ports(11, 1, 9, (0x428, 1))),
+        ("AMD's C2 and C3 beside a PM1 status register, the C3 of type 3",
+         [state(12, 1, 1, 1, ffh, 0, 2), state(12, 2, 2, 18, io, 0x414), state(12, 3, 3, 350, io, 0x415)],
+         ports(12, 2, 0, (0x414, 18), (0x415, 350, C3))),
+        ("a C2 of 400 us before a C3 of 350 us: the sort counts the C3",
+         [state(13, 1, 1, 1, ffh, 0, 2), state(13, 2, 2, 400, io, 0x414), state(13, 3, 3, 350, io, 0x415)],
+         ports(13, 2, 0, (0x414, 350), (0x415, 400, C3))),
+        ("a C2 after a C3 is refused, and sorts nothing",
+         [state(14, 1, 1, 1, ffh, 0, 2), state(14, 2, 3, 350, io, 0x415), state(14, 3, 2, 18, io, 0x414)],
+         ports(14, 1, 1, (0x415, 350, C3))),
+        ("a C3 at the PM1a event block's own port is refused",
+         [state(15, 1, 1, 1, ffh, 0, 2), state(15, 2, 2, 0, io, 0x416), state(15, 3, 3, 0, io, 0x400)],
+         ports(15, 1, 1, (0x416, 1))),
+    ]
+    short_status_cases = [
+        ("a C3 beside a PM1a event block of 2 bytes is refused",
+         [state(16, 1, 1, 1, ffh, 0, 2), state(16, 2, 2, 18, io, 0x414), state(16, 3, 3, 350, io, 0x415)],
+         ports(16, 1, 1, (0x414, 18))),
     ]
     failures = 0
     for slot, (what, states, expected) in enumerate(cases):
-        failures += check(slot, what, states, expected, ())
+        failures += check(slot, what, states, expected, ((), False))
     for offset, (what, states, expected) in enumerate(fadt_cases):
-        failures += check(len(cases) + offset, what, states, expected, fadt_ranges(MADE_UP_FADT))
+        failures += check(len(cases) + offset, what, states, expected, read_fadt(MADE_UP_FADT))
+    short = [line.replace("pm1a_event space=1 width=32", "pm1a_event space=1 width=16") for line in MADE_UP_FADT]
+    for offset, (what, states, expected) in enumerate(short_status_cases):
+        failures += check(len(cases) + len(fadt_cases) + offset, what, states, expected, read_fadt(short))
     print("self-test: pass" if failures == 0 else "self-test: %d failure(s)" % failures)
     return failures
 
@@ -215,7 +279,7 @@ def self_test():
 def check(slot, what, states, expected, fadt):
     """1 when the slot of @p states gives other lines than @p expected, which it prints, else 0."""
     slot_line = "aml idle slot %u \\_PR.CPU%u states=%u skipped=0 handshake=none" % (slot, slot, len(states))
-    got = annotate([slot_line] + states, fadt)[1 + len(states):]
+    got = annotate([slot_line] + states, *fadt)[1 + len(states):]
     if got != expected:
         print("self-test: %s gives %s, expected %s" % (what, got, expected))
         return 1
@@ -225,13 +289,13 @@ def check(slot, what, states, expected, fadt):
 def main():
     if sys.argv[1:] == ["--self-test"]:
         sys.exit(1 if self_test() else 0)
-    fadt = ()
+    fadt = ((), False)
     if len(sys.argv) == 3 and sys.argv[1] == "--fadt":
         with open(sys.argv[2], encoding="latin-1") as lines:
-            fadt = fadt_ranges(lines.read().splitlines())
+            fadt = read_fadt(lines.read().splitlines())
     elif sys.argv[1:]:
         sys.exit(__doc__)
-    for line in annotate(sys.stdin.read().splitlines(), fadt):
+    for line in annotate(sys.stdin.read().splitlines(), *fadt):
         print(line)
 
 

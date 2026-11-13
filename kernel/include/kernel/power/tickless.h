@@ -87,9 +87,13 @@ extern "C" {
  *          sleeps on the timer, from @ref KERNEL_TICKLESS_FIRST_PROBE_MICROSECONDS each
  *          @ref KERNEL_TICKLESS_PROBE_GROWTH times longer than the one before, teach the depth its lead, so that no
  *          duty's first wake-up is armed on a guess once the timer has ended one probe; a probe the timer ended
- *          none of is tried again at the next stop. The probe serves no duty, so a window armed before this call
- *          waits for it, a couple of milliseconds at most. The probe's sleeps are the processor's, counted as any;
- *          a session that counts only its loop starts its accounting after this call
+ *          none of is tried again at the next stop. Once the active depth is validated, the depth the bus-master check
+ *          would demote it to, the deepest available below it without the check, is probed too, so that a demotion
+ *          lands there once it stops the processor. The probe serves no duty, so a window armed before this call
+ *          waits for it, a couple of milliseconds at most. A session's sleep the bus-master check demoted
+ *          (kernel_processor_sleep_depth_after_the_bus_master_check) teaches the depth it entered, never the one asked;
+ *          a probe's teaches and judges nothing. The probe's sleeps are the processor's, counted as any; a session
+ *          that counts only its loop starts its accounting after this call
  *          (@ref kernel_processor_sleep_begin_accounting).
  *
  * @param no_world_instantiated Caller's declaration that no authoritative simulation

@@ -176,7 +176,8 @@ static const char *const acpi_timer_state_names[] = {
 };
 
 static const char *const acpi_reference_waits_state_names[] = {"untried", "absent", "usable", "derailed"};
-#define ACPI_INPUT_OUTPUT_PORTS 0x10000u /**< Ports in the I/O space. */
+#define ACPI_INPUT_OUTPUT_PORTS              0x10000u /**< Ports in the I/O space. */
+#define ACPI_POWER_MANAGEMENT_REGISTER_BYTES 2u       /**< The bytes of a PM1 status, enable or control register. */
 
 /**
  * @name The MADT entry types this reader reads
@@ -560,6 +561,36 @@ static bool acpi_mode_reaches_protected_port(uint16_t first, uint32_t bytes)
         if (advanced_configuration_and_power_interface_port_is_protected((uint16_t) (first + offset)))
             return true;
     return false;
+}
+
+/**
+ * @brief Locates the status register of a PM1 event block, its first half, as a 16-bit port: 0 for a block that gives
+ *        no address.
+ *
+ * @return false when the block gives an address but is shorter than 4 bytes, does not lie wholly in the I/O space, or
+ *         its status register reaches a protected port.
+ */
+static bool acpi_locate_status(const AdvancedConfigurationAndPowerInterfaceGenericAddress_t *block, uint16_t *out_port)
+{
+    const uint32_t bytes = block->bit_width / 8u;
+    const uint16_t first = advanced_configuration_and_power_interface_input_output_port(block, bytes);
+
+    *out_port = 0u;
+    if (block->address == 0u)
+        return true;
+    if (first == 0u || bytes / 2u < ACPI_POWER_MANAGEMENT_REGISTER_BYTES ||
+        acpi_mode_reaches_protected_port(first, ACPI_POWER_MANAGEMENT_REGISTER_BYTES))
+        return false;
+    *out_port = first;
+    return true;
+}
+
+/**
+ * @brief Whether a PM1 status or control register is read and written through @p port: given, and not protected.
+ */
+static bool acpi_power_management_port_reachable(uint16_t port)
+{
+    return port != 0u && !advanced_configuration_and_power_interface_port_is_protected(port);
 }
 
 /**
@@ -1502,6 +1533,66 @@ uint16_t advanced_configuration_and_power_interface_input_output_port(
         reg->address > ACPI_INPUT_OUTPUT_PORTS - bytes)
         return 0u;
     return (uint16_t) reg->address;
+}
+
+bool advanced_configuration_and_power_interface_power_management_status_ports(
+    const AdvancedConfigurationAndPowerInterfaceFixedDescription_t *fadt, uint16_t out_ports[2])
+{
+    uint16_t found[2] = {0u, 0u};
+
+    out_ports[0] = 0u;
+    out_ports[1] = 0u;
+    if (fadt->power_management_event_blocks[0].address == 0u ||
+        !acpi_locate_status(&fadt->power_management_event_blocks[0], &found[0]) ||
+        !acpi_locate_status(&fadt->power_management_event_blocks[1], &found[1]))
+        return false;
+    out_ports[0] = found[0];
+    out_ports[1] = found[1];
+    return true;
+}
+
+bool advanced_configuration_and_power_interface_clear_power_management_status_bits(
+    const AdvancedConfigurationAndPowerInterfaceHost_t *host, const uint16_t ports[2], uint32_t bits)
+{
+    bool written = false;
+
+    for (uint32_t index = 0u; index < 2u; ++index)
+    {
+        if (!acpi_power_management_port_reachable(ports[index]))
+            continue;
+        host->port_write(host->context, ports[index], ACPI_POWER_MANAGEMENT_REGISTER_BYTES,
+                         bits & ~ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_STATUS_IGNORED);
+        written = true;
+    }
+    return written;
+}
+
+void advanced_configuration_and_power_interface_power_management_control_ports(
+    const AdvancedConfigurationAndPowerInterfaceFixedDescription_t *fadt, uint16_t out_ports[2])
+{
+    for (uint32_t index = 0u; index < 2u; ++index)
+        out_ports[index] = advanced_configuration_and_power_interface_input_output_port(
+            &fadt->power_management_control_blocks[index], ACPI_POWER_MANAGEMENT_REGISTER_BYTES);
+}
+
+bool advanced_configuration_and_power_interface_set_power_management_control_bits(
+    const AdvancedConfigurationAndPowerInterfaceHost_t *host, const uint16_t ports[2], uint32_t bits)
+{
+    uint32_t value = 0u;
+    bool written = false;
+
+    for (uint32_t index = 0u; index < 2u; ++index)
+        if (acpi_power_management_port_reachable(ports[index]))
+            value |= host->port_read(host->context, ports[index], ACPI_POWER_MANAGEMENT_REGISTER_BYTES);
+    value = (value & ~ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_CONTROL_WRITE_ONLY) | bits;
+    for (uint32_t index = 0u; index < 2u; ++index)
+    {
+        if (!acpi_power_management_port_reachable(ports[index]))
+            continue;
+        host->port_write(host->context, ports[index], ACPI_POWER_MANAGEMENT_REGISTER_BYTES, value);
+        written = true;
+    }
+    return written;
 }
 
 void advanced_configuration_and_power_interface_enter_mode(

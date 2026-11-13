@@ -1003,15 +1003,16 @@ static void harness_print_idle_hints(uint32_t slot, const AdvancedConfigurationA
 }
 
 /**
- * @brief Prints the port states @p idle gives a processor whose MWAIT reaches no state past C1, beside @p fadt, each as
- *        the depth it takes past C1, then how many it gives and refuses.
+ * @brief Prints the port states @p idle gives a processor whose MWAIT reaches no state past C1 and that enters a type 3
+ *        behind the bus-master check, as AMD's from family 0x17, beside @p fadt, each as the depth it takes past C1,
+ *        then how many it gives and refuses.
  */
 static void harness_print_idle_ports(uint32_t slot, const AdvancedConfigurationAndPowerInterfaceProcessorIdle_t *idle,
                                      const AdvancedConfigurationAndPowerInterfaceFixedDescription_t *fadt)
 {
     AdvancedConfigurationAndPowerInterfaceIdlePorts_t ports;
 
-    advanced_configuration_and_power_interface_processor_idle_ports(idle, fadt, &ports);
+    advanced_configuration_and_power_interface_processor_idle_ports(idle, fadt, true, &ports);
     for (uint32_t index = 0u; index < ports.count; ++index)
         printf("aml idle port %u %u port=0x%04X type=%u latency=%u\n", slot, index + 1u, ports.ports[index].port,
                ports.ports[index].type, ports.ports[index].latency);
