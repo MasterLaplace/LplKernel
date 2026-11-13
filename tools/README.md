@@ -5,6 +5,7 @@ Each script prints its usage with `--help`. This page says where each kind of to
 | Where | What |
 |---|---|
 | `instructions.sh` | counts the instructions a window of a kernel boot executes, and checks them against a budget |
+| `compare-functions.py` | compares two kernels function by function, addresses set aside: a refactor that changes no instruction |
 | `parity.sh` | compares the KTAP records of two runs: the host against ring 0, or two runs of the same harness |
 | `deps.sh` | the sibling checkouts against `DEPENDENCIES.lock` |
 | `unbuilt-branches.sh`, `unbuilt-branches.declared` | the sources, branches and macros no gate profile builds, and why |

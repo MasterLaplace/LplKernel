@@ -115,4 +115,9 @@ static inline bool atomic_compare_exchange(volatile uint32_t *p, uint32_t *expec
     return __atomic_compare_exchange_n(p, expected, desired, false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE);
 }
 
+/**
+ * @brief A full fence: no load or store, of the processor or of the compiler, crosses it.
+ */
+static inline void atomic_full_fence(void) { __atomic_thread_fence(__ATOMIC_SEQ_CST); }
+
 #endif /* !STDATOMIC_H */

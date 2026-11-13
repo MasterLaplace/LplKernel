@@ -5,6 +5,7 @@
 #include <kernel/memory/pinned_memory.h>
 #include <kernel/memory/vmm.h>
 
+#include <stdatomic.h>
 #include <string.h>
 
 /** Red Hat / virtio PCI vendor id. */
@@ -510,9 +511,9 @@ static void publish_head_descriptor(const hardware_abstraction_layer_virtio_virt
 {
     const uint16_t avail_idx = ring_read16(queue->avail_address + 2u);
     ring_write16(queue->avail_address + 4u + (uint32_t) (avail_idx % queue->queue_size) * 2u, 0u);
-    __sync_synchronize();
+    atomic_full_fence();
     ring_write16(queue->avail_address + 2u, (uint16_t) (avail_idx + 1u));
-    __sync_synchronize();
+    atomic_full_fence();
 }
 
 /**
@@ -535,7 +536,7 @@ static bool wait_for_used_ring(hardware_abstraction_layer_virtio_virtqueue_t *qu
     {
         if (ring_read16(queue->used_address + 2u) != queue->last_used_index)
         {
-            __sync_synchronize();
+            atomic_full_fence();
             queue->last_used_index = (uint16_t) (queue->last_used_index + 1u);
             return true;
         }
