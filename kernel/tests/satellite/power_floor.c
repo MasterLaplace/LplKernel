@@ -12,6 +12,7 @@
 #include <kernel/drivers/hda.h>
 #include <kernel/hal/hal_audio.h>
 #include <kernel/lib/asmutils.h>
+#include <kernel/power/energy_counter.h>
 #include <kernel/power/frequency_scaling.h>
 #include <kernel/power/processor_park.h>
 #include <kernel/power/processor_sleep.h>
@@ -22,15 +23,16 @@
 
 KERNEL_TEST_SUITE(power_floor, KERNEL_TEST_STAGE_BOOTED);
 
-#define POWER_FLOOR_AUDIO_CLASS    0x04u /**< A multimedia controller. */
-#define POWER_FLOOR_AUDIO_SUBCLASS 0x03u /**< Its Intel HDA subclass. */
-#define POWER_FLOOR_INTERRUPT_PIN  0x3Du /**< A PCI function's Interrupt Pin register: 1 to 4 for INTA to INTD. */
-#define POWER_FLOOR_ENTRY_VECTOR   0xFFu /**< A redirection entry's vector bits. */
-#define POWER_FLOOR_ENTRY_LOW      13u   /**< Its polarity bit: active-low. */
-#define POWER_FLOOR_ENTRY_LEVEL    15u   /**< Its trigger bit: level-triggered. */
-#define POWER_FLOOR_ENTRY_MASKED   16u   /**< Its mask bit. */
-#define POWER_FLOOR_ENTRY_TARGET   24u   /**< Where its destination starts in its high register. */
-#define POWER_FLOOR_ISA_IRQS       16u   /**< ISA IRQs 0 to 15, the lines of the 8259 pair. */
+#define POWER_FLOOR_AUDIO_CLASS                  0x04u /**< A multimedia controller. */
+#define POWER_FLOOR_AUDIO_SUBCLASS               0x03u /**< Its Intel HDA subclass. */
+#define POWER_FLOOR_INTERRUPT_PIN                0x3Du /**< A PCI function's Interrupt Pin register: 1 to 4 for INTA to INTD. */
+#define POWER_FLOOR_ENTRY_VECTOR                 0xFFu /**< A redirection entry's vector bits. */
+#define POWER_FLOOR_ENTRY_LOW                    13u   /**< Its polarity bit: active-low. */
+#define POWER_FLOOR_ENTRY_LEVEL                  15u   /**< Its trigger bit: level-triggered. */
+#define POWER_FLOOR_ENTRY_MASKED                 16u   /**< Its mask bit. */
+#define POWER_FLOOR_ENTRY_TARGET                 24u   /**< Where its destination starts in its high register. */
+#define POWER_FLOOR_ISA_IRQS                     16u   /**< ISA IRQs 0 to 15, the lines of the 8259 pair. */
+#define POWER_FLOOR_MICROSECONDS_PER_MILLISECOND 1000u /**< Microseconds in a millisecond. */
 
 /**
  * Services of the capture the satellite node runs for: twenty buffers, 800 ms of audio, long enough for the
@@ -324,6 +326,16 @@ KERNEL_TEST(the_idle_loop_sleeps_under_its_ceiling)
     kernel_test_measure(test, "sleep_depth_clamped", kernel_processor_sleep_clamped_count());
     kernel_test_measure(test, "sleep_depths_refused", kernel_processor_sleep_refused_depth_count());
     kernel_test_measure(test, "port_sleeps", kernel_processor_sleep_port_sleep_count());
+    kernel_test_measure(test, "energy_state", kernel_energy_counter()->state);
+    kernel_test_measure(test, "package_energy_known", report->package_energy_known);
+    if (report->package_energy_known != 0u && report->loop_microseconds != 0u)
+    {
+        kernel_test_measure(test, "package_microjoules", report->package_microjoules);
+        kernel_test_measure(
+            test, "package_milliwatts",
+            (uint32_t) (((uint64_t) report->package_microjoules * POWER_FLOOR_MICROSECONDS_PER_MILLISECOND) /
+                        report->loop_microseconds));
+    }
     kernel_test_measure(test, "bus_master_demotions", kernel_processor_sleep_bus_master_demotion_count());
     kernel_test_measure(test, "unarmed_waits", kernel_processor_sleep_unarmed_wait_count());
     kernel_test_measure(test, "bus_master_reload", kernel_processor_sleep_bus_master_reload());
