@@ -1,6 +1,7 @@
 #include <kernel/cpu/exception.h>
 #include <kernel/cpu/stack_guard.h>
 #include <kernel/memory/section_protection.h>
+#include <stdatomic.h>
 
 #define EXCEPTION_VECTOR_DOUBLE_FAULT             8u
 #define EXCEPTION_VECTOR_DEBUG_EXCEPTION          1u
@@ -100,7 +101,7 @@ static bool exception_refuse_model_specific_register_read(const InterruptFrame_t
 {
     if (!interrupt_exception_resumes_model_specific_register_read(frame->eip, frame->cs))
         return false;
-    (void) __atomic_fetch_add(&exception_refused_model_specific_register_reads, 1u, __ATOMIC_RELAXED);
+    atomic_fetch_add(&exception_refused_model_specific_register_reads, 1u);
     interrupt_frame_set_resume_address(frame,
                                        (uint32_t) (uintptr_t) asmutils_read_model_specific_register_or_refuse_refusal);
     return true;
@@ -197,7 +198,7 @@ bool interrupt_exception_resumes_model_specific_register_read(uint32_t instructi
 
 uint32_t interrupt_exception_refused_model_specific_register_reads(void)
 {
-    return __atomic_load_n(&exception_refused_model_specific_register_reads, __ATOMIC_RELAXED);
+    return atomic_load_relaxed(&exception_refused_model_specific_register_reads);
 }
 
 void interrupt_exception_initialize(void)
