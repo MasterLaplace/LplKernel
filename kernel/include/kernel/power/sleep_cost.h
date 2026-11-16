@@ -18,8 +18,8 @@
  *
  * A sleep of T at a depth costs E + P * T: P the package's power while the processor sleeps at that depth, E what one
  * sleep costs to enter and leave it, the time awake between two sleeps included. Firmware cannot give them: `_CST`
- * publishes a power per state, but across the 96 machines of the corpus list it is above 0 and falls with depth on 17,
- * and 39 machines from several vendors give the same 1000/200/0 mW. So each depth is measured: series of sleeps at it,
+ * publishes a power per state, but on the machines of the corpus list it rarely falls with depth, and many publish the
+ * same values (#299 counts them). So each depth is measured: series of sleeps at it,
  * the package energy counter (kernel/power/energy_counter.h) read before and after each. Two series of different
  * sleep counts per second solve E and P, and a third checks them: a calibration whose check disagrees is refused, by
  * name, rather than trusted.
@@ -68,8 +68,8 @@ typedef enum {
                                                depth. */
     KERNEL_SLEEP_COST_UNSEPARATED = 4,    /**< The two series' sleeps a second are too alike to solve E and P. */
     KERNEL_SLEEP_COST_IMPLAUSIBLE = 5,    /**< A power of 0 or less or past 32 bits of microwatts, a sleep energy
-                                               below 0 past the quantisation, or a series past what the solution
-                                               holds. */
+                                               below 0 past the quantisation, or a step of the solution past 64
+                                               bits. */
     KERNEL_SLEEP_COST_UNREAD = 6,         /**< A read of the counter failed during a series. */
     KERNEL_SLEEP_COST_UNTIMED = 7,        /**< A sleep of a series could not be armed on the timer. */
 } KernelSleepCostSource_t;
@@ -147,11 +147,9 @@ typedef struct KernelSleepCostReplay {
  *          sleep energy below 0 by no more than the quantisation per sleep of the first series is 0: a depth that
  *          costs nothing to enter, C1, measures so.
  *
- *          It solves in microseconds and microjoules, so that its products stay within 64 bits: a series
- *          under 1 us or past 2^24 us (16.8 s), of more than 2^16 sleeps or 2^32 uJ (4295 J), is
- *          IMPLAUSIBLE, as is a power past UINT32_MAX uW. Separated series never give a zero determinant in
- *          whole microseconds: rounding a length down loses less than 1 us, so equal products in microseconds would
- *          put two series of 1 us at least less than twice apart.
+ *          It solves in whole microseconds and microjoules, each step checked (<stdckdint.h>): a step past 64
+ *          bits is IMPLAUSIBLE, never wrapped, as is a power past UINT32_MAX uW; two series alike in whole
+ *          microseconds are UNSEPARATED.
  *
  * @param series                  KERNEL_SLEEP_COST_SERIES series at one depth.
  * @param quantisation_nanojoules What the counter cannot tell apart over one series: two of its units.

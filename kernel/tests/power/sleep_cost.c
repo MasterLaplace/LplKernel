@@ -24,7 +24,7 @@ KERNEL_TEST_SUITE(sleep_cost, KERNEL_TEST_STAGE_BOOTED);
 #define SLEEP_COST_TEST_C10_RESIDENCY_US   5000ull         /**< C10's. */
 #define SLEEP_COST_TEST_REPLAYED_SLEEPS    12u             /**< Sleeps of the made-up session. */
 #define SLEEP_COST_TEST_PACKAGE_MICROWATTS 4000000000u     /**< A package of 4 kW, near 32 bits of microwatts. */
-#define SLEEP_COST_TEST_LONGEST_SERIES_US  (1ull << 24)    /**< The longest series the estimate solves, 16.8 s. */
+#define SLEEP_COST_TEST_LONGEST_SERIES_US  (1ull << 24)    /**< A series of 16.8 s. */
 #define SLEEP_COST_TEST_256_W_MICROWATTS   256000000u      /**< 256 W, which fills 2^32 uJ over 2^24 us. */
 #define SLEEP_COST_TEST_5_KW_SERIES_NJ     640000000000ull /**< 5 kW over 128 ms, the same for any sleep count. */
 
@@ -254,10 +254,11 @@ KERNEL_TEST(a_package_of_4_kw_solves_without_its_products_leaving_64_bits)
 }
 
 /**
- * @brief The longest series of the most sleeps and the most energy solves: 2^16 sleeps against 2^14, each series 2^24
- *        us and 2^32 uJ, 256 W, where the power's numerator times 10^6 would leave 64 bits.
+ * @brief A solution a step of which leaves 64 bits is implausible, never wrapped: 2^16 sleeps against 2^14 over 2^24 us
+ *        and 2^32 uJ, whose power numerator times 10^6 passes them, or rates past them; a power of 5 kW passes what
+ *        32 bits of microwatts hold; and two series alike in whole microseconds are unseparated, never divided by.
  */
-KERNEL_TEST(the_longest_series_of_the_most_sleeps_solves)
+KERNEL_TEST(a_solution_past_64_bits_is_implausible_never_wrapped)
 {
     static const uint32_t sleeps[KERNEL_SLEEP_COST_SERIES] = {1u << 16, 1u << 14, 1u << 15};
     KernelSleepCostSeries_t series[KERNEL_SLEEP_COST_SERIES];
@@ -271,47 +272,14 @@ KERNEL_TEST(the_longest_series_of_the_most_sleeps_solves)
             sleep_cost_test_energy(sleeps[index], series[index].nanoseconds, SLEEP_COST_TEST_256_W_MICROWATTS, 0u);
     }
     kernel_sleep_cost_estimate(series, 2u * SLEEP_COST_TEST_UNIT_NJ, SLEEP_COST_TEST_HERTZ, &cost);
-    kernel_test_check(test, series[0].nanojoules == (1ull << 32) * 1000u, "each series holds 2^32 uJ");
-    kernel_test_check(test, cost.source == KERNEL_SLEEP_COST_MEASURED, "the costs are measured");
-    kernel_test_check(test, cost.power_microwatts == SLEEP_COST_TEST_256_W_MICROWATTS && cost.sleep_nanojoules == 0u,
-                      "P is 256 W, E is 0");
-}
-
-/**
- * @brief A series under 1 us, of more than 2^16 sleeps or 2^32 uJ, or solving to a power past what 32 bits of
- *        microwatts hold, is implausible: refused before its products leave 64 bits, or its power its field.
- */
-KERNEL_TEST(a_series_past_what_its_solution_holds_is_implausible)
-{
-    KernelSleepCostSeries_t series[KERNEL_SLEEP_COST_SERIES];
-    KernelSleepCost_t cost;
-
-    sleep_cost_test_c6_series(series);
-    series[0].nanojoules = ((1ull << 32) + 1u) * 1000u;
-    kernel_sleep_cost_estimate(series, 2u * SLEEP_COST_TEST_UNIT_NJ, SLEEP_COST_TEST_HERTZ, &cost);
-    kernel_test_check(test, cost.source == KERNEL_SLEEP_COST_IMPLAUSIBLE, "a series past 2^32 uJ, 4295 J");
-
-    sleep_cost_test_c6_series(series);
-    series[0].sleeps = (1u << 16) + 1u;
-    kernel_sleep_cost_estimate(series, 2u * SLEEP_COST_TEST_UNIT_NJ, SLEEP_COST_TEST_HERTZ, &cost);
-    kernel_test_check(test, cost.source == KERNEL_SLEEP_COST_IMPLAUSIBLE, "a series past 2^16 sleeps");
-
-    sleep_cost_test_c6_series(series);
-    series[0].nanoseconds = 999u;
-    series[1].nanoseconds = 999u;
-    kernel_sleep_cost_estimate(series, 2u * SLEEP_COST_TEST_UNIT_NJ, SLEEP_COST_TEST_HERTZ, &cost);
     kernel_test_check(test, cost.source == KERNEL_SLEEP_COST_IMPLAUSIBLE,
-                      "two series under 1 us, whose determinant in whole microseconds is 0");
+                      "256 W over 2^16 sleeps of 2^24 us: the power numerator times 10^6 passes 64 bits");
 
     sleep_cost_test_c6_series(series);
-    series[0].nanoseconds = (SLEEP_COST_TEST_LONGEST_SERIES_US + 1u) * 1000u;
+    series[0].sleeps = UINT32_MAX;
+    series[1].nanoseconds = UINT64_MAX;
     kernel_sleep_cost_estimate(series, 2u * SLEEP_COST_TEST_UNIT_NJ, SLEEP_COST_TEST_HERTZ, &cost);
-    kernel_test_check(test, cost.source == KERNEL_SLEEP_COST_IMPLAUSIBLE, "a series past 2^24 us, 16.8 s");
-
-    sleep_cost_test_c6_series(series);
-    series[2].sleeps = (1u << 16) + 1u;
-    kernel_sleep_cost_estimate(series, 2u * SLEEP_COST_TEST_UNIT_NJ, SLEEP_COST_TEST_HERTZ, &cost);
-    kernel_test_check(test, cost.source == KERNEL_SLEEP_COST_IMPLAUSIBLE, "the check series past 2^16 sleeps too");
+    kernel_test_check(test, cost.source == KERNEL_SLEEP_COST_IMPLAUSIBLE, "a rate past 64 bits");
 
     for (uint32_t index = 0u; index < KERNEL_SLEEP_COST_SERIES; ++index)
     {
@@ -322,6 +290,13 @@ KERNEL_TEST(a_series_past_what_its_solution_holds_is_implausible)
     kernel_sleep_cost_estimate(series, 2u * SLEEP_COST_TEST_UNIT_NJ, SLEEP_COST_TEST_HERTZ, &cost);
     kernel_test_check(test, cost.source == KERNEL_SLEEP_COST_IMPLAUSIBLE,
                       "a power of 5 kW, past the 4295 W of 32 bits of microwatts");
+
+    sleep_cost_test_c6_series(series);
+    series[0].nanoseconds = 999u;
+    series[1].nanoseconds = 999u;
+    kernel_sleep_cost_estimate(series, 2u * SLEEP_COST_TEST_UNIT_NJ, SLEEP_COST_TEST_HERTZ, &cost);
+    kernel_test_check(test, cost.source == KERNEL_SLEEP_COST_UNSEPARATED,
+                      "two series under 1 us, alike in whole microseconds");
 }
 
 /**
