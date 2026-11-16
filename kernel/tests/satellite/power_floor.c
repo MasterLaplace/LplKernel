@@ -366,7 +366,7 @@ static bool power_floor_may_take(uint32_t depth, uint32_t ceiling)
 /**
  * @brief Each sleep of the session took the depth its measured costs chose, or the rule where a depth's costs are not
  *        measured, never past the depth sleeps enter; each depth a sleep may take has its costs settled, measured or
- *        named for why not, the package energy counter's absence as such.
+ *        named for why not, the package energy counter's absence as such, and its lead learned by a probe.
  *
  * @details Under QEMU the counter is absent or reads 0 (kernel/power/energy_counter.h), so the rule decides every
  *          sleep; on silicon with the counter, the costs measured are the measures this test prints (#842).
@@ -381,6 +381,7 @@ KERNEL_TEST(each_sleep_takes_the_depth_its_costs_or_the_rule_choose)
     uint32_t past_the_ceiling = 0u;
     uint32_t unsettled = 0u;
     uint32_t misnamed = 0u;
+    uint32_t unprobed = 0u;
 
     if (report == NULL)
     {
@@ -400,6 +401,7 @@ KERNEL_TEST(each_sleep_takes_the_depth_its_costs_or_the_rule_choose)
             continue;
         unsettled += cost->source == KERNEL_SLEEP_COST_NOT_CALIBRATED ? 1u : 0u;
         misnamed += !counter && cost->source != KERNEL_SLEEP_COST_NO_COUNTER ? 1u : 0u;
+        unprobed += kernel_tickless_wake_samples_at(depth) == 0u ? 1u : 0u;
     }
     kernel_test_measure(test, "sleep_cost_source", deepest->source);
     kernel_test_measure(test, "sleeps_by_cost", kernel_tickless_sleeps_chosen_by_cost());
@@ -418,6 +420,7 @@ KERNEL_TEST(each_sleep_takes_the_depth_its_costs_or_the_rule_choose)
                       "each choice is counted by what decided it");
     kernel_test_check(test, past_the_ceiling == 0u, "none past the depth sleeps enter");
     kernel_test_check(test, unsettled == 0u, "each depth a sleep may take has its costs settled");
+    kernel_test_check(test, unprobed == 0u, "and its lead learned, a probe having taught it");
     kernel_test_check(test, misnamed == 0u, "without the counter, each says so");
     kernel_test_check(test, counter || kernel_tickless_sleeps_chosen_by_cost() == 0u,
                       "without the counter, the rule decides every sleep");
