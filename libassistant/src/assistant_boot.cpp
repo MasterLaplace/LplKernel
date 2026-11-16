@@ -6,6 +6,7 @@
 #include <kernel/dialogue/dialogue_channel.h>
 
 #include <lpl/infer/Inference.hpp>
+#include <lpl/infer/ModelImage.hpp>
 #include <lpl/infer/Parity.hpp>
 #include <lpl/infer/Tokenizer.hpp>
 
@@ -175,6 +176,19 @@ extern "C" size_t libassistant_recommended_arena_bytes(void)
 
 extern "C" const char *libassistant_model_slot_state(void) { return kernel_model_slot_state_text(&gSlot); }
 
+extern "C" const char *libassistant_judge_model_slot(ModelSlot_t *slot)
+{
+    if (slot == nullptr || slot->state != MODEL_SLOT_LOADED)
+        return nullptr;
+
+    const lpl::infer::ModelImageInspection inspection =
+        lpl::infer::inspectModelImage(slot->bytes, slot->size, nullptr, 0u);
+    if (inspection.verdict == lpl::infer::ModelImageVerdict::Accepted)
+        return nullptr;
+    slot->state = MODEL_SLOT_MALFORMED;
+    return lpl::infer::modelImageVerdictName(inspection.verdict);
+}
+
 extern "C" bool libassistant_boot(size_t arena_bytes)
 {
     if (arena_bytes == 0u)
@@ -184,6 +198,7 @@ extern "C" bool libassistant_boot(size_t arena_bytes)
         return false;
 
     (void) kernel_model_slot_probe(&gSlot);
+    (void) libassistant_judge_model_slot(&gSlot);
 
     gMind = new (gMindStorage) MindState{kernel_tensor_arena_base(), kernel_tensor_arena_size()};
 
