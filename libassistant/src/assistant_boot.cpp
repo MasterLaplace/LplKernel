@@ -181,10 +181,6 @@ extern "C" const char *libassistant_judge_model_slot(ModelSlot_t *slot)
     if (slot == nullptr || slot->state != MODEL_SLOT_LOADED)
         return nullptr;
 
-    const lpl::core::u32 version = lpl::infer::modelImageVersion(slot->bytes, slot->size);
-    if (version == lpl::infer::kModelImageVersion1)
-        return nullptr;
-
     const lpl::infer::ModelImageInspection inspection =
         lpl::infer::inspectModelImage(slot->bytes, slot->size, nullptr, 0u);
     if (inspection.verdict == lpl::infer::ModelImageVerdict::Accepted)

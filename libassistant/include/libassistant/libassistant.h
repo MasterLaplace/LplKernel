@@ -120,9 +120,8 @@ extern size_t libassistant_recommended_arena_bytes(void);
 extern const char *libassistant_model_slot_state(void);
 
 /**
- * @brief Judges a loaded slot's image by the reader's own check (lpl/infer/ModelImage.hpp): a version 2 image whose
- *        header or table does not hold up makes the slot malformed; a version 1 image keeps the header check alone,
- *        as before; any other version is malformed.
+ * @brief Judges a loaded slot's image by the reader's own check (lpl/infer/ModelImage.hpp): an image whose header
+ *        or table does not hold up, or that is not of version 2, makes the slot malformed.
  * @param slot A probed slot; one not loaded is left as it is.
  * @return NULL when the slot is left as it was, the name of the refusal otherwise.
  */

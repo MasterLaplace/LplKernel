@@ -2,8 +2,8 @@
 
 #include <kernel/boot/boot_module.h>
 
-/** Smallest image that can carry a header at all: magic, version, six extents, one length. */
-#define KERNEL_MODEL_SLOT_MINIMUM_BYTES 36u
+/** Smallest image that can carry a header at all: a version 2 header (lpl/infer/ModelImage.hpp). */
+#define KERNEL_MODEL_SLOT_MINIMUM_BYTES 64u
 
 bool kernel_model_slot_probe(ModelSlot_t *out)
 {
