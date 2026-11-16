@@ -67,7 +67,9 @@ typedef enum {
     KERNEL_SLEEP_COST_NOISY = 3,          /**< The check series disagreed past its tolerance, or a sleep entered another
                                                depth. */
     KERNEL_SLEEP_COST_UNSEPARATED = 4,    /**< The two series' sleeps a second are too alike to solve E and P. */
-    KERNEL_SLEEP_COST_IMPLAUSIBLE = 5,    /**< A power of 0 or less, or a sleep energy below 0 past the quantisation. */
+    KERNEL_SLEEP_COST_IMPLAUSIBLE = 5,    /**< A power of 0 or less or past 32 bits of microwatts, a sleep energy
+                                               below 0 past the quantisation, or a series past what the solution
+                                               holds. */
     KERNEL_SLEEP_COST_UNREAD = 6,         /**< A read of the counter failed during a series. */
     KERNEL_SLEEP_COST_UNTIMED = 7,        /**< A sleep of a series could not be armed on the timer. */
 } KernelSleepCostSource_t;
@@ -144,6 +146,12 @@ typedef struct KernelSleepCostReplay {
  *          predicted, and agrees when it misses by at most @p quantisation_nanojoules plus 1/2^4 of its energy. A
  *          sleep energy below 0 by no more than the quantisation per sleep of the first series is 0: a depth that
  *          costs nothing to enter, C1, measures so.
+ *
+ *          It solves in microseconds and microjoules, so that its products stay within 64 bits: a series
+ *          under 1 us or past 2^24 us (16.8 s), of more than 2^16 sleeps or 2^32 uJ (4295 J), is
+ *          IMPLAUSIBLE, as is a power past UINT32_MAX uW. Separated series never give a zero determinant in
+ *          whole microseconds: rounding a length down loses less than 1 us, so equal products in microseconds would
+ *          put two series of 1 us at least less than twice apart.
  *
  * @param series                  KERNEL_SLEEP_COST_SERIES series at one depth.
  * @param quantisation_nanojoules What the counter cannot tell apart over one series: two of its units.

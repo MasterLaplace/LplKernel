@@ -2,8 +2,50 @@
 
 #include <stddef.h>
 
-#define SLEEP_COST_MICROWATTS_PER_WATT       1000000ll /**< P solves in nanojoules per nanosecond, watts. */
-#define SLEEP_COST_NANOJOULES_PER_MICROJOULE 1000ull   /**< A microwatt-second is 1000 nanojoules. */
+#define SLEEP_COST_MICROWATTS_PER_WATT         1000000ll    /**< P solves in microjoules per microsecond, watts. */
+#define SLEEP_COST_NANO_PER_MICRO              1000ll       /**< Nanoseconds a microsecond, nanojoules a microjoule. */
+#define SLEEP_COST_LONGEST_SERIES_MICROSECONDS (1ull << 24) /**< The longest series solved, 16.8 s. */
+#define SLEEP_COST_MOST_SERIES_MICROJOULES     (1ull << 32) /**< The most energy a series solved holds, 4295 J. */
+#define SLEEP_COST_MOST_SERIES_SLEEPS          (1u << 16)   /**< The most sleeps a series solved takes. */
+
+/**
+ * @brief How long @p series lasted, in whole microseconds.
+ */
+static int64_t sleep_cost_microseconds(const KernelSleepCostSeries_t *series)
+{
+    return (int64_t) (series->nanoseconds / (uint64_t) SLEEP_COST_NANO_PER_MICRO);
+}
+
+/**
+ * @brief The energy of @p series, in whole microjoules.
+ */
+static int64_t sleep_cost_microjoules(const KernelSleepCostSeries_t *series)
+{
+    return (int64_t) (series->nanojoules / (uint64_t) SLEEP_COST_NANO_PER_MICRO);
+}
+
+/**
+ * @brief Whether @p series lies where the solution's products stay within 64 bits: from 1 us to
+ *        SLEEP_COST_LONGEST_SERIES_MICROSECONDS long, of SLEEP_COST_MOST_SERIES_SLEEPS sleeps and
+ *        SLEEP_COST_MOST_SERIES_MICROJOULES at most, so that a determinant holds 2^40 and a numerator 2^56.
+ */
+static bool sleep_cost_in_range(const KernelSleepCostSeries_t *series)
+{
+    const int64_t microseconds = sleep_cost_microseconds(series);
+
+    return microseconds != 0 && (uint64_t) microseconds <= SLEEP_COST_LONGEST_SERIES_MICROSECONDS &&
+           series->sleeps <= SLEEP_COST_MOST_SERIES_SLEEPS &&
+           (uint64_t) sleep_cost_microjoules(series) <= SLEEP_COST_MOST_SERIES_MICROJOULES;
+}
+
+/**
+ * @brief @p numerator times @p scale over @p denominator, rounded toward zero: the quotient scaled, then the
+ *        remainder, so that no product larger than the remainder's is formed.
+ */
+static int64_t sleep_cost_scaled_quotient(int64_t numerator, int64_t scale, int64_t denominator)
+{
+    return (numerator / denominator) * scale + ((numerator % denominator) * scale) / denominator;
+}
 
 /**
  * @brief Whether the sleeps a second of @p first and @p second differ by KERNEL_SLEEP_COST_SEPARATION times at least:
@@ -25,7 +67,7 @@ static bool sleep_cost_separated(const KernelSleepCostSeries_t *first, const Ker
 static int64_t sleep_cost_predicted(int64_t microwatts, int64_t nanojoules, const KernelSleepCostSeries_t *series)
 {
     return (int64_t) series->sleeps * nanojoules +
-           (microwatts * (int64_t) series->nanoseconds) / SLEEP_COST_MICROWATTS_PER_WATT;
+           sleep_cost_scaled_quotient((int64_t) series->nanoseconds, microwatts, SLEEP_COST_MICROWATTS_PER_WATT);
 }
 
 /**
@@ -198,19 +240,24 @@ void kernel_sleep_cost_estimate(const KernelSleepCostSeries_t *series, uint64_t 
     const KernelSleepCostSeries_t *const first = &series[0];
     const KernelSleepCostSeries_t *const second = &series[1];
 
+    if (!sleep_cost_in_range(first) || !sleep_cost_in_range(second) || !sleep_cost_in_range(&series[2]))
+    {
+        sleep_cost_refuse(out, KERNEL_SLEEP_COST_IMPLAUSIBLE);
+        return;
+    }
     if (!sleep_cost_separated(first, second))
     {
         sleep_cost_refuse(out, KERNEL_SLEEP_COST_UNSEPARATED);
         return;
     }
-    const int64_t determinant = (int64_t) first->sleeps * (int64_t) second->nanoseconds -
-                                (int64_t) second->sleeps * (int64_t) first->nanoseconds;
-    const int64_t energy_numerator = (int64_t) first->nanojoules * (int64_t) second->nanoseconds -
-                                     (int64_t) second->nanojoules * (int64_t) first->nanoseconds;
-    const int64_t power_numerator =
-        (int64_t) first->sleeps * (int64_t) second->nanojoules - (int64_t) second->sleeps * (int64_t) first->nanojoules;
-    const int64_t microwatts = (power_numerator * SLEEP_COST_MICROWATTS_PER_WATT) / determinant;
-    int64_t nanojoules = energy_numerator / determinant;
+    const int64_t determinant = (int64_t) first->sleeps * sleep_cost_microseconds(second) -
+                                (int64_t) second->sleeps * sleep_cost_microseconds(first);
+    const int64_t energy_numerator = sleep_cost_microjoules(first) * sleep_cost_microseconds(second) -
+                                     sleep_cost_microjoules(second) * sleep_cost_microseconds(first);
+    const int64_t power_numerator = (int64_t) first->sleeps * sleep_cost_microjoules(second) -
+                                    (int64_t) second->sleeps * sleep_cost_microjoules(first);
+    const int64_t microwatts = sleep_cost_scaled_quotient(power_numerator, SLEEP_COST_MICROWATTS_PER_WATT, determinant);
+    int64_t nanojoules = sleep_cost_scaled_quotient(energy_numerator, SLEEP_COST_NANO_PER_MICRO, determinant);
 
     if (nanojoules < 0 && (uint64_t) (-nanojoules) * first->sleeps <= quantisation_nanojoules)
         nanojoules = 0;
@@ -230,7 +277,7 @@ void kernel_sleep_cost_estimate(const KernelSleepCostSeries_t *series, uint64_t 
     out->sleep_nanojoules = (uint64_t) nanojoules;
     out->power_nanojoules_per_mebicycles =
         timestamp_counter_hertz != 0u ?
-            ((uint64_t) microwatts * SLEEP_COST_NANOJOULES_PER_MICROJOULE << KERNEL_SLEEP_COST_CYCLE_SHIFT) /
+            ((uint64_t) microwatts * (uint64_t) SLEEP_COST_NANO_PER_MICRO << KERNEL_SLEEP_COST_CYCLE_SHIFT) /
                 timestamp_counter_hertz :
             0u;
 }

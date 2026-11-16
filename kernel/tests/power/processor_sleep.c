@@ -705,6 +705,8 @@ KERNEL_TEST(each_depth_of_the_ladder_resides_as_its_cst_state)
     const uint32_t amd_c1 = kernel_processor_sleep_residency_of(0u);
     const uint32_t amd_c2 = kernel_processor_sleep_residency_of(1u);
     const uint32_t amd_absent = kernel_processor_sleep_residency_of(2u);
+    const bool amd_c2_refused = kernel_processor_sleep_refuse_depth(1u);
+    const uint32_t amd_refused = kernel_processor_sleep_residency_of(1u);
 
     processor_sleep_test_idle.states[0].entry.bit_width = 1u;
     processor_sleep_test_idle.states[1] = processor_sleep_test_idle.states[0];
@@ -729,6 +731,7 @@ KERNEL_TEST(each_depth_of_the_ladder_resides_as_its_cst_state)
     kernel_test_check(test, amd_c1 == 1u, "AMD's C1, 1 us, resides 1 us");
     kernel_test_check(test, amd_c2 == 54u, "its port C2, 18 us, resides 3 times that");
     kernel_test_check(test, amd_absent == 0u, "its refused C3 is no depth, and resides 0");
+    kernel_test_check(test, amd_c2_refused && amd_refused == 0u, "its port C2, once refused, resides 0");
     kernel_test_check(test, intel_hint_2 == 450u, "Intel's MWAIT hint 2, a C3 of 150 us, resides 450 us");
     kernel_test_check(test, intel_port_c2 == 1050u, "its port C2 of 350 us, where MWAIT stops at C1, resides 1050 us");
     kernel_test_check(test, unpublished == 0u, "a depth that publishes no latency resides 0");

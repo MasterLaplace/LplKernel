@@ -459,6 +459,7 @@ KERNEL_TEST(the_session_s_sleeps_are_recorded_and_replay_against_the_fixed_depth
     kernel_test_check(test, recorded > 0u && recorded == chosen, "each sleep chosen is recorded");
     kernel_test_check(test, replay.agreements + replay.chosen_misses > 0u && replay.agreements <= kept,
                       "the replay chose again over the records kept");
+    kernel_test_check(test, replay.agreements > 0u, "and made again one choice of the session at least");
     kernel_test_check(test, replay.chosen_misses <= replay.shallowest_misses,
                       "the choice misses no wake-up the shallowest depth makes");
 }
