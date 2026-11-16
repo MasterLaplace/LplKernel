@@ -84,10 +84,7 @@ static bool processor_idle_state_enters_hint(const ProcessorIdleState_t *state, 
  */
 static uint32_t processor_idle_state_residency(const ProcessorIdleState_t *state)
 {
-    if (state->type <= PROCESSOR_IDLE_C1)
-        return state->latency;
-    return state->latency > UINT32_MAX / PROCESSOR_IDLE_DEEPER_FACTOR ? UINT32_MAX :
-                                                                        state->latency * PROCESSOR_IDLE_DEEPER_FACTOR;
+    return advanced_configuration_and_power_interface_processor_idle_residency(state->type, state->latency);
 }
 
 /**
@@ -801,6 +798,13 @@ bool advanced_configuration_and_power_interface_processor_idle_latency(const Pro
         return false;
     *out_microseconds = costs.latency;
     return true;
+}
+
+uint32_t advanced_configuration_and_power_interface_processor_idle_residency(uint32_t type, uint32_t latency)
+{
+    if (type <= PROCESSOR_IDLE_C1)
+        return latency;
+    return latency > UINT32_MAX / PROCESSOR_IDLE_DEEPER_FACTOR ? UINT32_MAX : latency * PROCESSOR_IDLE_DEEPER_FACTOR;
 }
 
 bool advanced_configuration_and_power_interface_processor_idle_costs(

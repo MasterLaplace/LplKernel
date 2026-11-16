@@ -693,6 +693,52 @@ KERNEL_TEST(an_intel_processor_with_deep_mwait_takes_its_hints_and_no_port_state
 }
 
 /**
+ * @brief Each depth of the adopted ladder resides as the rule gives its `_CST` state, its latency at C1 and three times
+ *        it past C1, by MWAIT hint or by port, so that a sleep's depth can be chosen against it
+ *        (kernel/power/sleep_cost.h); a depth not available, or that publishes no latency, resides 0.
+ */
+KERNEL_TEST(each_depth_of_the_ladder_resides_as_its_cst_state)
+{
+    processor_sleep_test_amd();
+    kernel_processor_sleep_build_ladder(&processor_sleep_test_facts, &processor_sleep_test_ladder);
+    kernel_processor_sleep_debug_adopt_ladder(&processor_sleep_test_ladder);
+    const uint32_t amd_c1 = kernel_processor_sleep_residency_of(0u);
+    const uint32_t amd_c2 = kernel_processor_sleep_residency_of(1u);
+    const uint32_t amd_absent = kernel_processor_sleep_residency_of(2u);
+    const bool amd_c2_refused = kernel_processor_sleep_refuse_depth(1u);
+    const uint32_t amd_refused = kernel_processor_sleep_residency_of(1u);
+
+    processor_sleep_test_idle.states[0].entry.bit_width = 1u;
+    processor_sleep_test_idle.states[1] = processor_sleep_test_idle.states[0];
+    processor_sleep_test_idle.states[1].entry.address = 0x20u;
+    processor_sleep_test_idle.states[1].type = 3u;
+    processor_sleep_test_idle.states[1].latency = 150u;
+    processor_sleep_test_idle.states[2].type = 2u;
+    processor_sleep_test_facts.intel = true;
+    processor_sleep_test_facts.usable_hints = 0x5u;
+    kernel_processor_sleep_build_ladder(&processor_sleep_test_facts, &processor_sleep_test_ladder);
+    kernel_processor_sleep_debug_adopt_ladder(&processor_sleep_test_ladder);
+    const uint32_t intel_hint_2 = kernel_processor_sleep_residency_of(2u);
+    processor_sleep_test_facts.usable_hints = 0x1u;
+    kernel_processor_sleep_build_ladder(&processor_sleep_test_facts, &processor_sleep_test_ladder);
+    kernel_processor_sleep_debug_adopt_ladder(&processor_sleep_test_ladder);
+    const uint32_t intel_port_c2 = kernel_processor_sleep_residency_of(1u);
+    processor_sleep_test_ladder.depths[1].latency_published = false;
+    kernel_processor_sleep_debug_adopt_ladder(&processor_sleep_test_ladder);
+    const uint32_t unpublished = kernel_processor_sleep_residency_of(1u);
+    kernel_processor_sleep_initialize();
+
+    kernel_test_check(test, amd_c1 == 1u, "AMD's C1, 1 us, resides 1 us");
+    kernel_test_check(test, amd_c2 == 54u, "its port C2, 18 us, resides 3 times that");
+    kernel_test_check(test, amd_absent == 0u, "its refused C3 is no depth, and resides 0");
+    kernel_test_check(test, amd_c2_refused && amd_refused == 0u, "its port C2, once refused, resides 0");
+    kernel_test_check(test, intel_hint_2 == 450u, "Intel's MWAIT hint 2, a C3 of 150 us, resides 450 us");
+    kernel_test_check(test, intel_port_c2 == 1050u, "its port C2 of 350 us, where MWAIT stops at C1, resides 1050 us");
+    kernel_test_check(test, unpublished == 0u, "a depth that publishes no latency resides 0");
+    kernel_test_check(test, kernel_processor_sleep_residency_of(PROCESSOR_SLEEP_DEPTHS) == 0u, "past the depths, 0");
+}
+
+/**
  * @brief A port state is a depth only where the local timer always runs, the TSC is invariant, step 8 did not skip
  *        CST_CNT and the processor's slot publishes states; each reason is named, and the ladder is C1 alone.
  */
@@ -860,6 +906,66 @@ static ProcessorSleepOutcome_t processor_sleep_test_sleep_on_a_pending(uint8_t v
     const ProcessorSleepOutcome_t outcome = processor_sleep_until_interrupt();
     asmutils_restore_flags(flags);
     return outcome;
+}
+
+/**
+ * @brief Sleeps on an interrupt made pending first, so that the sleep returns at once, asked at @p depth.
+ */
+static ProcessorSleepOutcome_t processor_sleep_test_sleep_on_a_pending_at(uint8_t vector, uint32_t depth)
+{
+    const uint32_t flags = asmutils_save_flags_and_disable_interrupts();
+    (void) advanced_pic_ipi_send_fixed(0u, vector, ADVANCED_PIC_IPI_SHORT_SELF);
+    const ProcessorSleepOutcome_t outcome = processor_sleep_until_interrupt_at(depth);
+    asmutils_restore_flags(flags);
+    return outcome;
+}
+
+/**
+ * @brief A sleep asked at a depth enters it when it is validated at or below the depth granted, the depth granted when
+ *        asked past it, and the deepest validated below it when it is not validated: a choice made for one sleep never
+ *        enters what no grant or probe allowed. Under a hypervisor, whose made-up ports read back at once.
+ */
+KERNEL_TEST(a_sleep_asked_at_a_depth_enters_it_only_where_a_grant_and_a_probe_allow)
+{
+    static ProcessorSleepLadder_t ladder;
+    CpuIdentity_t identity;
+    uint8_t vector = 0u;
+    uint64_t quarter_tick = 0u;
+
+    cpu_identity_read(&identity);
+    if (!identity.hypervisor)
+    {
+        kernel_test_skip(test, "a real processor: the made-up ports may well stop it");
+        return;
+    }
+    if (!processor_sleep_test_take_a_vector(test, &vector, &quarter_tick))
+        return;
+
+    ladder = *kernel_processor_sleep_ladder();
+    ladder.available |= (1u << 1u) | (1u << 2u);
+    for (uint32_t depth = 1u; depth <= 2u; ++depth)
+        ladder.depths[depth] = (ProcessorSleepDepth_t){.entry = PROCESSOR_SLEEP_ENTRY_PORT,
+                                                       .port = (uint16_t) (PROCESSOR_SLEEP_TEST_UNDECODED_PORT + depth),
+                                                       .latency_published = true,
+                                                       .latency = 18u * depth};
+    kernel_processor_sleep_debug_adopt_ladder(&ladder);
+    (void) kernel_processor_sleep_request_depth(2u);
+    kernel_processor_sleep_begin_probe();
+    kernel_processor_sleep_end_probe(true);
+    const ProcessorSleepOutcome_t granted = processor_sleep_test_sleep_on_a_pending_at(vector, 2u);
+    const ProcessorSleepOutcome_t past = processor_sleep_test_sleep_on_a_pending_at(vector, 5u);
+    const ProcessorSleepOutcome_t unvalidated = processor_sleep_test_sleep_on_a_pending_at(vector, 1u);
+    const ProcessorSleepOutcome_t floor = processor_sleep_test_sleep_on_a_pending_at(vector, 0u);
+    const uint32_t validated = kernel_processor_sleep_validated_depths();
+    device_interrupt_release(vector);
+    kernel_processor_sleep_initialize();
+
+    kernel_test_check(test, validated == 0x5u, "C1 and the probed depth 2 are validated, depth 1 is not");
+    kernel_test_check(test, granted.depth == 2u && granted.mode == PROCESSOR_SLEEP_PORT, "depth 2 asked, depth 2 read");
+    kernel_test_check(test, past.depth == 2u, "depth 5 asked, the depth granted entered");
+    kernel_test_check(test, unvalidated.depth == 0u && unvalidated.mode != PROCESSOR_SLEEP_PORT,
+                      "the unvalidated depth 1 asked, C1 entered and no port read");
+    kernel_test_check(test, floor.depth == 0u, "C1 asked, C1 entered");
 }
 
 /**

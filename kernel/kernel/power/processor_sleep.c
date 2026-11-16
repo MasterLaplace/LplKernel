@@ -173,6 +173,17 @@ static uint32_t processor_sleep_entered_depth(void)
 }
 
 /**
+ * @brief The depth a sleep chosen at @p depth enters: the one sleeps enter when @p depth reaches it, @p depth when it
+ *        is validated below it, the deepest validated below @p depth otherwise.
+ */
+static uint32_t processor_sleep_entered_depth_at_most(uint32_t depth)
+{
+    const uint32_t entered = processor_sleep_entered_depth();
+
+    return depth >= entered ? entered : processor_sleep_deepest_validated_at_or_below(depth);
+}
+
+/**
  * @brief The depths of @p ladder a sleep may enter without a probe: every one but its port reads.
  */
 static uint32_t processor_sleep_depths_without_ports(const ProcessorSleepLadder_t *ladder)
@@ -657,6 +668,11 @@ ProcessorSleepOutcome_t processor_sleep_until_interrupt(void)
     return processor_sleep_masked(&processor_sleep_idle_line, NULL, NULL, processor_sleep_entered_depth());
 }
 
+ProcessorSleepOutcome_t processor_sleep_until_interrupt_at(uint32_t depth)
+{
+    return processor_sleep_masked(&processor_sleep_idle_line, NULL, NULL, processor_sleep_entered_depth_at_most(depth));
+}
+
 bool processor_sleep_unless(ProcessorSleepCondition_t done, void *context)
 {
     return processor_sleep_masked(&processor_sleep_idle_line, done, context, PROCESSOR_SLEEP_DEPTH_C1).mode ==
@@ -712,6 +728,19 @@ uint32_t kernel_processor_sleep_usable_hints(uint32_t enumerated, bool timer_alw
 bool kernel_processor_sleep_has_interrupt_break(void) { return processor_sleep_interrupt_break; }
 
 uint32_t kernel_processor_sleep_available_depths(void) { return processor_sleep_available_depths; }
+
+uint32_t kernel_processor_sleep_validated_depths(void) { return processor_sleep_validated_depths; }
+
+uint32_t kernel_processor_sleep_residency_of(uint32_t depth)
+{
+    if (depth >= PROCESSOR_SLEEP_DEPTHS || ((processor_sleep_available_depths >> depth) & 1u) == 0u ||
+        !processor_sleep_ladder.depths[depth].latency_published)
+        return 0u;
+    return advanced_configuration_and_power_interface_processor_idle_residency(
+        depth == PROCESSOR_SLEEP_DEPTH_C1 ? ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_PROCESSOR_IDLE_TYPE_1 :
+                                            ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_PROCESSOR_IDLE_TYPE_2,
+        processor_sleep_ladder.depths[depth].latency);
+}
 
 bool kernel_processor_sleep_depth_of(uint32_t depth, ProcessorSleepDepth_t *out_depth)
 {

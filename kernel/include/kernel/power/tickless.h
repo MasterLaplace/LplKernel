@@ -48,6 +48,7 @@
 #include <stdint.h>
 
 #include <kernel/power/processor_sleep.h>
+#include <kernel/power/sleep_cost.h>
 #include <kernel/power/wake_latency.h>
 #include <kernel/power/wake_planner.h>
 
@@ -89,8 +90,16 @@ extern "C" {
  *          duty's first wake-up is armed on a guess once the timer has ended one probe; a probe the timer ended
  *          none of is tried again at the next stop. Once the active depth is validated, the depth the bus-master check
  *          would demote it to, the deepest available below it without the check, is probed too, so that a demotion
- *          lands there once it stops the processor. The probe serves no duty, so a window armed before this call
- *          waits for it, a couple of milliseconds at most. A session's sleep the bus-master check demoted
+ *          lands there once it stops the processor; then each depth a sleep may take below the active one, so that
+ *          each has its own lead to be chosen on (@ref kernel_tickless_sleep_on). The probe serves no duty, so a window
+ *          armed before this call waits for it, a couple of milliseconds at most.
+ *
+ *          The first session of a boot whose plan leaves it the time then settles what a sleep costs at each of
+ *          those depths (kernel/power/sleep_cost.h): where the package energy counter is present, three series of
+ *          sleeps of 128 ms each per depth (64 of 2 ms, 4 of 32 ms, 16 of 8 ms) measure it, 384 ms a depth, counted
+ *          slept as a probe is (@ref kernel_tickless_calibration_cycles); without the counter, each depth says so
+ *          and the rule of residencies chooses. A plan whose next wake-up comes before the calibration would end
+ *          leaves the costs unsettled until a later stop. A session's sleep the bus-master check demoted
  *          (kernel_processor_sleep_depth_after_the_bus_master_check) teaches the depth it entered, never the one asked;
  *          a probe's teaches and judges nothing. The probe's sleeps are the processor's, counted as any; a session
  *          that counts only its loop starts its accounting after this call
@@ -149,7 +158,14 @@ uint32_t kernel_tickless_microseconds_from_cycles(uint64_t cycles);
  * not have to wait for it; the duties whose windows are open by then are served at its
  * wake-up instead of costing one of their own.
  *
- * @details The plan is served at the cycle the core woke, so a window that opened while the interrupt
+ * @details Each sleep enters the depth that costs it the least (@ref kernel_sleep_cost_choose): among the depth sleeps
+ *          enter and those available, validated and learned below it, the least E + P * T for the T a sleep at each
+ *          would last on its own lead, when every one has measured costs; otherwise the deepest whose `_CST`
+ *          residency it outlasts. The depth sleeps enter is then a ceiling, never passed; which decided is counted
+ *          (@ref kernel_tickless_sleeps_chosen_by_cost, @ref kernel_tickless_sleeps_chosen_by_rule). While the depth
+ *          sleeps enter has not learned its lead, the sleep takes it, as below.
+ *
+ *          The plan is served at the cycle the core woke, so a window that opened while the interrupt
  *          was on its way is served too. The timer comes after its deadline by a latency, so the wake-up is
  *          armed early by the lead the timer's own wake-ups taught (wake_latency.h), never before the earliest
  *          of the window it serves: a window at least that wide is served by its latest, a narrower one late by
@@ -251,6 +267,17 @@ typedef enum {
 KernelTicklessProbeVerdict_t kernel_tickless_judge_a_probe(uint32_t unstopped_ranks);
 
 /**
+ * @brief The depths the first stop of the tick probes below the depth sleeps enter: each one usable that no wake-up
+ *        taught, so that each has its own lead to be chosen on. Pure, so that a test hands it ladders no QEMU model
+ *        offers, MWAIT depths below the ceiling (#818).
+ * @param usable  The depths available and validated, a bit each.
+ * @param taught  The depths a wake-up taught, a bit each.
+ * @param ceiling The depth sleeps enter, below PROCESSOR_SLEEP_DEPTHS.
+ * @return A bit per depth to probe.
+ */
+uint32_t kernel_tickless_depths_to_probe_below(uint32_t usable, uint32_t taught, uint32_t ceiling);
+
+/**
  * @brief The ranks of the sleeps of the last probe of @p depth that were port reads returning before their deadline
  *        with no interrupt.
  * @param depth A depth; one past PROCESSOR_SLEEP_DEPTH_DEEPEST has none.
@@ -300,6 +327,60 @@ uint32_t kernel_tickless_wakes_planned_on_a_published_lead(void);
  * @return The count, over every session of this boot.
  */
 uint32_t kernel_tickless_wakes_planned_on_the_bound(void);
+
+/**
+ * @brief What a sleep costs at @p depth, as this boot settled it (@ref kernel_tickless_enable).
+ * @param depth A depth.
+ * @return The costs, KERNEL_SLEEP_COST_NOT_CALIBRATED until settled; NULL past the depths.
+ */
+const KernelSleepCost_t *kernel_tickless_sleep_cost_at(uint32_t depth);
+
+/**
+ * @brief How many sleeps the choice sent to @p depth (@ref kernel_tickless_sleep_on).
+ * @param depth A depth; one past them has none.
+ * @return The count, over every session of this boot.
+ */
+uint32_t kernel_tickless_sleeps_chosen_at(uint32_t depth);
+
+/**
+ * @brief How many sleeps measured costs chose the depth of.
+ * @return The count, over every session of this boot.
+ */
+uint32_t kernel_tickless_sleeps_chosen_by_cost(void);
+
+/**
+ * @brief How many sleeps the rule of residencies chose the depth of, a depth's costs not being measured.
+ * @return The count, over every session of this boot.
+ */
+uint32_t kernel_tickless_sleeps_chosen_by_rule(void);
+
+/**
+ * @brief How many sleeps had no depth to choose, no allowed depth's sleep lasting: each served the plan at once.
+ * @return The count, over every session of this boot.
+ */
+uint32_t kernel_tickless_sleeps_without_a_choice(void);
+
+/**
+ * @brief How long settling the sleep costs took (@ref kernel_tickless_enable).
+ * @return Cycles; 0 before it, and where no counter made it measure anything.
+ */
+uint64_t kernel_tickless_calibration_cycles(void);
+
+/**
+ * @brief How many sleeps the tickless sleeps chose a depth for and recorded, the record keeping the latest
+ *        KERNEL_SLEEP_COST_RECORDED: each its window to the plan's next wake-up, capped by the longest sleep, and its
+ *        depth.
+ * @return The sleeps recorded since the boot.
+ */
+uint32_t kernel_tickless_sleeps_recorded(void);
+
+/**
+ * @brief Replays the sleeps the record keeps (kernel_sleep_cost_replay) over each depth up to the one sleeps enter:
+ *        allowed where a sleep may take it and a wake-up taught it, its lead, its residency and its costs as they
+ *        stand.
+ * @param out Receives the replay, written whole.
+ */
+void kernel_tickless_replay_the_session(KernelSleepCostReplay_t *out);
 
 /**
  * @brief The nanoseconds @p cycles of the timestamp counter last, rounded down, whole seconds first so that the
