@@ -164,7 +164,8 @@ KERNEL_TEST(stopping_the_tick_needs_a_plan_with_room_for_its_duty)
 /**
  * @brief The first stop of the tick in a boot probes the depth sleeps enter, before any duty sleeps: the lead is
  *        measured, from KERNEL_TICKLESS_PROBES sleeps at most, which, when none was cut short, last at least the
- *        probes' lengths; a later stop at the same depth probes it no more. Placed before every other test that stops
+ *        probes' lengths, the only time counted slept but the calibration's, which only the energy counter makes; a
+ *        later stop at the same depth probes it no more. Placed before every other test that stops
  * the tick, so that on a boot that runs this file first, its stop is the one that probes.
  */
 KERNEL_TEST(the_first_stop_of_the_tick_probes_the_depth_sleeps_enter)
@@ -175,8 +176,10 @@ KERNEL_TEST(the_first_stop_of_the_tick_probes_the_depth_sleeps_enter)
     (void) tickless_test_begin();
     const uint32_t unprobed = kernel_tickless_wake_samples();
     const uint64_t slept_before = kernel_tickless_slept_microseconds();
+    const uint64_t calibrated_before = kernel_tickless_calibration_cycles();
     const bool stopped = kernel_tickless_enable(true, &tickless_test_plan);
     const uint64_t slept = kernel_tickless_slept_microseconds() - slept_before;
+    const uint64_t calibrated = kernel_tickless_calibration_cycles() - calibrated_before;
     const uint32_t probed = kernel_tickless_wake_samples();
     const uint64_t lead = kernel_tickless_wake_lead_cycles();
     const uint64_t probe = kernel_tickless_probe_cycles();
@@ -194,9 +197,10 @@ KERNEL_TEST(the_first_stop_of_the_tick_probes_the_depth_sleeps_enter)
     kernel_test_check(test,
                       unprobed != 0u || (probed >= 1u && probed <= KERNEL_TICKLESS_PROBES &&
                                          (probed < KERNEL_TICKLESS_PROBES || probe >= lengths) &&
-                                         slept == kernel_tickless_microseconds_from_cycles(probe)),
+                                         slept == kernel_tickless_microseconds_from_cycles(probe) +
+                                                      kernel_tickless_microseconds_from_cycles(calibrated)),
                       "a depth no session probed is probed by the first stop, its sleeps as long as the probes and "
-                      "counted as time with the tick stopped");
+                      "counted as time with the tick stopped, with the calibration's where the counter made one");
     kernel_test_check(test, probed != 0u && lead != 0u, "so the lead is measured before any duty sleeps");
     kernel_test_check(test, probed_again == probed, "and a later stop probes it no more");
     kernel_test_check(test, tickless_test_tick_runs(), "and the tick runs again");

@@ -222,6 +222,19 @@ extern bool advanced_configuration_and_power_interface_processor_idle_costs(
     const AdvancedConfigurationAndPowerInterfaceProcessorIdle_t *idle, uint32_t hint,
     AdvancedConfigurationAndPowerInterfaceIdleCosts_t *out_costs);
 
+/**
+ * @brief How long a sleep in a `_CST` state must last for it to save energy, by the rule of residencies: its latency,
+ *        three times its latency when its type is past C1, the rule Linux's intel_idle derives from _CST
+ *        (`intel_idle_init_cstates_acpi`, drivers/idle/intel_idle.c, v6.12).
+ *
+ * @param type    The state's type, 1 for C1; a type 0, which ACPI forbids, resides its latency.
+ * @param latency Its latency, in microseconds.
+ * @return The residency, in microseconds; the largest double word past it.
+ */
+extern uint32_t advanced_configuration_and_power_interface_processor_idle_residency(uint32_t type, uint32_t latency);
+
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_PROCESSOR_IDLE_TYPE_1 1u /**< The type of a C1. */
+#define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_PROCESSOR_IDLE_TYPE_2 2u /**< The type of a C2. */
 /** The type of a C3, whose port state a processor enters behind the bus-master check alone. */
 #define ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_PROCESSOR_IDLE_TYPE_3 3u
 

@@ -391,6 +391,22 @@ uint32_t kernel_processor_sleep_usable_hints(uint32_t enumerated, bool timer_alw
 uint32_t kernel_processor_sleep_available_depths(void);
 
 /**
+ * @brief Which depths a sleep may enter without a probe first: C1, every MWAIT depth, and each port depth a probe
+ *        found to stop the processor.
+ * @return A bit per depth; depth 0 always.
+ */
+uint32_t kernel_processor_sleep_validated_depths(void);
+
+/**
+ * @brief How long a sleep at @p depth of the adopted ladder must last to save energy, by the rule of `_CST` residencies
+ *        (@ref advanced_configuration_and_power_interface_processor_idle_residency): its published latency at C1,
+ *        three times it past C1, every depth past C1 being a state of type 2 or 3, by MWAIT hint or by port.
+ * @param depth A depth.
+ * @return Microseconds; 0 where the depth is not available or publishes no latency.
+ */
+uint32_t kernel_processor_sleep_residency_of(uint32_t depth);
+
+/**
  * @brief What a depth of the adopted ladder enters.
  * @param depth     The depth.
  * @param out_depth Receives it when it is available; untouched otherwise.
@@ -531,8 +547,10 @@ bool kernel_processor_sleep_has_interrupt_break(void);
  * @details Asking is not getting: a request past the available depths is lowered rather than passed through to raise
  *          a fault, to land somewhere unintended, or to stop the timer that wakes the core. What a depth costs in
  *          wake latency is NOT in CPUID: it lives in ACPI `_CST`, which the ladder carries and a tickless sleep
- *          reads as the lead of a depth it has not learned yet (kernel/power/tickless.h); choosing a depth against a
- *          deadline stays a decision of the caller that knows it (#299), never a derivation.
+ *          reads as the lead of a depth it has not learned yet (kernel/power/tickless.h). For a tickless sleep the
+ *          depth granted is a ceiling: each sleep enters the depth at or below it that costs it the least, by the
+ *          costs measured on the package energy counter or by the rule of `_CST` residencies
+ *          (kernel/power/sleep_cost.h).
  *
  * @param depth The depth; @ref PROCESSOR_SLEEP_DEPTH_C1 is the floor, a depth past
  *              @ref PROCESSOR_SLEEP_DEPTH_DEEPEST asks for the deepest.
@@ -598,6 +616,15 @@ ProcessorSleepMode_t processor_sleep_until_write(const volatile uint32_t *watche
  * @return How the processor was put to sleep, and whether an interrupt was taken before the call returned.
  */
 ProcessorSleepOutcome_t processor_sleep_until_interrupt(void);
+
+/**
+ * @brief Sleeps until the next interrupt as @ref processor_sleep_until_interrupt does, at @p depth rather than at the
+ *        depth last granted: a depth past that one enters that one, and a depth not validated the deepest validated
+ *        below it, so that a choice made for one sleep never enters what no grant or probe allowed.
+ * @param depth The depth chosen for this sleep (kernel/power/sleep_cost.h).
+ * @return As @ref processor_sleep_until_interrupt.
+ */
+ProcessorSleepOutcome_t processor_sleep_until_interrupt_at(uint32_t depth);
 
 /**
  * @brief Whether what a sleeper waits for has happened; called with interrupts masked.

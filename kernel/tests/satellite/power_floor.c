@@ -353,6 +353,117 @@ KERNEL_TEST(the_idle_loop_sleeps_under_its_ceiling)
 }
 
 /**
+ * @brief Whether a sleep under the depth sleeps enter, @p ceiling, may take @p depth: the ceiling, or a depth available
+ *        and validated below it.
+ */
+static bool power_floor_may_take(uint32_t depth, uint32_t ceiling)
+{
+    const uint32_t usable = kernel_processor_sleep_available_depths() & kernel_processor_sleep_validated_depths();
+
+    return depth == ceiling || (depth < ceiling && ((usable >> depth) & 1u) != 0u);
+}
+
+/**
+ * @brief Each sleep of the session took the depth its measured costs chose, or the rule where a depth's costs are not
+ *        measured, never past the depth sleeps enter; each depth a sleep may take has its costs settled, measured or
+ *        named for why not, the package energy counter's absence as such.
+ *
+ * @details Under QEMU the counter is absent or reads 0 (kernel/power/energy_counter.h), so the rule decides every
+ *          sleep; on silicon with the counter, the costs measured are the measures this test prints (#842).
+ */
+KERNEL_TEST(each_sleep_takes_the_depth_its_costs_or_the_rule_choose)
+{
+    const SatelliteReport_t *const report = power_floor_run_once();
+    const uint32_t ceiling = kernel_processor_sleep_depth();
+    const bool counter = kernel_energy_counter()->state == KERNEL_ENERGY_COUNTER_PRESENT;
+    const KernelSleepCost_t *const deepest = kernel_tickless_sleep_cost_at(ceiling);
+    uint32_t chosen = 0u;
+    uint32_t past_the_ceiling = 0u;
+    uint32_t unsettled = 0u;
+    uint32_t misnamed = 0u;
+
+    if (report == NULL)
+    {
+        kernel_test_skip(test, "the power floor did not come up");
+        return;
+    }
+    for (uint32_t depth = PROCESSOR_SLEEP_DEPTH_C1; depth < PROCESSOR_SLEEP_DEPTHS; ++depth)
+    {
+        const KernelSleepCost_t *const cost = kernel_tickless_sleep_cost_at(depth);
+        if (depth > ceiling)
+        {
+            past_the_ceiling += kernel_tickless_sleeps_chosen_at(depth);
+            continue;
+        }
+        chosen += kernel_tickless_sleeps_chosen_at(depth);
+        if (!power_floor_may_take(depth, ceiling))
+            continue;
+        unsettled += cost->source == KERNEL_SLEEP_COST_NOT_CALIBRATED ? 1u : 0u;
+        misnamed += !counter && cost->source != KERNEL_SLEEP_COST_NO_COUNTER ? 1u : 0u;
+    }
+    kernel_test_measure(test, "sleep_cost_source", deepest->source);
+    kernel_test_measure(test, "sleeps_by_cost", kernel_tickless_sleeps_chosen_by_cost());
+    kernel_test_measure(test, "sleeps_by_rule", kernel_tickless_sleeps_chosen_by_rule());
+    kernel_test_measure(test, "sleeps_without_a_choice", kernel_tickless_sleeps_without_a_choice());
+    if (counter)
+        kernel_test_measure(test, "calibration_microseconds",
+                            kernel_tickless_microseconds_from_cycles(kernel_tickless_calibration_cycles()));
+    if (deepest->source == KERNEL_SLEEP_COST_MEASURED)
+    {
+        kernel_test_measure(test, "power_microwatts", deepest->power_microwatts);
+        kernel_test_measure(test, "sleep_nanojoules", (uint32_t) deepest->sleep_nanojoules);
+    }
+    kernel_test_check(test, chosen > 0u, "the session's sleeps chose their depths");
+    kernel_test_check(test, chosen == kernel_tickless_sleeps_chosen_by_cost() + kernel_tickless_sleeps_chosen_by_rule(),
+                      "each choice is counted by what decided it");
+    kernel_test_check(test, past_the_ceiling == 0u, "none past the depth sleeps enter");
+    kernel_test_check(test, unsettled == 0u, "each depth a sleep may take has its costs settled");
+    kernel_test_check(test, misnamed == 0u, "without the counter, each says so");
+    kernel_test_check(test, counter || kernel_tickless_sleeps_chosen_by_cost() == 0u,
+                      "without the counter, the rule decides every sleep");
+}
+
+/**
+ * @brief The session recorded each sleep it chose a depth for, and its replay against the shallowest and the deepest
+ *        depth misses no wake-up the shallowest makes, its choices made again over the records.
+ *
+ * @details Under QEMU every sleep is C1 and no cost is measured, so the replay costs nothing and the misses decide; on
+ *          silicon with the counter, the costs it prints are the comparison the session's choices are judged by (#842).
+ */
+KERNEL_TEST(the_session_s_sleeps_are_recorded_and_replay_against_the_fixed_depths)
+{
+    const SatelliteReport_t *const report = power_floor_run_once();
+    KernelSleepCostReplay_t replay = {0u, 0u, 0u, 0u, 0u, 0u, 0u};
+
+    if (report == NULL)
+    {
+        kernel_test_skip(test, "the power floor did not come up");
+        return;
+    }
+    const uint32_t chosen = kernel_tickless_sleeps_chosen_by_cost() + kernel_tickless_sleeps_chosen_by_rule();
+    const uint32_t recorded = kernel_tickless_sleeps_recorded();
+    const uint32_t kept = recorded < KERNEL_SLEEP_COST_RECORDED ? recorded : KERNEL_SLEEP_COST_RECORDED;
+    kernel_tickless_replay_the_session(&replay);
+    kernel_test_measure(test, "sleeps_recorded", recorded);
+    kernel_test_measure(test, "replay_agreements", replay.agreements);
+    kernel_test_measure(test, "replay_chosen_misses", replay.chosen_misses);
+    kernel_test_measure(test, "replay_shallowest_misses", replay.shallowest_misses);
+    kernel_test_measure(test, "replay_deepest_misses", replay.deepest_misses);
+    if (kernel_energy_counter()->state == KERNEL_ENERGY_COUNTER_PRESENT)
+    {
+        kernel_test_measure(test, "replay_chosen_microjoules",
+                            (uint32_t) ((replay.chosen_cost >> KERNEL_SLEEP_COST_CYCLE_SHIFT) / 1000u));
+        kernel_test_measure(test, "replay_deepest_microjoules",
+                            (uint32_t) ((replay.deepest_cost >> KERNEL_SLEEP_COST_CYCLE_SHIFT) / 1000u));
+    }
+    kernel_test_check(test, recorded > 0u && recorded == chosen, "each sleep chosen is recorded");
+    kernel_test_check(test, replay.agreements + replay.chosen_misses > 0u && replay.agreements <= kept,
+                      "the replay chose again over the records kept");
+    kernel_test_check(test, replay.chosen_misses <= replay.shallowest_misses,
+                      "the choice misses no wake-up the shallowest depth makes");
+}
+
+/**
  * @brief Every wake-up of the session is accounted for, and the books balance.
  *
  * @details The sleep count is checked with the law, because 0 == 0 holds for a session that never

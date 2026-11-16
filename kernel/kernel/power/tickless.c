@@ -5,12 +5,15 @@
 #include <kernel/cpu/apic_timer.h>
 #include <kernel/cpu/irq.h>
 #include <kernel/lib/asmutils.h>
+#include <kernel/power/energy_counter.h>
 #include <kernel/power/processor_park.h>
 #include <kernel/power/processor_sleep.h>
+#include <kernel/power/sleep_cost.h>
 #include <kernel/power/wake_latency.h>
 
 #define TICKLESS_MICROSECONDS_PER_SECOND 1000000u
 #define TICKLESS_NANOSECONDS_PER_SECOND  1000000000ull
+#define TICKLESS_COUNTER_QUANTA          2u /**< Units of the energy counter a series cannot tell apart: one each end. */
 
 static bool tickless_permitted = false;
 static uint32_t tickless_nominal_hz = 0u;
@@ -25,6 +28,38 @@ static uint32_t tickless_probed_depths = 0u;
 static uint32_t tickless_wakes_planned_on_a_published_lead = 0u;
 static uint32_t tickless_wakes_planned_on_the_bound = 0u;
 static uint32_t tickless_unstopped_probe_ranks[PROCESSOR_SLEEP_DEPTHS] = {0u};
+static uint64_t tickless_residency_cycles[PROCESSOR_SLEEP_DEPTHS] = {0u};
+static KernelSleepCost_t tickless_sleep_costs[PROCESSOR_SLEEP_DEPTHS] = {{0}};
+static bool tickless_sleep_costs_settled = false;
+static uint64_t tickless_calibration_cycles = 0u;
+static uint32_t tickless_sleeps_chosen_at[PROCESSOR_SLEEP_DEPTHS] = {0u};
+static uint32_t tickless_sleeps_chosen_by_cost = 0u;
+static uint32_t tickless_sleeps_chosen_by_rule = 0u;
+static uint32_t tickless_sleeps_without_a_choice = 0u;
+static KernelSleepCostRecord_t tickless_sleep_records[KERNEL_SLEEP_COST_RECORDED] = {
+    {0u, 0u, 0u}
+};
+static uint32_t tickless_sleeps_recorded = 0u;
+
+_Static_assert((KERNEL_SLEEP_COST_RECORDED & (KERNEL_SLEEP_COST_RECORDED - 1u)) == 0u,
+               "the record of the sleeps wraps on a mask");
+_Static_assert(PROCESSOR_SLEEP_DEPTHS <= KERNEL_SLEEP_COST_DEPTHS, "a replay takes every depth of a ladder");
+
+/** One series of a depth's calibration: how many sleeps, and how long each. */
+typedef struct {
+    uint32_t sleeps;       /**< Sleeps the series takes. */
+    uint32_t microseconds; /**< How long each, on the timer. */
+} TicklessCalibrationSeries_t;
+
+/**
+ * The series of a depth's calibration, 128 ms each so that the counter's ~1 ms update is under 1 % of them: many short
+ * sleeps, few long ones, then the check between (kernel_sleep_cost_estimate).
+ */
+static const TicklessCalibrationSeries_t tickless_calibration_series[KERNEL_SLEEP_COST_SERIES] = {
+    {64u, 2000u },
+    {4u,  32000u},
+    {16u, 8000u }
+};
 
 /** How a sleep armed on the local timer ended. */
 typedef enum {
@@ -95,15 +130,16 @@ static void tickless_count_ticks_avoided(uint32_t slept)
 }
 
 /**
- * @brief Arms the local timer at @p armed and sleeps until an interrupt, interrupts masked from the arming to the
- *        sleep: a deadline that passes while it is armed ends the sleep.
+ * @brief Arms the local timer at @p armed and sleeps until an interrupt at @p depth, interrupts masked from the arming
+ *        to the sleep: a deadline that passes while it is armed ends the sleep.
  * @param armed       The cycle the timer fires at.
  * @param out_after   Receives the cycle the core woke at, when it slept.
  * @param out_outcome Receives how the processor slept, when it did.
+ * @param depth       The depth asked (processor_sleep_until_interrupt_at).
  * @return How the sleep ended.
  */
-__attribute__((always_inline)) static inline TicklessWake_t tickless_sleep_until(uint64_t armed, uint64_t *out_after,
-                                                                                 ProcessorSleepOutcome_t *out_outcome)
+__attribute__((always_inline)) static inline TicklessWake_t
+tickless_sleep_until(uint64_t armed, uint64_t *out_after, ProcessorSleepOutcome_t *out_outcome, uint32_t depth)
 {
     const uint32_t flags = asmutils_save_flags_and_disable_interrupts();
     if (!advanced_pic_timer_backend_arm_at_cycle(armed))
@@ -112,7 +148,7 @@ __attribute__((always_inline)) static inline TicklessWake_t tickless_sleep_until
         return TICKLESS_WAKE_UNARMED;
     }
 
-    *out_outcome = processor_sleep_until_interrupt();
+    *out_outcome = processor_sleep_until_interrupt_at(depth);
     const uint64_t after = asmutils_read_timestamp_counter();
     const bool woken_early = advanced_pic_timer_backend_disarm(after) != 0u;
     asmutils_restore_flags(flags);
@@ -195,7 +231,7 @@ static bool tickless_probe_sleep(uint32_t depth, uint64_t length, uint64_t *out_
     const uint64_t armed = asmutils_read_timestamp_counter() + length;
     uint64_t after = armed;
     ProcessorSleepOutcome_t outcome = {PROCESSOR_SLEEP_NONE, false, depth};
-    const TicklessWake_t wake = tickless_sleep_until(armed, &after, &outcome);
+    const TicklessWake_t wake = tickless_sleep_until(armed, &after, &outcome, depth);
     const bool entered = outcome.depth == depth;
 
     *out_timer_ended = entered && wake == TICKLESS_WAKE_TIMER;
@@ -321,18 +357,18 @@ static uint32_t tickless_sleep_until_any_interrupt(KernelWakePlan_t *plan)
 }
 
 /**
- * @brief Sleeps once on @p plan with the tick stopped, armed @p latency's lead before the plan's next wake-up, then
+ * @brief Sleeps once on @p plan with the tick stopped at @p depth, armed its lead before the plan's next wake-up, then
  *        serves the plan at the wake-up; a wake-up the timer ended teaches the estimate of the depth the sleep entered,
- *        @p latency's unless the bus-master check demoted it.
- * @param plan    The session's plan.
- * @param latency The estimate of the depth the sleep asks for.
+ *        @p depth's unless the bus-master check demoted it.
+ * @param plan  The session's plan.
+ * @param depth The depth the sleep asks for.
  * @return The microseconds slept.
  */
-__attribute__((always_inline)) static inline uint32_t tickless_sleep_at(KernelWakePlan_t *plan,
-                                                                        KernelWakeLatency_t *latency)
+__attribute__((always_inline)) static inline uint32_t tickless_sleep_at(KernelWakePlan_t *plan, uint32_t depth)
 {
     const uint64_t before = asmutils_read_timestamp_counter();
-    const uint64_t planned = kernel_wake_planner_next_wake(plan, kernel_wake_latency_lead(latency));
+    const uint64_t planned =
+        kernel_wake_planner_next_wake(plan, kernel_wake_latency_lead(&tickless_wake_latency[depth]));
     if (planned <= before)
     {
         (void) kernel_wake_planner_serve(plan, before);
@@ -343,7 +379,7 @@ __attribute__((always_inline)) static inline uint32_t tickless_sleep_at(KernelWa
     const uint64_t armed = planned < longest ? planned : longest;
     uint64_t after = armed;
     ProcessorSleepOutcome_t outcome = {PROCESSOR_SLEEP_NONE, false, PROCESSOR_SLEEP_DEPTH_C1};
-    const TicklessWake_t wake = tickless_sleep_until(armed, &after, &outcome);
+    const TicklessWake_t wake = tickless_sleep_until(armed, &after, &outcome, depth);
     if (wake == TICKLESS_WAKE_UNARMED)
         return tickless_sleep_until_any_interrupt(plan);
     if (wake == TICKLESS_WAKE_EARLY)
@@ -377,11 +413,11 @@ __attribute__((cold, noinline)) static uint32_t tickless_sleep_at_an_unlearned_d
     {
         depth = kept;
         if (tickless_wake_latency[depth].samples != 0u)
-            return probed + tickless_sleep_at(plan, &tickless_wake_latency[depth]);
+            return probed + tickless_sleep_at(plan, depth);
         probed += tickless_probe_when_it_fits(plan, depth);
     }
     tickless_count_where_the_lead_comes_from(depth);
-    return probed + tickless_sleep_at(plan, &tickless_wake_latency[depth]);
+    return probed + tickless_sleep_at(plan, depth);
 }
 
 /**
@@ -415,9 +451,31 @@ static void tickless_probe_where_the_check_demotes(uint32_t depth)
 }
 
 /**
+ * @brief Whether a sleep under @p ceiling, the depth sleeps enter, may take @p depth: the ceiling itself, or a depth
+ *        available and validated below it.
+ */
+static bool tickless_may_take(uint32_t depth, uint32_t ceiling)
+{
+    const uint32_t usable = kernel_processor_sleep_available_depths() & kernel_processor_sleep_validated_depths();
+
+    return depth == ceiling || (depth < ceiling && ((usable >> depth) & 1u) != 0u);
+}
+
+/**
+ * @brief Probes each depth a sleep may take below @p ceiling that no wake-up taught, so that each has its own lead to
+ *        be chosen on.
+ */
+static void tickless_probe_the_depths_below(uint32_t ceiling)
+{
+    for (uint32_t depth = PROCESSOR_SLEEP_DEPTH_C1; depth < ceiling; ++depth)
+        if (tickless_may_take(depth, ceiling) && tickless_wake_latency[depth].samples == 0u)
+            (void) tickless_probe(depth);
+}
+
+/**
  * @brief Probes the depth awaiting a probe, and each one the active depth falls to while it awaits one, until the
  *        active depth is validated; then the depth the bus-master check demotes it to; then the depth sleeps enter,
- *        while no wake-up taught it.
+ *        while no wake-up taught it; then each depth a sleep may take below it, while no wake-up taught it.
  */
 static void tickless_probe_the_depth_sleeps_enter(void)
 {
@@ -427,6 +485,194 @@ static void tickless_probe_the_depth_sleeps_enter(void)
     const uint32_t depth = kernel_processor_sleep_depth();
     if (tickless_wake_latency[depth].samples == 0u)
         (void) tickless_probe(depth);
+    tickless_probe_the_depths_below(depth);
+}
+
+/**
+ * @brief Converts each depth's `_CST` residency to cycles once a session, so that no sleep divides to choose.
+ */
+static void tickless_convert_the_residencies(void)
+{
+    for (uint32_t depth = PROCESSOR_SLEEP_DEPTH_C1; depth < PROCESSOR_SLEEP_DEPTHS; ++depth)
+        tickless_residency_cycles[depth] =
+            kernel_tickless_cycles_from_microseconds(kernel_processor_sleep_residency_of(depth));
+}
+
+/**
+ * @brief The cycles the calibration of every depth up to @p ceiling sleeps.
+ */
+static uint64_t tickless_calibration_span_cycles(uint32_t ceiling)
+{
+    uint32_t microseconds = 0u;
+
+    for (uint32_t index = 0u; index < KERNEL_SLEEP_COST_SERIES; ++index)
+        microseconds += tickless_calibration_series[index].sleeps * tickless_calibration_series[index].microseconds;
+    return kernel_tickless_cycles_from_microseconds(microseconds) * (ceiling + 1u);
+}
+
+/**
+ * @brief Measures one series of @p series at @p depth: its sleeps on the timer, the package energy counter read before
+ *        the first and after the last.
+ * @return KERNEL_SLEEP_COST_MEASURED with @p out written; UNREAD when a read failed, UNTIMED when the timer could not
+ *         be armed, NOISY when a sleep entered another depth, the bus-master check having demoted it.
+ */
+static uint32_t tickless_measure_a_series(uint32_t depth, const TicklessCalibrationSeries_t *series,
+                                          KernelSleepCostSeries_t *out)
+{
+    const uint64_t length = kernel_tickless_cycles_from_microseconds(series->microseconds);
+    uint32_t before = 0u;
+    uint32_t after = 0u;
+    bool demoted = false;
+
+    if (!kernel_energy_counter_sample(&before))
+        return KERNEL_SLEEP_COST_UNREAD;
+    const uint64_t began = asmutils_read_timestamp_counter();
+    for (uint32_t sleep = 0u; sleep < series->sleeps; ++sleep)
+    {
+        uint64_t woke = 0u;
+        ProcessorSleepOutcome_t outcome = {PROCESSOR_SLEEP_NONE, false, depth};
+        if (tickless_sleep_until(asmutils_read_timestamp_counter() + length, &woke, &outcome, depth) ==
+            TICKLESS_WAKE_UNARMED)
+            return KERNEL_SLEEP_COST_UNTIMED;
+        demoted = demoted || outcome.depth != depth;
+    }
+    const uint64_t ended = asmutils_read_timestamp_counter();
+    if (!kernel_energy_counter_sample(&after))
+        return KERNEL_SLEEP_COST_UNREAD;
+    if (demoted)
+        return KERNEL_SLEEP_COST_NOISY;
+    out->sleeps = series->sleeps;
+    out->nanoseconds = kernel_tickless_nanoseconds_from_cycles(ended - began);
+    out->nanojoules = kernel_energy_counter_nanojoules_between(before, after);
+    return KERNEL_SLEEP_COST_MEASURED;
+}
+
+/**
+ * @brief Calibrates @p depth: its series, then the costs they solve, or why they solve none.
+ */
+static void tickless_calibrate_a_depth(uint32_t depth)
+{
+    KernelSleepCostSeries_t series[KERNEL_SLEEP_COST_SERIES];
+    const KernelSleepCost_t unmeasured = {KERNEL_SLEEP_COST_NOT_CALIBRATED, 0u, 0u, 0u};
+
+    for (uint32_t index = 0u; index < KERNEL_SLEEP_COST_SERIES; ++index)
+    {
+        const uint32_t source = tickless_measure_a_series(depth, &tickless_calibration_series[index], &series[index]);
+        if (source == KERNEL_SLEEP_COST_MEASURED)
+            continue;
+        tickless_sleep_costs[depth] = unmeasured;
+        tickless_sleep_costs[depth].source = source;
+        return;
+    }
+    kernel_sleep_cost_estimate(series, kernel_energy_counter_nanojoules_between(0u, TICKLESS_COUNTER_QUANTA),
+                               advanced_pic_timer_backend_get_calibrated_timestamp_counter_frequency_hz(),
+                               &tickless_sleep_costs[depth]);
+}
+
+/**
+ * @brief Calibrates each depth a sleep may take up to @p ceiling, from @p began: the time is counted slept, as a
+ *        probe's.
+ */
+static void tickless_calibrate_the_depths(uint32_t ceiling, uint64_t began)
+{
+    for (uint32_t depth = PROCESSOR_SLEEP_DEPTH_C1; depth <= ceiling; ++depth)
+        if (tickless_may_take(depth, ceiling))
+            tickless_calibrate_a_depth(depth);
+    tickless_calibration_cycles = asmutils_read_timestamp_counter() - began;
+    const uint32_t calibrated = tickless_microseconds_from_cycles(
+        tickless_calibration_cycles, advanced_pic_timer_backend_get_calibrated_timestamp_counter_frequency_hz());
+    tickless_slept_microseconds += calibrated;
+    tickless_count_ticks_avoided(calibrated);
+}
+
+/**
+ * @brief Marks each depth a sleep may take up to @p ceiling as costed by no counter, which sleeps nothing.
+ */
+static void tickless_mark_the_depths_uncounted(uint32_t ceiling)
+{
+    for (uint32_t depth = PROCESSOR_SLEEP_DEPTH_C1; depth <= ceiling; ++depth)
+        if (tickless_may_take(depth, ceiling))
+            tickless_sleep_costs[depth].source = KERNEL_SLEEP_COST_NO_COUNTER;
+}
+
+/**
+ * @brief Settles once a boot what a sleep costs at each depth a sleep may take up to @p ceiling: measured where the
+ *        package energy counter is present and @p plan's next wake-up leaves the calibration its time, no counter
+ *        otherwise; a plan that leaves too little leaves them unsettled, for the next stop of the tick.
+ */
+static void tickless_settle_the_sleep_costs(const KernelWakePlan_t *plan, uint32_t ceiling)
+{
+    const bool counter = kernel_energy_counter()->state == KERNEL_ENERGY_COUNTER_PRESENT;
+    const uint64_t began = asmutils_read_timestamp_counter();
+    const uint64_t next = kernel_wake_planner_next_wake(plan, 0u);
+
+    if (tickless_sleep_costs_settled ||
+        (counter && (next <= began || next - began < tickless_calibration_span_cycles(ceiling))))
+        return;
+    if (counter)
+        tickless_calibrate_the_depths(ceiling, began);
+    else
+        tickless_mark_the_depths_uncounted(ceiling);
+    tickless_sleep_costs_settled = true;
+}
+
+/**
+ * @brief What a sleep on @p plan from @p now would be at @p depth under @p ceiling, for kernel_sleep_cost_choose.
+ */
+static void tickless_describe_a_candidate(const KernelWakePlan_t *plan, uint32_t depth, uint32_t ceiling, uint64_t now,
+                                          KernelSleepCostCandidate_t *out)
+{
+    const KernelWakeLatency_t *const latency = &tickless_wake_latency[depth];
+    const uint64_t planned = kernel_wake_planner_next_wake(plan, kernel_wake_latency_lead(latency));
+
+    out->allowed = tickless_may_take(depth, ceiling) && latency->samples != 0u;
+    out->asleep_cycles = kernel_sleep_cost_cycles_until(now, planned, tickless_longest_sleep_cycles);
+    out->residency_cycles = tickless_residency_cycles[depth];
+    out->cost = tickless_sleep_costs[depth];
+}
+
+/**
+ * @brief Records a sleep on @p plan from @p now at @p depth: its window to the plan's next wake-up, capped by the
+ *        longest sleep, the depth, and whether measured costs chose it.
+ */
+static void tickless_record_a_sleep(const KernelWakePlan_t *plan, uint64_t now, uint32_t depth, bool by_cost)
+{
+    KernelSleepCostRecord_t *const record =
+        &tickless_sleep_records[tickless_sleeps_recorded & (KERNEL_SLEEP_COST_RECORDED - 1u)];
+
+    record->window_cycles =
+        kernel_sleep_cost_cycles_until(now, kernel_wake_planner_next_wake(plan, 0u), tickless_longest_sleep_cycles);
+    record->depth = depth;
+    record->by_cost = by_cost ? 1u : 0u;
+    ++tickless_sleeps_recorded;
+}
+
+/**
+ * @brief The depth a sleep on @p plan enters under @p ceiling, the depth sleeps enter: the cheapest by measured costs,
+ *        or the rule's (kernel_sleep_cost_choose), counted by which decided; @p ceiling when no depth would sleep,
+ *        whose sleep then serves the plan at once.
+ */
+static uint32_t tickless_choose_a_depth(const KernelWakePlan_t *plan, uint32_t ceiling)
+{
+    KernelSleepCostCandidate_t candidates[PROCESSOR_SLEEP_DEPTHS];
+    const uint64_t now = asmutils_read_timestamp_counter();
+    bool by_cost = false;
+
+    for (uint32_t depth = PROCESSOR_SLEEP_DEPTH_C1; depth <= ceiling; ++depth)
+        tickless_describe_a_candidate(plan, depth, ceiling, now, &candidates[depth]);
+    const uint32_t chosen = kernel_sleep_cost_choose(candidates, ceiling + 1u, &by_cost);
+    if (chosen == KERNEL_SLEEP_COST_NO_DEPTH)
+    {
+        ++tickless_sleeps_without_a_choice;
+        return ceiling;
+    }
+    ++tickless_sleeps_chosen_at[chosen];
+    if (by_cost)
+        ++tickless_sleeps_chosen_by_cost;
+    else
+        ++tickless_sleeps_chosen_by_rule;
+    tickless_record_a_sleep(plan, now, chosen, by_cost);
+    return chosen;
 }
 
 bool kernel_tickless_enable(bool no_world_instantiated, KernelWakePlan_t *plan)
@@ -457,6 +703,8 @@ bool kernel_tickless_enable(bool no_world_instantiated, KernelWakePlan_t *plan)
     interrupt_request_suspend_periodic_tick();
     tickless_probed_depths = 0u;
     tickless_probe_the_depth_sleeps_enter();
+    tickless_convert_the_residencies();
+    tickless_settle_the_sleep_costs(plan, kernel_processor_sleep_depth());
     tickless_permitted = true;
     return true;
 }
@@ -502,7 +750,7 @@ uint32_t kernel_tickless_sleep_on(KernelWakePlan_t *plan)
     const uint32_t depth = kernel_processor_sleep_depth();
     if (tickless_wake_latency[depth].samples == 0u)
         return probed + tickless_sleep_at_an_unlearned_depth(plan, depth);
-    return probed + tickless_sleep_at(plan, &tickless_wake_latency[depth]);
+    return probed + tickless_sleep_at(plan, tickless_choose_a_depth(plan, depth));
 }
 
 uint32_t kernel_tickless_ticks_avoided(void) { return tickless_ticks_avoided; }
@@ -551,6 +799,41 @@ bool kernel_tickless_probes_before_sleeping(bool probed, uint64_t until_the_wake
 uint32_t kernel_tickless_wakes_planned_on_a_published_lead(void) { return tickless_wakes_planned_on_a_published_lead; }
 
 uint32_t kernel_tickless_wakes_planned_on_the_bound(void) { return tickless_wakes_planned_on_the_bound; }
+
+const KernelSleepCost_t *kernel_tickless_sleep_cost_at(uint32_t depth)
+{
+    return depth < PROCESSOR_SLEEP_DEPTHS ? &tickless_sleep_costs[depth] : NULL;
+}
+
+uint32_t kernel_tickless_sleeps_chosen_at(uint32_t depth)
+{
+    return depth < PROCESSOR_SLEEP_DEPTHS ? tickless_sleeps_chosen_at[depth] : 0u;
+}
+
+uint32_t kernel_tickless_sleeps_chosen_by_cost(void) { return tickless_sleeps_chosen_by_cost; }
+
+uint32_t kernel_tickless_sleeps_chosen_by_rule(void) { return tickless_sleeps_chosen_by_rule; }
+
+uint32_t kernel_tickless_sleeps_without_a_choice(void) { return tickless_sleeps_without_a_choice; }
+
+uint64_t kernel_tickless_calibration_cycles(void) { return tickless_calibration_cycles; }
+
+uint32_t kernel_tickless_sleeps_recorded(void) { return tickless_sleeps_recorded; }
+
+void kernel_tickless_replay_the_session(KernelSleepCostReplay_t *out)
+{
+    KernelSleepCostReplayDepth_t depths[PROCESSOR_SLEEP_DEPTHS];
+    const uint32_t ceiling = kernel_processor_sleep_depth();
+
+    for (uint32_t depth = PROCESSOR_SLEEP_DEPTH_C1; depth <= ceiling; ++depth)
+    {
+        depths[depth].allowed = tickless_may_take(depth, ceiling) && tickless_wake_latency[depth].samples != 0u;
+        depths[depth].lead_cycles = kernel_wake_latency_lead(&tickless_wake_latency[depth]);
+        depths[depth].residency_cycles = tickless_residency_cycles[depth];
+        depths[depth].cost = tickless_sleep_costs[depth];
+    }
+    kernel_sleep_cost_replay(tickless_sleep_records, tickless_sleeps_recorded, depths, ceiling + 1u, out);
+}
 
 uint64_t kernel_tickless_nanoseconds_from_cycles(uint64_t cycles)
 {
