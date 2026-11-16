@@ -488,6 +488,7 @@ target("libassistant")
         path.join(LPLASSISTANT_ROOT, "infer/src/Vocab.cpp"),
         path.join(LPLASSISTANT_ROOT, "infer/src/Tokenizer.cpp"),
         path.join(LPLASSISTANT_ROOT, "infer/src/Model.cpp"),
+        path.join(LPLASSISTANT_ROOT, "infer/src/ModelImage.cpp"),
         path.join(LPLASSISTANT_ROOT, "infer/src/KvCache.cpp"),
         path.join(LPLASSISTANT_ROOT, "infer/src/Attention.cpp"),
         path.join(LPLASSISTANT_ROOT, "infer/src/FeedForward.cpp"),
