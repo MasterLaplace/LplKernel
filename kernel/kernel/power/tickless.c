@@ -452,14 +452,32 @@ static void tickless_probe_where_the_check_demotes(uint32_t depth)
 }
 
 /**
+ * @brief The depths available and validated, a bit each.
+ */
+static uint32_t tickless_usable_depths(void)
+{
+    return kernel_processor_sleep_available_depths() & kernel_processor_sleep_validated_depths();
+}
+
+/**
  * @brief Whether a sleep under @p ceiling, the depth sleeps enter, may take @p depth: the ceiling itself, or a depth
  *        available and validated below it.
  */
 static bool tickless_may_take(uint32_t depth, uint32_t ceiling)
 {
-    const uint32_t usable = kernel_processor_sleep_available_depths() & kernel_processor_sleep_validated_depths();
+    return depth == ceiling || (depth < ceiling && ((tickless_usable_depths() >> depth) & 1u) != 0u);
+}
 
-    return depth == ceiling || (depth < ceiling && ((usable >> depth) & 1u) != 0u);
+/**
+ * @brief The depths a wake-up taught, a bit each.
+ */
+static uint32_t tickless_taught_depths(void)
+{
+    uint32_t taught = 0u;
+
+    for (uint32_t depth = PROCESSOR_SLEEP_DEPTH_C1; depth < PROCESSOR_SLEEP_DEPTHS; ++depth)
+        taught |= tickless_wake_latency[depth].samples != 0u ? 1u << depth : 0u;
+    return taught;
 }
 
 /**
@@ -469,8 +487,12 @@ static bool tickless_may_take(uint32_t depth, uint32_t ceiling)
 static void tickless_probe_the_depths_below(uint32_t ceiling)
 {
     for (uint32_t depth = PROCESSOR_SLEEP_DEPTH_C1; depth < ceiling; ++depth)
-        if (tickless_may_take(depth, ceiling) && tickless_wake_latency[depth].samples == 0u)
+    {
+        const uint32_t unprobed =
+            kernel_tickless_depths_to_probe_below(tickless_usable_depths(), tickless_taught_depths(), ceiling);
+        if (((unprobed >> depth) & 1u) != 0u)
             (void) tickless_probe(depth);
+    }
 }
 
 /**
@@ -752,6 +774,11 @@ uint32_t kernel_tickless_sleep_on(KernelWakePlan_t *plan)
         return probed + tickless_sleep_at_an_unlearned_depth(plan, depth);
     const uint64_t now = asmutils_read_timestamp_counter();
     return probed + tickless_sleep_at(plan, tickless_choose_a_depth(plan, depth, now), now);
+}
+
+uint32_t kernel_tickless_depths_to_probe_below(uint32_t usable, uint32_t taught, uint32_t ceiling)
+{
+    return usable & ~taught & ((1u << ceiling) - 1u);
 }
 
 uint32_t kernel_tickless_ticks_avoided(void) { return tickless_ticks_avoided; }

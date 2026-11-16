@@ -888,6 +888,24 @@ KERNEL_TEST(a_window_already_due_at_a_depth_that_learned_nothing_is_served_witho
 }
 
 /**
+ * @brief The first stop of the tick probes each depth below the ceiling that is usable and that no wake-up
+ *        taught, and no other: neither the ceiling, nor one past it, nor one unusable or already taught.
+ */
+KERNEL_TEST(the_first_stop_probes_each_usable_untaught_depth_below_the_ceiling)
+{
+    kernel_test_check(test, kernel_tickless_depths_to_probe_below(0x0Fu, 0x01u, 3u) == 0x06u,
+                      "C1 taught, depths 1 and 2 usable below the ceiling 3: those two");
+    kernel_test_check(test, kernel_tickless_depths_to_probe_below(0x0Bu, 0x01u, 3u) == 0x02u,
+                      "depth 2 unusable: depth 1 alone");
+    kernel_test_check(test, kernel_tickless_depths_to_probe_below(0x7Fu, 0x00u, 2u) == 0x03u,
+                      "nothing taught under the ceiling 2: C1 and depth 1, neither the ceiling nor past it");
+    kernel_test_check(test, kernel_tickless_depths_to_probe_below(0x7Fu, 0x0Fu, 4u) == 0u,
+                      "every depth below the ceiling taught: none");
+    kernel_test_check(test, kernel_tickless_depths_to_probe_below(0x7Fu, 0x00u, 0u) == 0u,
+                      "a ceiling at C1: none below it");
+}
+
+/**
  * @brief A probe of a port depth keeps it when its longest sleep stopped the processor, whatever ended the shorter ones
  *        early; refuses it when its two longest did not stop it; asks one more sleep when the longest alone did not.
  */

@@ -267,6 +267,17 @@ typedef enum {
 KernelTicklessProbeVerdict_t kernel_tickless_judge_a_probe(uint32_t unstopped_ranks);
 
 /**
+ * @brief The depths the first stop of the tick probes below the depth sleeps enter: each one usable that no wake-up
+ *        taught, so that each has its own lead to be chosen on. Pure, so that a test hands it ladders no QEMU model
+ *        offers, MWAIT depths below the ceiling (#818).
+ * @param usable  The depths available and validated, a bit each.
+ * @param taught  The depths a wake-up taught, a bit each.
+ * @param ceiling The depth sleeps enter, below PROCESSOR_SLEEP_DEPTHS.
+ * @return A bit per depth to probe.
+ */
+uint32_t kernel_tickless_depths_to_probe_below(uint32_t usable, uint32_t taught, uint32_t ceiling);
+
+/**
  * @brief The ranks of the sleeps of the last probe of @p depth that were port reads returning before their deadline
  *        with no interrupt.
  * @param depth A depth; one past PROCESSOR_SLEEP_DEPTH_DEEPEST has none.
