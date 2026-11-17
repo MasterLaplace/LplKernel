@@ -177,6 +177,8 @@ LPL_TEST(the_mind_copies_a_module_off_a_word_boundary)
     test.check(libassistant_model_protected_pages() == 0u &&
                    !kernel_section_protection_probe_write(gWritableModule + kPageBytes),
                "and no page of it sealed");
+    test.check(kernel_tensor_arena_size() >= libassistant_recommended_arena_bytes() + size,
+               "in an arena grown by the image's bytes");
     checkTheCanonicalAnswer(test);
 }
 
