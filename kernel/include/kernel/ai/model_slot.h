@@ -110,6 +110,28 @@ bool kernel_model_slot_probe(ModelSlot_t *out);
  */
 const char *kernel_model_slot_state_text(const ModelSlot_t *slot);
 
+/**
+ * @brief Turns read-only every whole page of a loaded slot's image, once the reader has checked its signatures and
+ *        borrows its bytes: a write there would change a weight already checked.
+ *
+ * @param slot A loaded slot.
+ * @return Pages turned read-only; 0 for a slot that is not loaded, an image that holds no whole page or would end
+ *         past 4 GiB, or a processor that does not enforce read-only pages in ring 0.
+ */
+uint32_t kernel_model_slot_protect(const ModelSlot_t *slot);
+
+/**
+ * @brief Writes one `[LPLTLM] model` record: the slot's state, where the mind's weights came from, what reading the
+ *        image found, the image's bytes and the pages turned read-only.
+ *
+ * @param slot            The slot the mind booted from.
+ * @param origin          "seed", "module_in_place" or "module_copied".
+ * @param reading         What the reading found, by its name, or "none".
+ * @param protected_pages Pages kernel_model_slot_protect turned read-only.
+ */
+void kernel_model_slot_report(const ModelSlot_t *slot, const char *origin, const char *reading,
+                              uint32_t protected_pages);
+
 #ifdef __cplusplus
 }
 #endif

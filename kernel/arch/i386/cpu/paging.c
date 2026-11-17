@@ -1,6 +1,8 @@
 #include <kernel/cpu/apic_ipi.h>
 #include <kernel/cpu/paging.h>
 
+#include <stdckdint.h>
+
 extern PageDirectory_t boot_page_directory;
 
 PageDirectory_t *current_page_directory = NULL;
@@ -405,6 +407,25 @@ bool paging_set_page_read_only(uint32_t virt_addr)
     pte->read_write = 0;
     paging_invlpg(PAGE_ALIGN_DOWN(virt_addr));
     return true;
+}
+
+uint32_t paging_set_range_read_only(uint32_t virt_start, uint32_t virt_end)
+{
+    uint32_t first_page = 0u;
+
+    if (ckd_add(&first_page, virt_start, (uint32_t) PAGE_SIZE - 1u))
+        return 0u;
+    first_page = PAGE_ALIGN_DOWN(first_page);
+
+    const uint32_t end_page = PAGE_ALIGN_DOWN(virt_end);
+    uint32_t turned = 0u;
+
+    for (uint32_t page = first_page; page < end_page; page += (uint32_t) PAGE_SIZE)
+    {
+        if (paging_set_page_read_only(page))
+            ++turned;
+    }
+    return turned;
 }
 
 bool paging_page_is_read_only(uint32_t virt_addr, bool *is_read_only)

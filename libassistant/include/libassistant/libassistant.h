@@ -99,6 +99,40 @@ extern bool libassistant_dialogue_round_trip(libassistant_dialogue_result_t *out
 extern bool libassistant_boot(size_t arena_bytes);
 
 /**
+ * @brief Brings the mind up from @p slot: the weights of a loaded, accepted image read where they lie, copied into the
+ *        arena when the image is not on a word boundary, or derived from the seed when the slot is empty or its image
+ *        is refused.
+ *
+ * Once read in place, the image's whole pages turn read-only: the mind borrows them, and a write would change a weight
+ * already checked. One `[LPLTLM] model` record says where the weights came from and why.
+ *
+ * @param arena_bytes Region for the cache and the scratch, and for the weights when they are copied or derived; 0 for
+ *                    libassistant_recommended_arena_bytes. A copy adds the image's bytes to it.
+ * @param slot        What the probe found, or an image the caller keeps unchanged for the mind's lifetime. Copied: its
+ *                    state, refused or not, is then libassistant_model_slot_state's.
+ * @return true when the mind is ready to be asked something.
+ */
+extern bool libassistant_boot_from_slot(size_t arena_bytes, const ModelSlot_t *slot);
+
+/**
+ * @brief Where the weights of the last boot came from.
+ * @return "seed", "module_in_place" or "module_copied"; "none" before the first boot.
+ */
+extern const char *libassistant_model_origin(void);
+
+/**
+ * @brief What the last boot's reading of its module found.
+ * @return A reading's name, as lpl::infer::modelReadVerdictName gives it; "none" when the slot held no image to read.
+ */
+extern const char *libassistant_model_reading(void);
+
+/**
+ * @brief Pages of the module the last boot turned read-only.
+ * @return The count; 0 unless the weights are read in place.
+ */
+extern uint32_t libassistant_model_protected_pages(void);
+
+/**
  * @brief Drops the live mind without releasing the region.
  *
  * Anything that re-carves the arena has to call this first. A mind whose weights
