@@ -103,13 +103,14 @@ extern bool libassistant_boot(size_t arena_bytes);
  *        arena when the image is not on a word boundary, or derived from the seed when the slot is empty or its image
  *        is refused.
  *
- * Once read in place, the image's whole pages turn read-only: the mind borrows them, and a write would change a weight
- * already checked. One `[LPLTLM] model` record says where the weights came from and why.
+ * Once read in place, the image's whole pages turn read-only for good: the mind borrows them, a write would change a
+ * weight already checked, and neither libassistant_shutdown nor another boot makes them writable again. One
+ * `[LPLTLM] model` record, written whether the mind comes up or not, says where the weights came from and why.
  *
  * @param arena_bytes Region for the cache and the scratch, and for the weights when they are copied or derived; 0 for
  *                    libassistant_recommended_arena_bytes. A copy adds the image's bytes to it.
- * @param slot        What the probe found, or an image the caller keeps unchanged for the mind's lifetime. Copied: its
- *                    state, refused or not, is then libassistant_model_slot_state's.
+ * @param slot        What the probe found, or an image the caller never frees nor reuses: read in place, its whole
+ *                    pages stay read-only. Copied: its state, refused or not, is then libassistant_model_slot_state's.
  * @return true when the mind is ready to be asked something.
  */
 extern bool libassistant_boot_from_slot(size_t arena_bytes, const ModelSlot_t *slot);
@@ -149,7 +150,7 @@ extern size_t libassistant_recommended_arena_bytes(void);
 
 /**
  * @brief A word for what the weights module slot holds.
- * @return "empty", "malformed" or "loaded".
+ * @return "empty", "malformed", "loaded" or "unreachable".
  */
 extern const char *libassistant_model_slot_state(void);
 

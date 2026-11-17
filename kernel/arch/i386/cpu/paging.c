@@ -425,6 +425,8 @@ uint32_t paging_set_range_read_only(uint32_t virt_start, uint32_t virt_end)
         if (paging_set_page_read_only(page))
             ++turned;
     }
+    if (turned != 0u)
+        advanced_pic_ipi_broadcast_tlb_shootdown_range(first_page, (end_page - first_page) / (uint32_t) PAGE_SIZE);
     return turned;
 }
 

@@ -26,9 +26,14 @@ bool kernel_model_slot_probe(ModelSlot_t *out)
     if (!boot_module_find(KERNEL_MODEL_SLOT_SUFFIX, &bytes, &size))
         return false;
 
-    out->bytes = bytes;
     out->size = size;
+    if (!kernel_model_slot_is_mapped_at_boot((uint32_t) (uintptr_t) bytes, size))
+    {
+        out->state = MODEL_SLOT_UNREACHABLE;
+        return false;
+    }
 
+    out->bytes = bytes;
     if (size < KERNEL_MODEL_SLOT_MINIMUM_BYTES)
     {
         out->state = MODEL_SLOT_MALFORMED;
@@ -66,16 +71,27 @@ uint32_t kernel_model_slot_protect(const ModelSlot_t *slot)
 #endif
 }
 
-void kernel_model_slot_report(const ModelSlot_t *slot, const char *origin, const char *reading,
-                              uint32_t protected_pages)
+void kernel_model_slot_report(const ModelSlot_t *slot, const char *origin, const char *table, const char *reading,
+                              uint32_t protected_pages, bool booted)
 {
     kernel_telemetry_begin_record(&com1, "model");
     kernel_telemetry_write_text("slot", kernel_model_slot_state_text(slot));
+    kernel_telemetry_write_boolean("booted", booted);
     kernel_telemetry_write_text("origin", origin);
+    kernel_telemetry_write_text("table", table);
     kernel_telemetry_write_text("reading", reading);
     kernel_telemetry_write_unsigned("image_bytes", slot != NULL ? slot->size : 0u);
     kernel_telemetry_write_unsigned("protected_pages", protected_pages);
     kernel_telemetry_end_record();
+}
+
+bool kernel_model_slot_is_mapped_at_boot(uint32_t virtual_start, uint32_t size)
+{
+    uint32_t virtual_end = 0u;
+
+    if (ckd_add(&virtual_end, virtual_start, size))
+        return false;
+    return virtual_start >= KERNEL_VIRTUAL_BASE && virtual_end - KERNEL_VIRTUAL_BASE <= KERNEL_BOOT_MAPPED_END;
 }
 
 const char *kernel_model_slot_state_text(const ModelSlot_t *slot)
@@ -86,6 +102,7 @@ const char *kernel_model_slot_state_text(const ModelSlot_t *slot)
     {
     case MODEL_SLOT_LOADED: return "loaded";
     case MODEL_SLOT_MALFORMED: return "malformed";
+    case MODEL_SLOT_UNREACHABLE: return "unreachable";
     case MODEL_SLOT_EMPTY:
     default: return "empty";
     }

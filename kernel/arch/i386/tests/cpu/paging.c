@@ -134,9 +134,14 @@ KERNEL_TEST(a_range_turns_read_only_only_the_pages_wholly_inside_it)
     kernel_test_check(test, paging_set_range_read_only(0xFFFFF800u, 0xFFFFFFFFu) == 0u,
                       "nor one whose first whole page would pass 4 GiB");
 
+    const uint32_t shootdowns_before = advanced_pic_ipi_get_tlb_shootdown_broadcast_count();
     const uint32_t turned = paging_set_range_read_only(base + PAGE_SIZE / 2u, base + 2u * PAGE_SIZE + PAGE_SIZE / 2u);
+    const uint32_t shootdowns = advanced_pic_ipi_get_tlb_shootdown_broadcast_count() - shootdowns_before;
+    const uint32_t online = cpu_topology_get_online_cpu_count();
 
     kernel_test_check(test, turned == 1u, "a range over the middle of three pages turns one");
+    kernel_test_check(test, shootdowns == (online > 1u ? 1u : 0u),
+                      "and drops it from every other processor's translations with one shootdown");
     kernel_test_check(test, paging_page_is_read_only(base + PAGE_SIZE, &middle_read_only) && middle_read_only,
                       "the page wholly inside it");
     kernel_test_check(test,

@@ -74,6 +74,7 @@ enum class WeightsOrigin : lpl::core::u8 {
 };
 
 WeightsOrigin gOrigin = WeightsOrigin::None;
+const char *gTable = "none";
 const char *gReading = "none";
 lpl::core::u32 gProtectedPages = 0u;
 
@@ -241,6 +242,48 @@ bool takeSeed()
     return true;
 }
 
+/**
+ * @brief Brings the mind up from gSlot in a region of @p arena_bytes, grown by the image's bytes when they are copied.
+ * @return false when the arena, the weights, the grammar or the inference cannot be had; the mind is then dropped.
+ */
+bool bringTheMindUp(size_t arena_bytes)
+{
+    const bool presented = gSlot.state == MODEL_SLOT_LOADED;
+    const char *const refusal = libassistant_judge_model_slot(&gSlot);
+    if (presented)
+        gTable = refusal != nullptr ? refusal : "accepted";
+    if (refusal != nullptr)
+        gReading = lpl::infer::modelReadVerdictName(lpl::infer::ModelReadVerdict::ImageRefused);
+
+    const bool loaded = gSlot.state == MODEL_SLOT_LOADED;
+    const lpl::infer::ModelReadVerdict placement =
+        loaded ? lpl::infer::judgeModelView(gSlot.bytes, lpl::infer::kHostIsLittleEndian) :
+                 lpl::infer::ModelReadVerdict::Read;
+    size_t region = arena_bytes;
+    if (loaded && placement != lpl::infer::ModelReadVerdict::Read && ckd_add(&region, arena_bytes, gSlot.size))
+        return false;
+    if (!claimArena(region))
+        return false;
+
+    gMind = new (gMindStorage) MindState{kernel_tensor_arena_base(), kernel_tensor_arena_size()};
+    lpl::core::u32 phraseCount = 0u;
+    const char *const *phrases = lpl::infer::parityGrammarPhrases(phraseCount);
+    const bool ready = ((loaded && takeModule(placement)) || takeSeed()) &&
+                       gMind->grammar.build(gMind->arena, phrases, phraseCount) &&
+                       gMind->inference.initialise(gMind->arena, gMind->model, lpl::infer::CachePolicy::Refuse);
+    if (!ready)
+    {
+        gMind = nullptr;
+        return false;
+    }
+
+    gMind->tokenizer = lpl::infer::Tokenizer{gMind->vocab};
+    kernel_tensor_arena_record_used(gMind->arena.used());
+    kernel_dialogue_channel_reset();
+    kernel_inference_budget_open(kReplyTokenBudget);
+    return true;
+}
+
 } // namespace
 
 extern "C" size_t libassistant_recommended_arena_bytes(void)
@@ -281,52 +324,16 @@ extern "C" uint32_t libassistant_model_protected_pages(void) { return gProtected
 
 extern "C" bool libassistant_boot_from_slot(size_t arena_bytes, const ModelSlot_t *slot)
 {
+    gMind = nullptr;
     gSlot = slot != nullptr ? *slot : ModelSlot_t{};
     gOrigin = WeightsOrigin::None;
+    gTable = "none";
     gReading = "none";
     gProtectedPages = 0u;
-    if (arena_bytes == 0u)
-        arena_bytes = libassistant_recommended_arena_bytes();
 
-    (void) libassistant_judge_model_slot(&gSlot);
-    const bool loaded = gSlot.state == MODEL_SLOT_LOADED;
-    const lpl::infer::ModelReadVerdict placement =
-        loaded ? lpl::infer::judgeModelView(gSlot.bytes, lpl::infer::kHostIsLittleEndian) :
-                 lpl::infer::ModelReadVerdict::Read;
-    size_t region = arena_bytes;
-    if (loaded && placement != lpl::infer::ModelReadVerdict::Read && ckd_add(&region, arena_bytes, gSlot.size))
-        return false;
-    if (!claimArena(region))
-        return false;
-
-    gMind = new (gMindStorage) MindState{kernel_tensor_arena_base(), kernel_tensor_arena_size()};
-    if (!(loaded && takeModule(placement)) && !takeSeed())
-    {
-        gMind = nullptr;
-        return false;
-    }
-
-    lpl::core::u32 phraseCount = 0u;
-    const char *const *phrases = lpl::infer::parityGrammarPhrases(phraseCount);
-    if (!gMind->grammar.build(gMind->arena, phrases, phraseCount))
-    {
-        gMind = nullptr;
-        return false;
-    }
-
-    if (!gMind->inference.initialise(gMind->arena, gMind->model, lpl::infer::CachePolicy::Refuse))
-    {
-        gMind = nullptr;
-        return false;
-    }
-
-    gMind->tokenizer = lpl::infer::Tokenizer{gMind->vocab};
-
-    kernel_tensor_arena_record_used(gMind->arena.used());
-    kernel_dialogue_channel_reset();
-    kernel_inference_budget_open(kReplyTokenBudget);
-    kernel_model_slot_report(&gSlot, libassistant_model_origin(), gReading, gProtectedPages);
-    return true;
+    const bool booted = bringTheMindUp(arena_bytes != 0u ? arena_bytes : libassistant_recommended_arena_bytes());
+    kernel_model_slot_report(&gSlot, libassistant_model_origin(), gTable, gReading, gProtectedPages, booted);
+    return booted;
 }
 
 extern "C" bool libassistant_boot(size_t arena_bytes)

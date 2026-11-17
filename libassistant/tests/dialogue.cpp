@@ -16,6 +16,8 @@ constexpr lpl::core::u32 kModuleRoomPages = 21u;
 constexpr lpl::core::u32 kOffWordBoundary = 2u;
 constexpr lpl::core::u32 kSecondExpertEntry = 6u;
 constexpr lpl::core::u32 kInsideTheExpert = 1000u;
+constexpr lpl::core::u32 kHeaderAlignmentWord = 12u;
+constexpr lpl::core::u8 kTooSmallAlignmentLog2 = 11u;
 
 /**
  * @brief Room for the parity model's image on a page boundary, which the in-place boot turns read-only for good.
@@ -169,6 +171,7 @@ LPL_TEST(the_mind_copies_a_module_off_a_word_boundary)
     const lpl::core::u32 size = writeParityImage(image, sizeof gWritableModule - kOffWordBoundary);
     const ModelSlot_t slot = loadedSlot(image, size);
 
+    kernel_tensor_arena_release();
     test.check(size != 0u, "the parity model's image is written two bytes past a word boundary");
     test.check(libassistant_boot_from_slot(0u, &slot), "the mind boots from it");
     test.check(sameText(libassistant_model_origin(), "module_copied") &&
@@ -177,7 +180,7 @@ LPL_TEST(the_mind_copies_a_module_off_a_word_boundary)
     test.check(libassistant_model_protected_pages() == 0u &&
                    !kernel_section_protection_probe_write(gWritableModule + kPageBytes),
                "and no page of it sealed");
-    test.check(kernel_tensor_arena_size() >= libassistant_recommended_arena_bytes() + size,
+    test.check(kernel_tensor_arena_size() == libassistant_recommended_arena_bytes() + size,
                "in an arena grown by the image's bytes");
     checkTheCanonicalAnswer(test);
 }
@@ -207,9 +210,43 @@ LPL_TEST(the_mind_takes_its_seed_from_a_refused_or_an_empty_slot)
     checkTheCanonicalAnswer(test);
     gWritableModule[inExpert] = static_cast<lpl::core::u8>(gWritableModule[inExpert] ^ 0x01u);
 
+    gWritableModule[kHeaderAlignmentWord] = kTooSmallAlignmentLog2;
+    const ModelSlot_t misalignedTable = loadedSlot(gWritableModule, size);
+    test.check(libassistant_boot_from_slot(0u, &misalignedTable), "the mind boots from a slot whose table is refused");
+    gWritableModule[kHeaderAlignmentWord] = static_cast<lpl::core::u8>(lpl::infer::kModelImageDefaultAlignmentLog2);
+    test.check(sameText(libassistant_model_origin(), "seed") &&
+                   sameText(libassistant_model_reading(), "image_refused") &&
+                   sameText(libassistant_model_slot_state(), "malformed"),
+               "on its seed, the slot malformed by the table's refusal");
+    checkTheCanonicalAnswer(test);
+
     test.check(libassistant_boot_from_slot(0u, &empty), "the mind boots from an empty slot");
     test.check(sameText(libassistant_model_origin(), "seed") && sameText(libassistant_model_reading(), "none") &&
                    sameText(libassistant_model_slot_state(), "empty"),
                "on its seed, the slot empty");
+    checkTheCanonicalAnswer(test);
+}
+
+/**
+ * @brief A boot that fails drops the mind before it: asking it something then fails instead of reading weights out of
+ *        an arena the failed boot may have given back, and the next boot that fits brings a mind up again.
+ *
+ * @details The boot fails on a region whose copy of the image would pass the address space, which it refuses before
+ *          claiming anything: a request the heap cannot serve drains it (#868).
+ */
+LPL_TEST(a_boot_that_fails_leaves_no_mind_to_ask)
+{
+    const ModelSlot_t empty{};
+    lpl::core::u8 *const image = gWritableModule + kOffWordBoundary;
+    const lpl::core::u32 size = writeParityImage(image, sizeof gWritableModule - kOffWordBoundary);
+    const ModelSlot_t copied = loadedSlot(image, size);
+    libassistant_dialogue_result_t dialogue{};
+
+    test.check(size != 0u, "the parity model's image is written two bytes past a word boundary");
+    test.check(libassistant_boot_from_slot(0u, &empty), "a mind boots on its seed");
+    test.check(!libassistant_boot_from_slot(SIZE_MAX, &copied),
+               "a second boot, whose region and copy would pass the address space, fails");
+    test.check(!libassistant_dialogue_round_trip(&dialogue), "and leaves no mind to ask");
+    test.check(libassistant_boot_from_slot(0u, &empty), "a boot that fits brings one up again");
     checkTheCanonicalAnswer(test);
 }

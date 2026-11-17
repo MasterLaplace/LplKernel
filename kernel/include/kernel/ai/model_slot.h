@@ -72,9 +72,10 @@ extern "C" {
  * @brief What the slot holds.
  */
 typedef enum {
-    MODEL_SLOT_EMPTY = 0, /**< No module with the suffix was passed. */
-    MODEL_SLOT_MALFORMED, /**< A module is there and is not a weights image. */
-    MODEL_SLOT_LOADED,    /**< A module is there and its header holds up. */
+    MODEL_SLOT_EMPTY = 0,   /**< No module with the suffix was passed. */
+    MODEL_SLOT_MALFORMED,   /**< A module is there and is not a weights image. */
+    MODEL_SLOT_LOADED,      /**< A module is there and its header holds up. */
+    MODEL_SLOT_UNREACHABLE, /**< A module is there, past what the kernel maps at boot: not a byte of it is read. */
 } ModelSlotState_t;
 
 /**
@@ -106,9 +107,20 @@ bool kernel_model_slot_probe(ModelSlot_t *out);
 /**
  * @brief A word for the state, for a boot line.
  * @param slot The finding.
- * @return "empty", "malformed" or "loaded".
+ * @return "empty", "malformed", "loaded" or "unreachable".
  */
 const char *kernel_model_slot_state_text(const ModelSlot_t *slot);
+
+/**
+ * @brief Whether an image at @p virtual_start of @p size bytes lies wholly inside what boot.S maps, 64 MiB from the
+ *        higher-half base: past it the physical memory manager maps no page of a boot module, and a read faults.
+ *
+ * @param virtual_start The image's first byte.
+ * @param size          Its length.
+ * @return true when every byte is mapped at boot; false past the map, below the higher half, or when the end would
+ *         pass 4 GiB.
+ */
+bool kernel_model_slot_is_mapped_at_boot(uint32_t virtual_start, uint32_t size);
 
 /**
  * @brief Turns read-only every whole page of a loaded slot's image, once the reader has checked its signatures and
@@ -121,16 +133,18 @@ const char *kernel_model_slot_state_text(const ModelSlot_t *slot);
 uint32_t kernel_model_slot_protect(const ModelSlot_t *slot);
 
 /**
- * @brief Writes one `[LPLTLM] model` record: the slot's state, where the mind's weights came from, what reading the
- *        image found, the image's bytes and the pages turned read-only.
+ * @brief Writes one `[LPLTLM] model` record: the slot's state, whether the mind came up, where its weights came from,
+ *        what the table's check and the reading found, the image's bytes and the pages turned read-only.
  *
  * @param slot            The slot the mind booted from.
- * @param origin          "seed", "module_in_place" or "module_copied".
+ * @param origin          "seed", "module_in_place" or "module_copied"; "none" when no weights were taken.
+ * @param table           "accepted", the table's refusal by its name, or "none" when the slot held no image.
  * @param reading         What the reading found, by its name, or "none".
  * @param protected_pages Pages kernel_model_slot_protect turned read-only.
+ * @param booted          Whether the mind came up.
  */
-void kernel_model_slot_report(const ModelSlot_t *slot, const char *origin, const char *reading,
-                              uint32_t protected_pages);
+void kernel_model_slot_report(const ModelSlot_t *slot, const char *origin, const char *table, const char *reading,
+                              uint32_t protected_pages, bool booted);
 
 #ifdef __cplusplus
 }
