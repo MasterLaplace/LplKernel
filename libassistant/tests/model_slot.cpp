@@ -9,7 +9,8 @@ LPL_TEST_SUITE(model_slot);
 namespace {
 
 constexpr lpl::core::u32 kHeaderAlignmentWord = 12u;
-constexpr lpl::core::u32 kRetiredVersion = 1u;
+constexpr lpl::core::u32 kHeaderVersionByte = 4u;
+constexpr lpl::core::u32 kImageVersion = 1u;
 
 [[nodiscard]] bool sameText(const char *lhs, const char *rhs)
 {
@@ -40,9 +41,9 @@ constexpr lpl::core::u32 kRetiredVersion = 1u;
 } // namespace
 
 /**
- * @brief In ring 0, a loaded slot holding the parity model's version 2 image stays loaded; its alignment word set to
- *        2^11, it becomes malformed by the name of that refusal; a version 1, no longer read, and a version 3 are
- *        malformed; an empty slot is left empty.
+ * @brief In ring 0, a loaded slot holding the parity model's image, version 1, stays loaded; its alignment word set to
+ *        2^11, it becomes malformed by the name of that refusal; a version 2, as LplAssistant 0.4.0 and 0.5.0 wrote,
+ *        and a version 3 are malformed as unknown versions; an empty slot is left empty.
  */
 LPL_TEST(the_slot_judges_its_image_by_the_reader_s_check)
 {
@@ -56,7 +57,9 @@ LPL_TEST(the_slot_judges_its_image_by_the_reader_s_check)
     test.check(model.synthesise(arena, shape, vocab, lpl::infer::parityModelSeed()), "and the parity model");
     const lpl::core::u32 size = model.blobBytes();
     lpl::core::u8 *const image = size != 0u ? arena.claim<lpl::core::u8>(size) : nullptr;
-    test.check(image != nullptr && model.writeBlob(image, size) == size, "its version 2 image is written");
+    test.check(image != nullptr && model.writeBlob(image, size) == size &&
+                   lpl::infer::modelImageVersion(image, size) == kImageVersion,
+               "its image is written, version 1");
     if (image == nullptr)
         return;
 
@@ -71,17 +74,17 @@ LPL_TEST(the_slot_judges_its_image_by_the_reader_s_check)
     test.check(sameText(misalignedRefusal, "bad_alignment") && misaligned.state == MODEL_SLOT_MALFORMED,
                "an alignment of 2^11 makes it malformed, by that name");
 
-    image[4] = static_cast<lpl::core::u8>(kRetiredVersion);
-    ModelSlot_t version1 = loadedSlot(image, size);
-    const char *const version1Refusal = libassistant_judge_model_slot(&version1);
-    image[4] = 3u;
+    image[kHeaderVersionByte] = 2u;
+    ModelSlot_t version2 = loadedSlot(image, size);
+    const char *const version2Refusal = libassistant_judge_model_slot(&version2);
+    image[kHeaderVersionByte] = 3u;
     ModelSlot_t version3 = loadedSlot(image, size);
     const char *const version3Refusal = libassistant_judge_model_slot(&version3);
-    image[4] = static_cast<lpl::core::u8>(lpl::infer::kModelImageVersion2);
-    test.check(sameText(version1Refusal, "not_version_2") && version1.state == MODEL_SLOT_MALFORMED,
-               "a version 1, no longer read, makes it malformed");
-    test.check(sameText(version3Refusal, "not_version_2") && version3.state == MODEL_SLOT_MALFORMED,
-               "a version 3 makes it malformed");
+    image[kHeaderVersionByte] = static_cast<lpl::core::u8>(kImageVersion);
+    test.check(sameText(version2Refusal, "unknown_version") && version2.state == MODEL_SLOT_MALFORMED,
+               "a version 2, as LplAssistant 0.4.0 and 0.5.0 wrote, makes it malformed as an unknown version");
+    test.check(sameText(version3Refusal, "unknown_version") && version3.state == MODEL_SLOT_MALFORMED,
+               "and so does a version 3");
 
     ModelSlot_t empty{};
     test.check(libassistant_judge_model_slot(&empty) == nullptr && empty.state == MODEL_SLOT_EMPTY,

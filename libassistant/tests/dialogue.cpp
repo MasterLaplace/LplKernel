@@ -40,7 +40,7 @@ alignas(kPageBytes) lpl::core::u8 gWritableModule[kModuleRoomPages * kPageBytes]
 }
 
 /**
- * @brief Writes the parity model's version 2 image at @p at, which holds @p room bytes.
+ * @brief Writes the parity model's image at @p at, which holds @p room bytes.
  * @return The image's bytes; 0 when the model did not build or the room is short.
  */
 [[nodiscard]] lpl::core::u32 writeParityImage(lpl::core::u8 *at, lpl::core::u32 room)

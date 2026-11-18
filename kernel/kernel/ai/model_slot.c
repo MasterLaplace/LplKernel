@@ -8,7 +8,7 @@
 
 #include <stdckdint.h>
 
-/** Smallest image that can carry a header at all: a version 2 header (lpl/infer/ModelImage.hpp). */
+/** Smallest image that can carry a header at all: an image's header (lpl/infer/ModelImage.hpp). */
 #define KERNEL_MODEL_SLOT_MINIMUM_BYTES 64u
 
 bool kernel_model_slot_probe(ModelSlot_t *out)
