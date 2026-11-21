@@ -1,5 +1,8 @@
 #include <kernel/cpu/cpu_topology.h>
+#include <kernel/cpu/paging.h>
+#include <kernel/cpu/pmm.h>
 #include <kernel/memory/heap.h>
+#include <kernel/memory/vmm.h>
 #include <kernel/testing/test.h>
 
 KERNEL_TEST_SUITE(heap, KERNEL_TEST_STAGE_INITIALIZATION);
@@ -10,6 +13,8 @@ KERNEL_TEST_SUITE(heap, KERNEL_TEST_STAGE_INITIALIZATION);
 #define HEAP_TEST_MOST_HELD       64u /**< The most blocks a test takes to empty one size class of a domain. */
 #define HEAP_TEST_NEIGHBOUR       1u  /**< The slot of the second heap domain, which an application processor fills. */
 #define HEAP_TEST_LARGEST_REQUEST 0xFFFFEFF0u /**< The largest request whose block, in whole pages, fits 32 bits. */
+#define HEAP_TEST_PAST_THE_WINDOW (KERNEL_VMM_DYNAMIC_SIZE + PAGE_SIZE) /**< One page past the whole VMM window. */
+#define HEAP_TEST_ARENA_BYTES     (512u * 1024u)                        /**< The mind's tensor arena. */
 
 #if !defined(LPL_KERNEL_REAL_TIME_MODE)
 /**
@@ -438,4 +443,57 @@ KERNEL_TEST(a_request_no_address_space_holds_returns_null)
     kernel_test_check(test, plain == NULL, "kmalloc(SIZE_MAX) returns NULL");
     kernel_test_check(test, sensitive == NULL, "kmalloc_sensitive(SIZE_MAX) returns NULL");
     kernel_test_check(test, counters_kept, "and the heap's counters are as they were");
+}
+
+/**
+ * @brief A request one page past the virtual memory manager's whole window, which it can never serve, returns NULL and
+ *        leaves every free page of physical memory free, and 512 KiB, the mind's arena, is served afterwards.
+ */
+KERNEL_TEST(a_request_the_virtual_memory_manager_cannot_serve_leaves_physical_memory_free)
+{
+    const uint32_t free_pages_before = physical_memory_manager_get_free_page_count();
+    void *const past_the_window = kmalloc(HEAP_TEST_PAST_THE_WINDOW);
+    const uint32_t free_pages_after = physical_memory_manager_get_free_page_count();
+    void *const arena = kmalloc(HEAP_TEST_ARENA_BYTES);
+
+    if (past_the_window)
+        kfree(past_the_window);
+    if (arena)
+        kfree(arena);
+    kernel_test_check(test, past_the_window == NULL, "a request past the window is refused");
+    kernel_test_check(test, free_pages_after == free_pages_before, "and every free page stays free");
+    kernel_test_check(test, arena != NULL, "512 KiB is served afterwards");
+    kernel_test_measure(test, "free_pages_before", free_pages_before);
+    kernel_test_measure(test, "free_pages_after", free_pages_after);
+}
+
+/**
+ * @brief The small pool grows for a request while all the free memory left could hold its block, by one page more
+ *        than the block spans at most.
+ *
+ * @details Worked by hand, with pages of 4096 bytes: a block of 24 bytes spans one page, so it may take a first and a
+ *          second page, not a third; a block of 8192 spans two, so it may take three; a block of 12288 fits in 2 free
+ *          pages and 4096 free bytes, not in 2 pages and 4095 bytes; one page past the virtual memory manager's window
+ *          fits in no machine's free pages here.
+ */
+KERNEL_TEST(the_small_pool_grows_only_toward_a_block_it_could_hold)
+{
+    kernel_test_check(test,
+                      kernel_heap_small_pool_may_grow(24u, 0u, 10u, 0u) &&
+                          kernel_heap_small_pool_may_grow(24u, 1u, 10u, 0u) &&
+                          !kernel_heap_small_pool_may_grow(24u, 2u, 10u, 0u),
+                      "a block of one page may take two pages, not three");
+    kernel_test_check(test,
+                      kernel_heap_small_pool_may_grow(8192u, 2u, 10u, 0u) &&
+                          !kernel_heap_small_pool_may_grow(8192u, 3u, 10u, 0u),
+                      "a block of two pages may take three, not four");
+    kernel_test_check(test,
+                      kernel_heap_small_pool_may_grow(12288u, 0u, 2u, 4096u) &&
+                          !kernel_heap_small_pool_may_grow(12288u, 0u, 2u, 4095u),
+                      "a block larger than all the free memory left takes nothing");
+    kernel_test_check(test,
+                      !kernel_heap_small_pool_may_grow(HEAP_TEST_PAST_THE_WINDOW, 0u,
+                                                       physical_memory_manager_get_free_page_count(),
+                                                       kernel_heap_get_small_free_bytes()),
+                      "nor does one page past the virtual memory manager's window");
 }

@@ -382,6 +382,15 @@ bool kernel_heap_request_sizes(size_t size, uint32_t *payload_size, uint32_t *bl
     return true;
 }
 
+bool kernel_heap_small_pool_may_grow(uint32_t block_size, uint32_t pages_grown, uint32_t free_pages,
+                                     uint32_t free_bytes)
+{
+    const uint32_t block_pages = block_size / PAGE_SIZE + (block_size % PAGE_SIZE != 0u ? 1u : 0u);
+    const uint64_t free_memory = (uint64_t) free_pages * PAGE_SIZE + free_bytes;
+
+    return block_size <= free_memory && pages_grown <= block_pages;
+}
+
 void *kmalloc(size_t size)
 {
     if (!kernel_heap_initialized || size == 0u)
@@ -535,6 +544,7 @@ void *kmalloc(size_t size)
 #endif
     KernelHeapBlock_t *prev = NULL;
     KernelHeapBlock_t *current = kernel_heap_free_list;
+    uint32_t pages_grown = 0u;
 
     while (true)
     {
@@ -549,9 +559,12 @@ void *kmalloc(size_t size)
         if (current)
             break;
 
-        if (!kernel_heap_grow_small_pool())
+        if (!kernel_heap_small_pool_may_grow(total_size, pages_grown, physical_memory_manager_get_free_page_count(),
+                                             kernel_heap_small_free_bytes) ||
+            !kernel_heap_grow_small_pool())
             return NULL;
 
+        ++pages_grown;
         prev = NULL;
         current = kernel_heap_free_list;
     }

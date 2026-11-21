@@ -79,6 +79,23 @@ extern void *kmalloc_sensitive(size_t size);
  */
 extern bool kernel_heap_request_sizes(size_t size, uint32_t *payload_size, uint32_t *block_size);
 
+/**
+ * @brief Whether the small pool may take one more page of physical memory for a request it holds no free block for.
+ *
+ * A grown page joins the free pages beside it, so a block of several pages can come from the pool when the virtual
+ * memory manager cannot serve one; but no growth serves a block larger than all the free memory left, and a request
+ * takes at most one page more than its block spans.
+ *
+ * @param block_size  The block the request needs, header included.
+ * @param pages_grown Pages already taken for this request.
+ * @param free_pages  Free pages physical memory still holds.
+ * @param free_bytes  Free bytes the small pool already holds.
+ * @return false when the block is larger than @p free_pages and @p free_bytes together, or once @p pages_grown passes
+ *         the pages the block spans.
+ */
+extern bool kernel_heap_small_pool_may_grow(uint32_t block_size, uint32_t pages_grown, uint32_t free_pages,
+                                            uint32_t free_bytes);
+
 extern void kfree(void *ptr);
 
 extern const char *kernel_heap_get_strategy_name(void);
