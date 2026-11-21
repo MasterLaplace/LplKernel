@@ -75,8 +75,6 @@ static const char kernel_heap_strategy_name[] = "slab+tlsf-client";
 static const char kernel_heap_strategy_name[] = "sizeclass+first-fit-server";
 #endif
 
-static uint32_t kernel_heap_align_up(uint32_t value, uint32_t align) { return (value + (align - 1u)) & ~(align - 1u); }
-
 static bool kernel_heap_align_up_overflows(uint32_t *rounded, uint32_t value, uint32_t align)
 {
     uint32_t padded = 0u;
@@ -98,6 +96,8 @@ static void *kernel_heap_phys_to_virt(uint32_t phys_addr)
 }
 
 #ifndef LPL_KERNEL_REAL_TIME_MODE
+static uint32_t kernel_heap_align_up(uint32_t value, uint32_t align) { return (value + (align - 1u)) & ~(align - 1u); }
+
 static KernelHeapServerDomain_t *kernel_heap_server_get_domain(uint32_t domain_index)
 {
     if (domain_index >= KERNEL_HEAP_SERVER_DOMAINS)
