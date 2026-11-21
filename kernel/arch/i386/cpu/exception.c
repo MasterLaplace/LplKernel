@@ -2,6 +2,8 @@
 #include <kernel/cpu/stack_guard.h>
 #include <kernel/memory/section_protection.h>
 #include <stdatomic.h>
+#include <stddef.h>
+#include <stdint.h>
 
 #define EXCEPTION_VECTOR_DOUBLE_FAULT             8u
 #define EXCEPTION_VECTOR_DEBUG_EXCEPTION          1u
@@ -36,11 +38,22 @@ static void exception_write_hex32(uint32_t value)
         exception_write_char(hex[(value >> i) & 0xFu]);
 }
 
-static void exception_halt_forever(void)
+static _Noreturn void exception_halt_forever(void)
 {
     asmutils_disable_interrupts();
     for (;;)
         asmutils_halt();
+}
+
+_Noreturn void interrupt_exception_panic(const char *reason, const void *caller)
+{
+    asmutils_disable_interrupts();
+    exception_write_string("\r\n\r\n[KERNEL PANIC] fatal: ");
+    exception_write_string(reason != NULL ? reason : "(no reason given)");
+    exception_write_string("\r\n  caller         = ");
+    exception_write_hex32((uint32_t) (uintptr_t) caller);
+    exception_write_string("\r\n");
+    exception_halt_forever();
 }
 
 static void exception_handle_double_fault(const InterruptFrame_t *frame)
