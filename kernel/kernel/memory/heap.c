@@ -11,6 +11,7 @@
 #include <kernel/memory/tlsf.h>
 #include <kernel/memory/vmm.h>
 #include <stdbool.h>
+#include <stdckdint.h>
 #include <stdint.h>
 
 #define KERNEL_HEAP_ALIGNMENT       8u
@@ -75,6 +76,16 @@ static const char kernel_heap_strategy_name[] = "sizeclass+first-fit-server";
 #endif
 
 static uint32_t kernel_heap_align_up(uint32_t value, uint32_t align) { return (value + (align - 1u)) & ~(align - 1u); }
+
+static bool kernel_heap_align_up_overflows(uint32_t *rounded, uint32_t value, uint32_t align)
+{
+    uint32_t padded = 0u;
+
+    if (ckd_add(&padded, value, align - 1u))
+        return true;
+    *rounded = padded & ~(align - 1u);
+    return false;
+}
 
 static uint32_t kernel_heap_virt_to_phys(const void *virt_ptr)
 {
@@ -354,6 +365,23 @@ void kernel_heap_initialize(void)
 #endif
 }
 
+bool kernel_heap_request_sizes(size_t size, uint32_t *payload_size, uint32_t *block_size)
+{
+    uint32_t payload = 0u;
+    uint32_t headed = 0u;
+    uint32_t block = 0u;
+    uint32_t pages = 0u;
+
+    if (kernel_heap_align_up_overflows(&payload, (uint32_t) size, KERNEL_HEAP_ALIGNMENT) ||
+        ckd_add(&headed, payload, (uint32_t) sizeof(KernelHeapBlock_t)) ||
+        kernel_heap_align_up_overflows(&block, headed, KERNEL_HEAP_ALIGNMENT) ||
+        kernel_heap_align_up_overflows(&pages, block, PAGE_SIZE))
+        return false;
+    *payload_size = payload;
+    *block_size = block;
+    return true;
+}
+
 void *kmalloc(size_t size)
 {
     if (!kernel_heap_initialized || size == 0u)
@@ -363,9 +391,10 @@ void *kmalloc(size_t size)
     const bool in_hot_loop = (kernel_heap_hot_loop_depth > 0u);
 #endif
 
-    uint32_t payload_size = kernel_heap_align_up((uint32_t) size, KERNEL_HEAP_ALIGNMENT);
-    uint32_t total_size =
-        kernel_heap_align_up(payload_size + (uint32_t) sizeof(KernelHeapBlock_t), KERNEL_HEAP_ALIGNMENT);
+    uint32_t payload_size = 0u;
+    uint32_t total_size = 0u;
+    if (!kernel_heap_request_sizes(size, &payload_size, &total_size))
+        return NULL;
 
 #ifdef LPL_KERNEL_REAL_TIME_MODE
     {
@@ -946,9 +975,10 @@ void *kmalloc_sensitive(size_t size)
     if (!kernel_heap_initialized || size == 0u)
         return NULL;
 
-    uint32_t payload_size = kernel_heap_align_up((uint32_t) size, KERNEL_HEAP_ALIGNMENT);
-    uint32_t total_size =
-        kernel_heap_align_up(payload_size + (uint32_t) sizeof(KernelHeapBlock_t), KERNEL_HEAP_ALIGNMENT);
+    uint32_t payload_size = 0u;
+    uint32_t total_size = 0u;
+    if (!kernel_heap_request_sizes(size, &payload_size, &total_size))
+        return NULL;
 
     uint32_t page_count = (total_size + PAGE_SIZE - 1u) / PAGE_SIZE;
     KernelHeapBlock_t *header = (KernelHeapBlock_t *) kernel_vmm_alloc_pages(page_count);
