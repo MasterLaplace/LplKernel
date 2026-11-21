@@ -119,8 +119,10 @@ void cpu_context_prepare(CpuContext_t *context, void *stack_top, void *extended_
  *          The policy for SIMD in ring 0: every switch saves and restores the extended state, eagerly, never on first
  *          use through CR0.TS and #NM. A lazy switch leaves the previous context's registers in place, which
  *          speculative execution leaked (LazyFP, CVE-2018-3665), and Linux switches eagerly since. A context that never
- *          touched its vector registers costs little: XSAVEOPT and XSAVES write nothing for a component in its
- *          initial state. A handler that interrupts a context runs SSE at most, under the FXSAVE of isr_stubs.s.
+ *          touched its vector registers costs little: XSAVEOPT and XSAVES write nothing for a component the processor
+ *          tracks as initial, which it may decline to do for one in its initial state (Intel SDM vol. 1,
+ *          253665-093US, §13.6). A handler that interrupts a context runs SSE at most, under the FXSAVE of
+ *          isr_stubs.s.
  *
  * @param from Where the running code is saved.
  * @param to   What runs next, on the same processor.

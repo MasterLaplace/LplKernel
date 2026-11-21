@@ -336,15 +336,54 @@ KERNEL_TEST(a_prepared_context_starts_from_the_initial_state_with_its_argument)
     kernel_test_measure(test, "initialised", initialised);
 }
 
+/** How many times an integer pair runs at most with one save, while its saves find vector state in use. */
+#define CONTEXT_SWITCH_TEST_INTEGER_RUNS 8u
+
+/**
+ * @brief Fills the XMM region of both areas of a pair with CONTEXT_SWITCH_TEST_MARKER.
+ */
+static void context_switch_test_mark_the_pair(void)
+{
+    memset(context_switch_test_areas[CONTEXT_SWITCH_TEST_AREA_FIRST] + CONTEXT_SWITCH_TEST_XMM_REGION,
+           CONTEXT_SWITCH_TEST_MARKER, CONTEXT_SWITCH_TEST_XMM_BYTES);
+    memset(context_switch_test_areas[CONTEXT_SWITCH_TEST_AREA_SECOND] + CONTEXT_SWITCH_TEST_XMM_REGION,
+           CONTEXT_SWITCH_TEST_MARKER, CONTEXT_SWITCH_TEST_XMM_BYTES);
+}
+
+/**
+ * @brief Whether the last saves of a pair found one of @p vector_components in use: an area's XSTATE_BV holds what the
+ *        processor tracked in use at its last save (Intel SDM vol. 1, 253665-093US, §13.9 and §13.11).
+ */
+static bool context_switch_test_pair_found_in_use(uint32_t vector_components)
+{
+    return ((context_switch_test_components_saved(context_switch_test_areas[CONTEXT_SWITCH_TEST_AREA_FIRST]) |
+             context_switch_test_components_saved(context_switch_test_areas[CONTEXT_SWITCH_TEST_AREA_SECOND])) &
+            vector_components) != 0u;
+}
+
+/**
+ * @brief Whether both areas of a pair still hold CONTEXT_SWITCH_TEST_MARKER in their XMM region.
+ */
+static bool context_switch_test_pair_kept_the_marker(void)
+{
+    return context_switch_test_marker_kept(context_switch_test_areas[CONTEXT_SWITCH_TEST_AREA_FIRST]) &&
+           context_switch_test_marker_kept(context_switch_test_areas[CONTEXT_SWITCH_TEST_AREA_SECOND]);
+}
+
 /**
  * @brief Two contexts that run integer code only write no vector byte when they switch, with XSAVEOPT and XSAVES,
- *        while a context that holds vectors is saved with them.
+ *        wherever the processor tracks their vector state as initial, while a context that holds vectors is saved
+ *        with them.
  *
- * @details Restoring a prepared area puts every component in its initial state. For a component in that state,
- *          XSAVEOPT and XSAVES write its XSTATE_BV bit as 0 and leave its region alone (Intel SDM vol. 1, 253665-093US,
- *          §13.9 and §13.11). Only the SSE and AVX bits are checked: the processor may still track x87 as in use after
- *          the restore (§13.8.3). QEMU's TCG treats every component as in use (target/i386/tcg/fpu_helper.c,
- *          get_xinuse), so there only the control is checked.
+ * @details Restoring a prepared area puts every component in its initial state, which the processor may track as
+ *          initial or as in use (Intel SDM vol. 1, 253665-093US, §13.6 and §13.8.3). XSAVEOPT and XSAVES write a
+ *          component's XSTATE_BV bit as it is tracked, and leave the component's region alone when they write it as 0
+ *          (§13.9 and §13.11). Under KVM, 3 to 22 integer runs in 100 find SSE tracked in use, those runs 2.6 to 7
+ *          times longer on average than the others, and save zeros over the marker (#875): such a run is not judged,
+ *          and the pair runs again, CONTEXT_SWITCH_TEST_INTEGER_RUNS times at most. A pair whose saves find vector
+ *          state in use in every run fails. Only the SSE and AVX bits are checked: the processor may still track x87 as
+ *          in use after the restore (§13.8.3). QEMU's TCG treats every component as in use
+ *          (target/i386/tcg/fpu_helper.c, get_xinuse), so there the pair runs once and only the control is checked.
  */
 KERNEL_TEST(switching_between_integer_contexts_writes_no_vector_state)
 {
@@ -358,8 +397,11 @@ KERNEL_TEST(switching_between_integer_contexts_writes_no_vector_state)
     const uint32_t wide = context_switch_test_wide();
     const bool tracked = !context_switch_test_under_tcg();
     const uint32_t vector_components = CONTEXT_SWITCH_TEST_XCR0_SSE | (wide ? CONTEXT_SWITCH_TEST_XCR0_AVX : 0u);
+    const uint32_t runs = tracked ? CONTEXT_SWITCH_TEST_INTEGER_RUNS : 1u;
     uint32_t checked = 0u;
+    uint32_t judged = 0u;
     uint32_t untouched = 0u;
+    uint32_t found_in_use = 0u;
     uint32_t controls = 0u;
 
     context_switch_test_fill(&vectors, 0x037Fu, 0x1F80u, 0x40u);
@@ -369,22 +411,21 @@ KERNEL_TEST(switching_between_integer_contexts_writes_no_vector_state)
             continue;
         context_switch_test_adopt(&here, save);
         ++checked;
-        context_switch_test_prepare_pair(&first_role, &second_role, &first, &second, &here, &remaining, save, NULL,
-                                         wide);
-        memset(context_switch_test_areas[CONTEXT_SWITCH_TEST_AREA_FIRST] + CONTEXT_SWITCH_TEST_XMM_REGION,
-               CONTEXT_SWITCH_TEST_MARKER, CONTEXT_SWITCH_TEST_XMM_BYTES);
-        memset(context_switch_test_areas[CONTEXT_SWITCH_TEST_AREA_SECOND] + CONTEXT_SWITCH_TEST_XMM_REGION,
-               CONTEXT_SWITCH_TEST_MARKER, CONTEXT_SWITCH_TEST_XMM_BYTES);
-        (void) context_switch_test_run_pair(&here, &first, &remaining, 4u);
-        untouched +=
-            (context_switch_test_components_saved(context_switch_test_areas[CONTEXT_SWITCH_TEST_AREA_FIRST]) &
-             vector_components) == 0u &&
-                    (context_switch_test_components_saved(context_switch_test_areas[CONTEXT_SWITCH_TEST_AREA_SECOND]) &
-                     vector_components) == 0u &&
-                    context_switch_test_marker_kept(context_switch_test_areas[CONTEXT_SWITCH_TEST_AREA_FIRST]) &&
-                    context_switch_test_marker_kept(context_switch_test_areas[CONTEXT_SWITCH_TEST_AREA_SECOND]) ?
-                1u :
-                0u;
+        for (uint32_t run = 0u; run < runs; ++run)
+        {
+            context_switch_test_prepare_pair(&first_role, &second_role, &first, &second, &here, &remaining, save, NULL,
+                                             wide);
+            context_switch_test_mark_the_pair();
+            (void) context_switch_test_run_pair(&here, &first, &remaining, 4u);
+            if (context_switch_test_pair_found_in_use(vector_components))
+            {
+                ++found_in_use;
+                continue;
+            }
+            ++judged;
+            untouched += context_switch_test_pair_kept_the_marker() ? 1u : 0u;
+            break;
+        }
         context_switch_test_prepare_pair(&first_role, &second_role, &first, &second, &here, &remaining, save, &vectors,
                                          wide);
         (void) context_switch_test_run_pair(&here, &first, &remaining, 2u);
@@ -400,10 +441,18 @@ KERNEL_TEST(switching_between_integer_contexts_writes_no_vector_state)
     }
     kernel_test_check(test, controls == checked, "a context that holds vectors is saved with them");
     if (tracked)
-        kernel_test_check(test, untouched == checked, "integer contexts write no vector byte, with each save");
+    {
+        kernel_test_check(test, judged == checked,
+                          "the saves of integer contexts find their vector state initial in one of the runs, with each "
+                          "save");
+        kernel_test_check(test, untouched == judged,
+                          "integer contexts write no vector byte where their saves find it initial, with each save");
+    }
     kernel_test_measure(test, "checked", checked);
     kernel_test_measure(test, "untouched", untouched);
     kernel_test_measure(test, "tracked", tracked ? 1u : 0u);
+    if (tracked)
+        kernel_test_measure(test, "runs_found_in_use", found_in_use);
 }
 
 /**
