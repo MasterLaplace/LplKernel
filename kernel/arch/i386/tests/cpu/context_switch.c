@@ -294,7 +294,8 @@ KERNEL_TEST(a_context_finds_its_registers_after_another_ran)
         ++offered;
         memset(&after, 0, sizeof(after));
         remaining = 1u;
-        role = (ContextSwitchTestRole_t){&other, &here, &here, &remaining, &overwriting, wide, NULL, NULL, 0u};
+        role = (ContextSwitchTestRole_t){&other, &here, &here, &remaining, &overwriting,
+                                         wide,   NULL,  NULL,  0u,         CONTEXT_SWITCH_TEST_UNREAD};
         context_switch_test_adopt(&here, save);
         cpu_context_prepare(&other, context_switch_test_stacks[0] + CONTEXT_SWITCH_TEST_STACK_BYTES,
                             context_switch_test_areas[CONTEXT_SWITCH_TEST_AREA_OTHER], save, context_switch_test_play,
@@ -352,7 +353,8 @@ KERNEL_TEST(a_prepared_context_starts_from_the_initial_state_with_its_argument)
         ++offered;
         memset(&reported, 0xFF, sizeof(reported));
         remaining = 0u;
-        role = (ContextSwitchTestRole_t){&fresh, &here, &here, &remaining, NULL, wide, &reported, NULL, 0u};
+        role = (ContextSwitchTestRole_t){&fresh, &here,     &here, &remaining, NULL,
+                                         wide,   &reported, NULL,  0u,         CONTEXT_SWITCH_TEST_UNREAD};
         context_switch_test_adopt(&here, save);
         cpu_context_prepare(&fresh, context_switch_test_stacks[0] + CONTEXT_SWITCH_TEST_STACK_BYTES,
                             context_switch_test_areas[CONTEXT_SWITCH_TEST_AREA_OTHER], save, context_switch_test_play,
@@ -673,7 +675,8 @@ KERNEL_TEST(adopting_the_area_restored_last_keeps_the_registers)
             continue;
         ++offered;
         remaining = 0u;
-        role = (ContextSwitchTestRole_t){&other, &here, &here, &remaining, NULL, wide, NULL, NULL, 0u};
+        role = (ContextSwitchTestRole_t){&other, &here, &here, &remaining, NULL,
+                                         wide,   NULL,  NULL,  0u,         CONTEXT_SWITCH_TEST_UNREAD};
 
         const uint32_t flags = asmutils_save_flags_and_disable_interrupts();
 
