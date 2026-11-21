@@ -500,6 +500,27 @@ const PeripheralComponentInterconnectDevice_t *peripheral_component_interconnect
     return NULL;
 }
 
+const PeripheralComponentInterconnectDevice_t *
+peripheral_component_interconnect_find_by_identifiers(uint16_t vendor_id, const uint16_t *device_ids,
+                                                      uint32_t device_id_count)
+{
+    const uint32_t count = peripheral_component_interconnect_get_device_count();
+
+    if (device_ids == NULL)
+        return NULL;
+    for (uint32_t index = 0u; index < count; ++index)
+    {
+        const PeripheralComponentInterconnectDevice_t *candidate = peripheral_component_interconnect_get_device(index);
+
+        if (candidate == NULL || candidate->vendor_id != vendor_id)
+            continue;
+        for (uint32_t wanted = 0u; wanted < device_id_count; ++wanted)
+            if (candidate->device_id == device_ids[wanted])
+                return candidate;
+    }
+    return NULL;
+}
+
 void peripheral_component_interconnect_enable_memory_and_bus_mastering(
     const PeripheralComponentInterconnectDevice_t *device)
 {

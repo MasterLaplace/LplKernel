@@ -59,10 +59,10 @@ extern "C" {
  * @name Frames
  * @{
  */
-#define E1000_ADDRESS_BYTES        6u    /**< Bytes of a station address. */
-#define E1000_EEPROM_ADDRESS_WORDS 3u    /**< EEPROM words 00h to 02h, which hold the station address (§5.6.1). */
-#define E1000_FRAME_LEAST_BYTES    14u   /**< Shortest frame a publish takes: one Ethernet header. */
-#define E1000_FRAME_MOST_BYTES     1514u /**< Longest: a header and 1500 bytes of payload; the controller adds the CRC. */
+#define E1000_ADDRESS_BYTES         6u  /**< Bytes of a station address. */
+#define E1000_STATION_ADDRESS_WORDS 3u  /**< Words 00h to 02h of the controller's EEPROM hold its address (§5.6.1). */
+#define E1000_FRAME_LEAST_BYTES     14u /**< Shortest frame a publish takes: one Ethernet header. */
+#define E1000_FRAME_MOST_BYTES      1514u /**< Longest: a header and 1500 bytes; the controller adds the CRC. */
 /** @} */
 
 /**
@@ -73,8 +73,8 @@ extern "C" {
 typedef struct E1000State {
     bool controller_present;    /**< An 8254x of a model this driver drives is on the bus. */
     bool controller_ready;      /**< It came out of reset with both rings, its receiver and its transmitter on. */
-    bool link_up;               /**< STATUS.LU when the bring-up ended. */
-    bool loopback;              /**< Its PHY's control register has the loopback bit set, as last read. */
+    bool link_up;               /**< STATUS.LU, as last read: at the end of the bring-up, or by e1000_link_up. */
+    bool loopback;              /**< Its PHY's control register has the loopback bit set, as last read; false unread. */
     const char *failure;        /**< The step that failed, or NULL. */
     uint16_t device_identifier; /**< Its PCI device ID. */
     uint8_t address[E1000_ADDRESS_BYTES]; /**< Its station address, read from EEPROM words 0 to 2. */
@@ -96,7 +96,7 @@ typedef struct E1000ReceivedFrame {
  * @brief What went through the controller, as it counts it and as the driver counts it.
  *
  * @details The controller's counts are its statistics registers, which clear when read (317453-006EN,
- *          §13.7): each read is added here. QEMU 10.2 keeps MPC and RNBC across reads (hw/net/e1000.c,
+ *          §13.7): each read is added here. QEMU 10.2 keeps MPC, RNBC and CRCERRS across reads (hw/net/e1000.c,
  *          macreg_readops), so under QEMU two reads that both find a missed frame add it twice.
  */
 typedef struct E1000Counters {
@@ -107,11 +107,13 @@ typedef struct E1000Counters {
     uint64_t cyclic_redundancy_check_errors; /**< CRCERRS: frames received with a bad CRC. */
     uint64_t good_received;                  /**< GPRC: frames received sound. */
     uint64_t good_transmitted;               /**< GPTC: frames transmitted. */
-    uint32_t register_reads;     /**< Reads of its registers since the bring-up, these counters' own included. */
-    uint32_t register_writes;    /**< Writes of its registers since the bring-up. */
-    uint32_t receive_doorbells;  /**< Writes of the receive tail since the bring-up. */
-    uint32_t transmit_doorbells; /**< Writes of the transmit tail since the bring-up. */
-    uint32_t refused;            /**< Releases and publishes refused since the bring-up. */
+    uint32_t register_reads;          /**< Reads of its registers since the bring-up, these counters' own included. */
+    uint32_t register_writes;         /**< Writes of its registers since the bring-up. */
+    uint32_t receive_doorbells;       /**< Writes of the receive tail since the bring-up. */
+    uint32_t transmit_doorbells;      /**< Writes of the transmit tail since the bring-up. */
+    uint32_t refused;                 /**< Releases and publishes refused since the bring-up. */
+    uint32_t receive_ring_full_peeks; /**< Peeks after which the 63 frames the ring holds all waited: frames arriving
+                                           then are lost, counted by the controller in MPC or RNBC. */
 } E1000Counters_t;
 
 /**
@@ -134,15 +136,29 @@ extern bool e1000_initialize(void);
 extern const E1000State_t *e1000_state(void);
 
 /**
- * @brief Decodes the station address from EEPROM words 00h to 02h (317453-006EN, §5.6.1).
+ * @brief Decodes the station address from words 00h to 02h of the controller's EEPROM (317453-006EN, §5.6.1).
  *
  * @details Each word holds two bytes of the address, its first byte in the low half: the address
  *          12-34-56-78-90-AB is stored as 3412h, 7856h and AB90h.
  *
- * @param words   The E1000_EEPROM_ADDRESS_WORDS words, in address order.
+ * @param words   The E1000_STATION_ADDRESS_WORDS words, in address order.
  * @param address Receives the E1000_ADDRESS_BYTES bytes of the address.
  */
-extern void e1000_station_address_from_eeprom(const uint16_t *words, uint8_t *address);
+extern void e1000_station_address_from_words(const uint16_t *words, uint8_t *address);
+
+/**
+ * @brief Adds what one read of a statistics register gave to the counter it feeds (317453-006EN, §13.7).
+ *
+ * @details CRCERRS (4000h) feeds cyclic_redundancy_check_errors, MPC (4010h) missed, GPRC (4074h)
+ *          good_received, GPTC (4080h) good_transmitted and RNBC (40A0h) no_buffers. The registers clear
+ *          when read, so each read adds.
+ *
+ * @param counters        The counters.
+ * @param register_offset The register's offset in the register window.
+ * @param value           What the read gave.
+ * @return false, with nothing added, for an offset that feeds none of the counters.
+ */
+extern bool e1000_add_statistics_register(E1000Counters_t *counters, uint32_t register_offset, uint32_t value);
 
 /**
  * @brief Decodes the status and errors bytes of a receive descriptor's last dword (317453-006EN, Table 3-1).
@@ -160,9 +176,19 @@ extern void e1000_decode_receive_status(uint32_t status_errors_special, E1000Rec
  *          the loopback bit is cleared, the force bits too, and the PHY negotiates again.
  *
  * @param enabled Whether frames sent come back.
- * @return false when no controller is ready or the PHY did not take a write.
+ * @return false when no controller is ready, the PHY did not take a write, or its loopback bit does not read
+ *         back as asked.
  */
 extern bool e1000_set_loopback(bool enabled);
+
+/**
+ * @brief Reads whether the link is up (STATUS.LU), into the state too.
+ *
+ * @details Leaving the loopback makes the PHY negotiate again, and the link stays down meanwhile.
+ *
+ * @return Whether the link is up; false when no controller is ready.
+ */
+extern bool e1000_link_up(void);
 
 /**
  * @brief Hands out the frames received and not yet released, the oldest first, where they lie.
@@ -227,6 +253,16 @@ extern const E1000Counters_t *e1000_counters(void);
  * @param held Whether publishes leave the tail where the controller last read it.
  */
 extern void e1000_debug_hold_transmit_tail(bool held);
+
+/**
+ * @brief Reads one register of the PHY, so that a debug kernel's tests see what the bring-up and the
+ *        loopback left in it.
+ *
+ * @param physical_layer_register The register, 0 to 31.
+ * @param out_value               Receives its value.
+ * @return false when no controller is ready or the PHY did not answer.
+ */
+extern bool e1000_debug_read_physical_layer_register(uint32_t physical_layer_register, uint16_t *out_value);
 #endif
 
 #ifdef __cplusplus

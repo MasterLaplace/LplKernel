@@ -197,6 +197,21 @@ extern const PeripheralComponentInterconnectDevice_t *
 peripheral_component_interconnect_find_by_class(uint8_t class_code, uint8_t subclass);
 
 /**
+ * @brief Finds the first enumerated device of a vendor whose device ID is one of a list.
+ *
+ * A driver that knows its models by name, as the 8254x network cards are, asks the question once here,
+ * with the table of the IDs it drives, rather than opening the loop over the bus itself.
+ *
+ * @param vendor_id        The vendor ID, e.g. 0x8086 for Intel.
+ * @param device_ids       The device IDs wanted, in any order.
+ * @param device_id_count  How many there are: 0 finds nothing.
+ * @return The first device in bus order with that vendor and one of those IDs, or NULL.
+ */
+extern const PeripheralComponentInterconnectDevice_t *
+peripheral_component_interconnect_find_by_identifiers(uint16_t vendor_id, const uint16_t *device_ids,
+                                                      uint32_t device_id_count);
+
+/**
  * @name Bits of the command register
  * @{
  */

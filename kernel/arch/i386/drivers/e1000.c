@@ -49,6 +49,7 @@
 #define E1000_REGISTER_RECEIVE_ADDRESS_HIGH      0x5404u  /**< RAH0. */
 #define E1000_REGISTER_MANAGEMENT_CONTROL        0x5820u  /**< MANC. */
 #define E1000_REGISTER_WINDOW_BYTES              0x20000u /**< Bytes of the register window, 128 KiB. */
+#define E1000_STATISTICS_REGISTERS               5u       /**< Statistics registers the counters add. */
 #define E1000_MULTICAST_TABLE_DWORDS             128u     /**< Dwords of the multicast table array. */
 /** @} */
 
@@ -78,14 +79,14 @@
  * @name Bits of RCTL (§13.4.22), TCTL (§13.4.33) and TIPG (§13.4.34)
  * @{
  */
-#define E1000_RECEIVE_ENABLE      (1u << 1)                  /**< RCTL.EN. */
-#define E1000_RECEIVE_BROADCAST   (1u << 15)                 /**< RCTL.BAM. */
-#define E1000_RECEIVE_STRIP_CRC   (1u << 26)                 /**< RCTL.SECRC; RCTL.BSIZE 00b gives 2048-byte buffers. */
-#define E1000_TRANSMIT_ENABLE     (1u << 1)                  /**< TCTL.EN. */
-#define E1000_TRANSMIT_PAD_SHORT  (1u << 3)                  /**< TCTL.PSP. */
-#define E1000_TRANSMIT_COLLISIONS (0x10u << 4)               /**< TCTL.CT: 10h, the Ethernet standard. */
-#define E1000_TRANSMIT_DISTANCE   (0x40u << 12)              /**< TCTL.COLD: 40h, for full duplex. */
-#define E1000_TRANSMIT_GAP_COPPER (8u | 8u << 10 | 6u << 20) /**< IPGT, IPGR1, IPGR2: Linux's copper values. */
+#define E1000_RECEIVE_ENABLE      (1u << 1)     /**< RCTL.EN. */
+#define E1000_RECEIVE_BROADCAST   (1u << 15)    /**< RCTL.BAM. */
+#define E1000_RECEIVE_STRIP_CRC   (1u << 26)    /**< RCTL.SECRC; RCTL.BSIZE 00b gives 2048-byte buffers. */
+#define E1000_TRANSMIT_ENABLE     (1u << 1)     /**< TCTL.EN. */
+#define E1000_TRANSMIT_PAD_SHORT  (1u << 3)     /**< TCTL.PSP. */
+#define E1000_TRANSMIT_COLLISIONS (0x10u << 4)  /**< TCTL.CT: 10h, the Ethernet standard. */
+#define E1000_TRANSMIT_DISTANCE   (0x40u << 12) /**< TCTL.COLD: 40h, for full duplex. */
+#define E1000_TRANSMIT_GAP_COPPER (10u | 8u << 10 | 6u << 20) /**< IPGT, IPGR1, IPGR2 for 1000BASE-T (§13.4.34). */
 /** @} */
 
 /**
@@ -142,6 +143,7 @@
 #define E1000_EEPROM_READ_MICROSECONDS 10000u /**< For one EEPROM word. */
 #define E1000_MANAGEMENT_MICROSECONDS  5000u  /**< For one PHY register; Linux polls 64 times 50 us. */
 #define E1000_LOOPBACK_MICROSECONDS    500u   /**< For the PHY to settle in loopback, as Linux waits. */
+#define E1000_PHY_RESET_MICROSECONDS   1u     /**< After a reset of the PHY, as Linux's e1000_phy_reset waits. */
 /** @} */
 
 /** PCI vendor ID of Intel. */
@@ -184,6 +186,13 @@ _Static_assert(4096u % E1000_BUFFER_BYTES == 0u, "a buffer never crosses a page"
  *        the 82540EM, its LOM, the 82540EP and its two variants, the 82545EM and the 82545GM.
  */
 static const uint16_t e1000_device_identifiers[] = {0x100Eu, 0x1015u, 0x1016u, 0x1017u, 0x101Eu, 0x100Fu, 0x1026u};
+
+/**
+ * @brief The statistics registers the counters add, each read once a call.
+ */
+static const uint32_t e1000_statistics_registers[E1000_STATISTICS_REGISTERS] = {
+    E1000_REGISTER_CRC_ERRORS, E1000_REGISTER_MISSED_PACKETS, E1000_REGISTER_GOOD_PACKETS_RECEIVED,
+    E1000_REGISTER_GOOD_PACKETS_TRANSMITTED, E1000_REGISTER_RECEIVE_NO_BUFFERS};
 
 static E1000State_t e1000_found;
 static E1000Counters_t e1000_counted;
@@ -235,37 +244,6 @@ static bool e1000_fail(const char *step)
 {
     e1000_found.failure = step;
     return false;
-}
-
-/**
- * @brief Whether @p device is an 8254x of a model this driver drives.
- */
-static bool e1000_drives(const PeripheralComponentInterconnectDevice_t *device)
-{
-    if (device == NULL || device->vendor_id != E1000_VENDOR)
-        return false;
-    for (uint32_t model = 0u; model < sizeof(e1000_device_identifiers) / sizeof(uint16_t); ++model)
-        if (device->device_id == e1000_device_identifiers[model])
-            return true;
-    return false;
-}
-
-/**
- * @brief The first 8254x on the bus of a model this driver drives, or NULL.
- */
-static const PeripheralComponentInterconnectDevice_t *e1000_find_controller(void)
-{
-    const uint32_t device_count = peripheral_component_interconnect_get_device_count();
-
-    for (uint32_t index = 0u; index < device_count; ++index)
-    {
-        const PeripheralComponentInterconnectDevice_t *const device =
-            peripheral_component_interconnect_get_device(index);
-
-        if (e1000_drives(device))
-            return device;
-    }
-    return NULL;
 }
 
 /**
@@ -346,11 +324,9 @@ static bool e1000_read_eeprom(uint32_t word, uint16_t *out_value)
  */
 static void e1000_add_statistics(void)
 {
-    e1000_counted.cyclic_redundancy_check_errors += e1000_read_register(E1000_REGISTER_CRC_ERRORS);
-    e1000_counted.missed += e1000_read_register(E1000_REGISTER_MISSED_PACKETS);
-    e1000_counted.good_received += e1000_read_register(E1000_REGISTER_GOOD_PACKETS_RECEIVED);
-    e1000_counted.good_transmitted += e1000_read_register(E1000_REGISTER_GOOD_PACKETS_TRANSMITTED);
-    e1000_counted.no_buffers += e1000_read_register(E1000_REGISTER_RECEIVE_NO_BUFFERS);
+    for (uint32_t statistic = 0u; statistic < E1000_STATISTICS_REGISTERS; ++statistic)
+        (void) e1000_add_statistics_register(&e1000_counted, e1000_statistics_registers[statistic],
+                                             e1000_read_register(e1000_statistics_registers[statistic]));
 }
 
 /**
@@ -397,6 +373,19 @@ static uint32_t e1000_physical_address(const void *virtual_address)
 }
 
 /**
+ * @brief Claims @p bytes of pinned memory, zeroed: the pages come from the physical allocator as their
+ *        last owner left them, and a publish longer than what its caller wrote must send zeros, not them.
+ */
+static uint8_t *e1000_claim_zeroed(uint32_t bytes)
+{
+    uint8_t *const memory = (uint8_t *) kernel_pinned_alloc(bytes);
+
+    if (memory != NULL)
+        memset(memory, 0, bytes);
+    return memory;
+}
+
+/**
  * @brief Claims, once, the page of both rings and every buffer, in pinned memory.
  */
 static bool e1000_claim_memory(void)
@@ -412,9 +401,9 @@ static bool e1000_claim_memory(void)
         e1000_transmit_ring = (E1000TransmitDescriptor_t *) (rings + E1000_RECEIVE_DESCRIPTORS * 16u);
     }
     if (e1000_receive_buffers == NULL)
-        e1000_receive_buffers = (uint8_t *) kernel_pinned_alloc(E1000_RECEIVE_DESCRIPTORS * E1000_BUFFER_BYTES);
+        e1000_receive_buffers = e1000_claim_zeroed(E1000_RECEIVE_DESCRIPTORS * E1000_BUFFER_BYTES);
     if (e1000_transmit_buffers == NULL)
-        e1000_transmit_buffers = (uint8_t *) kernel_pinned_alloc(E1000_TRANSMIT_DESCRIPTORS * E1000_BUFFER_BYTES);
+        e1000_transmit_buffers = e1000_claim_zeroed(E1000_TRANSMIT_DESCRIPTORS * E1000_BUFFER_BYTES);
     return e1000_receive_buffers != NULL && e1000_transmit_buffers != NULL;
 }
 
@@ -453,8 +442,12 @@ static bool e1000_fill_rings(void)
 }
 
 /**
- * @brief Stops the controller's receiver and transmitter, then resets it (317453-006EN, §14.7), as
- *        Linux's e1000_reset_hw does for the 82540 and 82545.
+ * @brief Stops the controller's receiver and transmitter, then resets it (317453-006EN, §14.7).
+ *
+ * @details The order and the waits are those of Linux's e1000_reset_hw. The reset itself is written
+ *          through the register window: Linux writes it through the I/O window on the 82540 and 82545,
+ *          which "can't ack the 64-bit write", and through CTRL_DUP on the 82545GM, neither done here.
+ *          QEMU ignores RST, so no test sees this path.
  */
 static bool e1000_reset(void)
 {
@@ -485,12 +478,12 @@ static bool e1000_reset(void)
  */
 static bool e1000_program_address(void)
 {
-    uint16_t words[E1000_EEPROM_ADDRESS_WORDS];
+    uint16_t words[E1000_STATION_ADDRESS_WORDS];
 
-    for (uint32_t word = 0u; word < E1000_EEPROM_ADDRESS_WORDS; ++word)
+    for (uint32_t word = 0u; word < E1000_STATION_ADDRESS_WORDS; ++word)
         if (!e1000_read_eeprom(word, &words[word]))
             return false;
-    e1000_station_address_from_eeprom(words, e1000_found.address);
+    e1000_station_address_from_words(words, e1000_found.address);
 
     const uint8_t *const address = e1000_found.address;
 
@@ -519,7 +512,8 @@ static bool e1000_read_loopback(void)
 
 /**
  * @brief Gives the PHY back the control it had before the loopback, or takes it out of a loopback an
- *        earlier boot left, and lets it negotiate again.
+ *        earlier boot left, then resets it so that its specific control takes effect, as Linux's
+ *        e1000_loopback_cleanup does, and lets it negotiate again.
  */
 static bool e1000_leave_loopback(void)
 {
@@ -537,9 +531,11 @@ static bool e1000_leave_loopback(void)
     }
     else if ((phy_control & E1000_PHY_LOOPBACK) == 0u)
         return e1000_read_loopback();
-    return e1000_write_phy(E1000_PHY_CONTROL, (uint16_t) ((phy_control & ~(E1000_PHY_LOOPBACK | E1000_PHY_RESET)) |
-                                                          E1000_PHY_NEGOTIATION | E1000_PHY_RESTART_NEGOTIATION)) &&
-           e1000_read_loopback() && !e1000_found.loopback;
+    if (!e1000_write_phy(E1000_PHY_CONTROL, (uint16_t) ((phy_control & ~E1000_PHY_LOOPBACK) | E1000_PHY_RESET |
+                                                        E1000_PHY_NEGOTIATION | E1000_PHY_RESTART_NEGOTIATION)))
+        return false;
+    interrupt_request_spin_microseconds(E1000_PHY_RESET_MICROSECONDS);
+    return e1000_read_loopback() && !e1000_found.loopback;
 }
 
 /**
@@ -559,7 +555,6 @@ static bool e1000_configure_link(void)
     e1000_write_register(E1000_REGISTER_FLOW_CONTROL_ADDRESS_HIGH, 0u);
     e1000_write_register(E1000_REGISTER_FLOW_CONTROL_TYPE, 0u);
     e1000_write_register(E1000_REGISTER_FLOW_CONTROL_TIMER, 0u);
-    e1000_before_loopback_saved = false;
     return e1000_leave_loopback();
 }
 
@@ -630,7 +625,8 @@ static bool e1000_describe_frames(const uint16_t *lengths, uint32_t count)
 
 bool e1000_initialize(void)
 {
-    const PeripheralComponentInterconnectDevice_t *const device = e1000_find_controller();
+    const PeripheralComponentInterconnectDevice_t *const device = peripheral_component_interconnect_find_by_identifiers(
+        E1000_VENDOR, e1000_device_identifiers, sizeof(e1000_device_identifiers) / sizeof(e1000_device_identifiers[0]));
 
     memset(&e1000_found, 0, sizeof(e1000_found));
     memset(&e1000_counted, 0, sizeof(e1000_counted));
@@ -656,7 +652,7 @@ bool e1000_initialize(void)
     if (!e1000_program_address())
         return e1000_fail("its EEPROM did not give the station address");
     if (!e1000_configure_link())
-        return e1000_fail("its PHY did not answer");
+        return e1000_fail(e1000_found.loopback ? "its PHY stayed in loopback" : "its PHY did not answer");
     if (!e1000_fill_rings())
         return e1000_fail("a buffer has no physical address");
     e1000_clear_statistics();
@@ -669,15 +665,36 @@ bool e1000_initialize(void)
 
 const E1000State_t *e1000_state(void) { return &e1000_found; }
 
+bool e1000_add_statistics_register(E1000Counters_t *counters, uint32_t register_offset, uint32_t value)
+{
+    switch (register_offset)
+    {
+    case E1000_REGISTER_CRC_ERRORS: counters->cyclic_redundancy_check_errors += value; return true;
+    case E1000_REGISTER_MISSED_PACKETS: counters->missed += value; return true;
+    case E1000_REGISTER_GOOD_PACKETS_RECEIVED: counters->good_received += value; return true;
+    case E1000_REGISTER_GOOD_PACKETS_TRANSMITTED: counters->good_transmitted += value; return true;
+    case E1000_REGISTER_RECEIVE_NO_BUFFERS: counters->no_buffers += value; return true;
+    default: return false;
+    }
+}
+
+bool e1000_link_up(void)
+{
+    if (!e1000_found.controller_ready)
+        return false;
+    e1000_found.link_up = (e1000_read_register(E1000_REGISTER_DEVICE_STATUS) & E1000_STATUS_LINK_UP) != 0u;
+    return e1000_found.link_up;
+}
+
 void e1000_decode_receive_status(uint32_t status_errors_special, E1000ReceivedFrame_t *frame)
 {
     frame->status = (uint8_t) status_errors_special;
     frame->errors = (uint8_t) (status_errors_special >> 8);
 }
 
-void e1000_station_address_from_eeprom(const uint16_t *words, uint8_t *address)
+void e1000_station_address_from_words(const uint16_t *words, uint8_t *address)
 {
-    for (uint32_t word = 0u; word < E1000_EEPROM_ADDRESS_WORDS; ++word)
+    for (uint32_t word = 0u; word < E1000_STATION_ADDRESS_WORDS; ++word)
     {
         address[2u * word] = (uint8_t) words[word];
         address[2u * word + 1u] = (uint8_t) (words[word] >> 8);
@@ -692,11 +709,14 @@ bool e1000_set_loopback(bool enabled)
         return e1000_leave_loopback();
     if (e1000_found.loopback)
         return true;
-    if (!e1000_read_phy(E1000_PHY_CONTROL, &e1000_phy_control_before_loopback) ||
-        !e1000_read_phy(E1000_PHY_SPECIFIC_CONTROL, &e1000_phy_specific_control_before_loopback))
-        return false;
-    e1000_device_control_before_loopback = e1000_read_register(E1000_REGISTER_DEVICE_CONTROL);
-    e1000_before_loopback_saved = true;
+    if (!e1000_before_loopback_saved)
+    {
+        if (!e1000_read_phy(E1000_PHY_CONTROL, &e1000_phy_control_before_loopback) ||
+            !e1000_read_phy(E1000_PHY_SPECIFIC_CONTROL, &e1000_phy_specific_control_before_loopback))
+            return false;
+        e1000_device_control_before_loopback = e1000_read_register(E1000_REGISTER_DEVICE_CONTROL);
+        e1000_before_loopback_saved = true;
+    }
 
     if (!e1000_write_phy(E1000_PHY_SPECIFIC_CONTROL, E1000_PHY_LOOPBACK_CROSSOVER) ||
         !e1000_write_phy(E1000_PHY_CONTROL,
@@ -734,6 +754,8 @@ uint32_t e1000_receive_peek(E1000ReceivedFrame_t *frames, uint32_t wanted)
     }
     if (handed > e1000_receive_ready)
         e1000_receive_ready = handed;
+    if (e1000_receive_ready == E1000_RECEIVE_DESCRIPTORS - 1u)
+        ++e1000_counted.receive_ring_full_peeks;
     return handed;
 }
 
@@ -814,5 +836,10 @@ void e1000_debug_hold_transmit_tail(bool held)
     e1000_transmit_tail_behind = false;
     ++e1000_counted.transmit_doorbells;
     e1000_write_register(E1000_REGISTER_TRANSMIT_TAIL, e1000_transmit_tail & (E1000_TRANSMIT_DESCRIPTORS - 1u));
+}
+
+bool e1000_debug_read_physical_layer_register(uint32_t physical_layer_register, uint16_t *out_value)
+{
+    return e1000_found.controller_ready && out_value != NULL && e1000_read_phy(physical_layer_register, out_value);
 }
 #endif

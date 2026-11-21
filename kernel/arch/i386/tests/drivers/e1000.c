@@ -7,60 +7,25 @@
 #include <stddef.h>
 #include <string.h>
 
-/** Vendor ID of Intel. */
-#define E1000_TEST_VENDOR 0x8086u
-
-/** EtherType of the test frames: IEEE 802's Local Experimental Ethertype 1, which no stack answers. */
-#define E1000_TEST_ETHER_TYPE 0x88B5u
-
-/** Where a test frame keeps its sequence number, little-endian, right after the header. */
-#define E1000_TEST_SEQUENCE_OFFSET 14u
-
-/** Where a test frame's pattern starts. */
-#define E1000_TEST_PATTERN_OFFSET 18u
-
-/** Shortest test frame: Ethernet's minimum without its CRC, so that no padding changes a length. */
-#define E1000_TEST_FRAME_LEAST_BYTES 60u
-
-/** Frames the order test sends: more than three trips around the receive ring. */
-#define E1000_TEST_FRAMES 200u
-
-/** Frames one publish of the order test sends. */
-#define E1000_TEST_BATCH 16u
-
-/** Most frames the order test lets wait in the receive ring, below the 63 it holds. */
-#define E1000_TEST_MOST_IN_FLIGHT 48u
-
-/** Frames the full-ring test sends before it reads any. */
-#define E1000_TEST_OVERFILL 80u
-
-/** Sequence number of the frame the full-ring test sends once it released the ring. */
-#define E1000_TEST_AFTER_RELEASE_SEQUENCE 1000u
-
-/** Sequence number of the frames that probe whether the loopback carries frames yet. */
-#define E1000_TEST_PROBE_SEQUENCE 0xFFFFFFFFu
-
-/** How long a frame may take to come back: QEMU drops looped-back frames for 1 s after each write of RCTL. */
-#define E1000_TEST_LOOPBACK_MICROSECONDS 2000000u
-
-/** How long the probe waits for one probe frame before it sends the next. */
-#define E1000_TEST_PROBE_MICROSECONDS 10000u
-
-/** How long a test waits for a frame it expects never to come back. */
-#define E1000_TEST_SILENCE_MICROSECONDS 20000u
-
-/** Statistics registers E1000Counters_t adds on each call: MPC, RNBC, CRCERRS, GPRC and GPTC. */
-#define E1000_TEST_STATISTICS_REGISTERS 5u
-
-/** Most peeks a drain makes before it gives up, so that a driver that never runs dry fails a claim instead of hanging.
- */
-#define E1000_TEST_DRAIN_ROUNDS 8u
-
-/** EFLAGS.IF. */
-#define E1000_TEST_INTERRUPT_FLAG (1u << 9)
-
-/** The receive descriptor status bits a sound frame carries: DD and EOP. */
-#define E1000_TEST_DONE_AND_END_OF_PACKET 0x03u
+#define E1000_TEST_VENDOR                 0x8086u     /**< Vendor ID of Intel. */
+#define E1000_TEST_ETHER_TYPE             0x88B5u     /**< IEEE 802's Local Experimental 1: no stack answers. */
+#define E1000_TEST_SEQUENCE_OFFSET        14u         /**< A frame's sequence number, little-endian. */
+#define E1000_TEST_PATTERN_OFFSET         18u         /**< Where a test frame's pattern starts. */
+#define E1000_TEST_FRAME_LEAST_BYTES      60u         /**< Ethernet's minimum, CRC left out: never padded. */
+#define E1000_TEST_FRAMES                 200u        /**< Frames of the order test: over three rings' worth. */
+#define E1000_TEST_BATCH                  16u         /**< Frames one publish of the order test sends. */
+#define E1000_TEST_MOST_IN_FLIGHT         48u         /**< Most frames the order test lets wait, below 63. */
+#define E1000_TEST_OVERFILL               80u         /**< Frames the full-ring test sends before it reads any. */
+#define E1000_TEST_AFTER_RELEASE_SEQUENCE 1000u       /**< The frame sent once the full ring is released. */
+#define E1000_TEST_PROBE_SEQUENCE         0xFFFFFFFFu /**< The frames that probe whether the loopback carries frames. */
+#define E1000_TEST_LOOPBACK_MICROSECONDS  2000000u    /**< A frame's way back, past QEMU's 1 s after RCTL. */
+#define E1000_TEST_PROBE_MICROSECONDS     10000u      /**< How long the probe waits for one probe frame. */
+#define E1000_TEST_SILENCE_MICROSECONDS   20000u      /**< How long a test waits for a frame that must not come back. */
+#define E1000_TEST_STATISTICS_REGISTERS   5u          /**< MPC, RNBC, CRCERRS, GPRC, GPTC: a counters call. */
+#define E1000_TEST_DRAIN_ROUNDS           8u          /**< Peeks a drain makes: a ring never dry fails. */
+#define E1000_TEST_INTERRUPT_FLAG         (1u << 9)   /**< EFLAGS.IF. */
+#define E1000_TEST_PHY_SPECIFIC_CONTROL   0x10u       /**< The M88's specific control, which the loopback rewrites. */
+#define E1000_TEST_DONE_AND_END_OF_PACKET 0x03u       /**< The status bits a sound frame carries: DD and EOP. */
 
 /**
  * @brief PCI device IDs of the 8254x copper parts this driver drives, written apart from its own table:
@@ -69,6 +34,8 @@
 static const uint16_t e1000_test_device_identifiers[] = {0x100Eu, 0x1015u, 0x1016u, 0x1017u, 0x101Eu, 0x100Fu, 0x1026u};
 
 static bool e1000_test_loopback_carries_frames = false;
+static bool e1000_test_first_phy_specific_control_read = false;
+static uint16_t e1000_test_first_phy_specific_control = 0u;
 static E1000ReceivedFrame_t e1000_test_frames[E1000_TEST_OVERFILL];
 
 /**
@@ -76,20 +43,9 @@ static E1000ReceivedFrame_t e1000_test_frames[E1000_TEST_OVERFILL];
  */
 static const PeripheralComponentInterconnectDevice_t *e1000_test_bus_controller(void)
 {
-    const uint32_t device_count = peripheral_component_interconnect_get_device_count();
-
-    for (uint32_t index = 0u; index < device_count; ++index)
-    {
-        const PeripheralComponentInterconnectDevice_t *const device =
-            peripheral_component_interconnect_get_device(index);
-
-        if (device == NULL || device->vendor_id != E1000_TEST_VENDOR)
-            continue;
-        for (uint32_t model = 0u; model < sizeof(e1000_test_device_identifiers) / sizeof(uint16_t); ++model)
-            if (device->device_id == e1000_test_device_identifiers[model])
-                return device;
-    }
-    return NULL;
+    return peripheral_component_interconnect_find_by_identifiers(E1000_TEST_VENDOR, e1000_test_device_identifiers,
+                                                                 sizeof(e1000_test_device_identifiers) /
+                                                                     sizeof(e1000_test_device_identifiers[0]));
 }
 
 /**
@@ -328,11 +284,11 @@ KERNEL_TEST_SUITE(e1000, KERNEL_TEST_STAGE_BOOTED);
  */
 KERNEL_TEST(the_station_address_decodes_as_the_manual_stores_it)
 {
-    static const uint16_t words[E1000_EEPROM_ADDRESS_WORDS] = {0x3412u, 0x7856u, 0xAB90u};
+    static const uint16_t words[E1000_STATION_ADDRESS_WORDS] = {0x3412u, 0x7856u, 0xAB90u};
     static const uint8_t expected[E1000_ADDRESS_BYTES] = {0x12u, 0x34u, 0x56u, 0x78u, 0x90u, 0xABu};
     uint8_t address[E1000_ADDRESS_BYTES] = {0u};
 
-    e1000_station_address_from_eeprom(words, address);
+    e1000_station_address_from_words(words, address);
     kernel_test_check(test, memcmp(address, expected, E1000_ADDRESS_BYTES) == 0,
                       "words 3412h, 7856h and AB90h hold the address 12-34-56-78-90-AB (317453-006EN, 5.6.1)");
 }
@@ -347,6 +303,38 @@ KERNEL_TEST(the_receive_status_decodes_as_the_descriptor_lays_it_out)
     e1000_decode_receive_status(0xBEEF8603u, &frame);
     kernel_test_check(test, frame.status == 0x03u && frame.errors == 0x86u,
                       "the dword BEEF8603h holds the status 03h and the errors 86h (317453-006EN, Table 3-1)");
+}
+
+/**
+ * @brief Each statistics register adds what a read gave to the counter it feeds, and an offset that feeds none adds
+ * nothing.
+ *
+ * @details QEMU never counts a missed frame in loopback, so the reads the controller gives here are 0: the
+ *          offsets are those of 317453-006EN, Table 13-2, written apart from the driver's own.
+ */
+KERNEL_TEST(each_statistics_register_adds_to_the_counter_it_feeds)
+{
+    E1000Counters_t counters;
+
+    memset(&counters, 0, sizeof(counters));
+    kernel_test_check(test,
+                      e1000_add_statistics_register(&counters, 0x4000u, 3u) &&
+                          e1000_add_statistics_register(&counters, 0x4010u, 5u) &&
+                          e1000_add_statistics_register(&counters, 0x4074u, 7u) &&
+                          e1000_add_statistics_register(&counters, 0x4080u, 11u) &&
+                          e1000_add_statistics_register(&counters, 0x40A0u, 13u),
+                      "CRCERRS, MPC, GPRC, GPTC and RNBC each feed a counter");
+    kernel_test_check(test,
+                      counters.cyclic_redundancy_check_errors == 3u && counters.missed == 5u &&
+                          counters.good_received == 7u && counters.good_transmitted == 11u &&
+                          counters.no_buffers == 13u,
+                      "each its own");
+    kernel_test_check(test, e1000_add_statistics_register(&counters, 0x4010u, 2u) && counters.missed == 7u,
+                      "a second read of MPC adds to the first, the register having cleared");
+    kernel_test_check(test,
+                      !e1000_add_statistics_register(&counters, 0x4014u, 1u) && counters.missed == 7u &&
+                          counters.cyclic_redundancy_check_errors == 3u,
+                      "an offset that feeds no counter adds nothing");
 }
 
 /**
@@ -393,6 +381,10 @@ KERNEL_TEST(the_driver_brings_up_the_controller_the_bus_lists)
     kernel_test_measure_hexadecimal(test, "address_low",
                                     (uint32_t) state->address[2] << 24 | (uint32_t) state->address[3] << 16 |
                                         (uint32_t) state->address[4] << 8 | (uint32_t) state->address[5]);
+    e1000_test_first_phy_specific_control_read = e1000_debug_read_physical_layer_register(
+        E1000_TEST_PHY_SPECIFIC_CONTROL, &e1000_test_first_phy_specific_control);
+    kernel_test_check(test, e1000_test_first_phy_specific_control_read, "its PHY's specific control reads");
+    kernel_test_measure_hexadecimal(test, "phy_specific_control", e1000_test_first_phy_specific_control);
     kernel_test_measure(test, "link_up", state->link_up ? 1u : 0u);
     kernel_test_measure(test, "bring_up_register_reads", counters->register_reads);
     kernel_test_measure(test, "bring_up_register_writes", counters->register_writes);
@@ -554,6 +546,8 @@ KERNEL_TEST(the_receive_ring_holds_one_frame_fewer_than_its_descriptors)
     kernel_test_check(test, came_back, "the frame sent after the release comes back");
     kernel_test_check(test, increasing == after_the_overfill + (came_back ? 1u : 0u),
                       "after the frames the controller kept, in the order they were sent");
+    kernel_test_check(test, after->receive_ring_full_peeks != before.receive_ring_full_peeks,
+                      "and the driver counts the peeks that found the 63 frames waiting");
     kernel_test_measure(test, "frames_kept_past_the_ring", after_the_overfill);
     kernel_test_measure(test, "missed", (uint32_t) (after->missed - before.missed));
     kernel_test_measure(test, "no_buffers", (uint32_t) (after->no_buffers - before.no_buffers));
@@ -673,11 +667,17 @@ KERNEL_TEST(without_the_loopback_a_frame_sent_does_not_come_back)
     if (!e1000_test_bring_up_in_loopback(test))
         return;
 
+    InterruptRequestDeadline_t negotiation;
     InterruptRequestDeadline_t silence;
 
     kernel_test_check(test, e1000_set_loopback(false), "the PHY leaves the loopback");
     kernel_test_check(test, !e1000_state()->loopback, "and the state says so");
     e1000_test_loopback_carries_frames = false;
+    interrupt_request_deadline_start(&negotiation, E1000_TEST_LOOPBACK_MICROSECONDS);
+    while (!e1000_link_up() && !interrupt_request_deadline_passed(&negotiation))
+        e1000_test_wait_a_little();
+    kernel_test_check(test, e1000_state()->link_up,
+                      "the link comes back up once the PHY negotiated, so that a frame would come back if it could");
     kernel_test_check(test, e1000_test_send(7u, 1u) == 1u, "a frame to the controller's own address is sent");
     interrupt_request_deadline_start(&silence, E1000_TEST_SILENCE_MICROSECONDS);
     kernel_test_check(test, e1000_test_peek_at_least(1u, &silence) == 0u, "and it does not come back");
@@ -704,6 +704,16 @@ KERNEL_TEST(a_second_bring_up_starts_both_rings_over)
 
     kernel_test_check(test, ready && e1000_state()->controller_ready, "a second bring-up is ready");
     kernel_test_check(test, !e1000_state()->loopback, "and takes the PHY out of loopback");
+
+    uint16_t phy_specific_control = 0u;
+
+    kernel_test_check(
+        test,
+        e1000_test_first_phy_specific_control_read &&
+            e1000_debug_read_physical_layer_register(E1000_TEST_PHY_SPECIFIC_CONTROL, &phy_specific_control) &&
+            phy_specific_control == e1000_test_first_phy_specific_control,
+        "and gives it back the specific control it had at the first bring-up");
+    kernel_test_measure_hexadecimal(test, "phy_specific_control", phy_specific_control);
     kernel_test_check(test, e1000_receive_peek(e1000_test_frames, E1000_TEST_OVERFILL) == 0u,
                       "the frames not released are gone");
     kernel_test_check(test,
