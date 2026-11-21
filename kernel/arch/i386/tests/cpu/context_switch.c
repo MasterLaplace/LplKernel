@@ -3,6 +3,7 @@
 #include <kernel/cpu/cpu_identity.h>
 #include <kernel/cpu/extended_state.h>
 #include <kernel/lib/asmutils.h>
+#include <kernel/power/processor_sleep.h>
 #include <kernel/testing/test.h>
 
 #include <stdbool.h>
@@ -336,7 +337,10 @@ KERNEL_TEST(a_prepared_context_starts_from_the_initial_state_with_its_argument)
     kernel_test_measure(test, "initialised", initialised);
 }
 
-/** How many times an integer pair runs at most with one save, while its saves find vector state in use. */
+/**
+ * How many times an integer pair runs at most with one save, each run after one whose saves found vector state in use
+ * a sleep later.
+ */
 #define CONTEXT_SWITCH_TEST_INTEGER_RUNS 8u
 
 /**
@@ -379,12 +383,16 @@ static bool context_switch_test_pair_kept_the_marker(void)
  * @details Restoring a prepared area puts every component in its initial state, which the processor may track as
  *          initial or as in use (Intel SDM vol. 1, 253665-093US, §13.6 and §13.8.3). XSAVEOPT and XSAVES write a
  *          component's XSTATE_BV bit as 0 only where the processor tracks it as initial, and then leave its region
- *          alone (§13.9 and §13.11). Under KVM, 3 to 22 integer runs in 100 find SSE tracked in use, those runs 2.6
- *          to 7 times longer on average than the others, and save zeros over the marker (#875): such a run is not
- *          judged, and the pair runs again, CONTEXT_SWITCH_TEST_INTEGER_RUNS times at most. A pair whose saves find
- *          vector state in use in every run fails. Only the SSE and AVX bits are checked: the processor may still
- *          track x87 as in use after the restore (§13.8.3). QEMU's TCG treats every component as in use
- *          (target/i386/tcg/fpu_helper.c, get_xinuse), so there the pair runs once and only the control is checked.
+ *          alone (§13.9 and §13.11). Under KVM, a run sometimes finds SSE tracked in use from the first read after
+ *          the restore, and saves zeros over the marker; in those runs a fixed integer loop takes 1.3 to 1.4 times
+ *          longer, and the switches 3.7 to 4.9 times: the processor runs slower, its XSAVE most (#875). Back to back,
+ *          the runs keep what the first found, up to 9 runs in use in a row; with a sleep between them, 17 to 29 runs
+ *          in 100 find SSE in use, never more than 6 in a row. So a run whose saves found vector state in use is not
+ *          judged: the processor sleeps until the next interrupt, and the pair runs again,
+ *          CONTEXT_SWITCH_TEST_INTEGER_RUNS times at most. A pair whose saves find vector state in use in every run
+ *          fails. Only the SSE and AVX bits are checked: the processor may still track x87 as in use after the
+ *          restore (§13.8.3). QEMU's TCG treats every component as in use (target/i386/tcg/fpu_helper.c,
+ *          get_xinuse), so there the pair runs once and only the control is checked.
  */
 KERNEL_TEST(switching_between_integer_contexts_writes_no_vector_state)
 {
@@ -421,6 +429,7 @@ KERNEL_TEST(switching_between_integer_contexts_writes_no_vector_state)
             if (context_switch_test_pair_found_in_use(vector_components))
             {
                 ++found_in_use;
+                (void) processor_sleep_until_interrupt();
                 continue;
             }
             ++judged;
