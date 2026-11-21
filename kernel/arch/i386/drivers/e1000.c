@@ -205,6 +205,8 @@ static bool e1000_before_loopback_saved = false;
 static uint32_t e1000_device_control_before_loopback = 0u;
 static uint16_t e1000_phy_control_before_loopback = 0u;
 static uint16_t e1000_phy_specific_control_before_loopback = 0u;
+static bool e1000_transmit_tail_held = false;
+static bool e1000_transmit_tail_behind = false;
 
 /**
  * @brief Reads a controller register.
@@ -624,6 +626,7 @@ bool e1000_initialize(void)
     memset(&e1000_counted, 0, sizeof(e1000_counted));
     e1000_receive_ready = 0u;
     e1000_transmit_reserved = 0u;
+    e1000_transmit_tail_behind = false;
     if (device == NULL)
         return e1000_fail("no 8254x of a model this driver drives on the bus");
     e1000_found.controller_present = true;
@@ -655,6 +658,12 @@ bool e1000_initialize(void)
 }
 
 const E1000State_t *e1000_state(void) { return &e1000_found; }
+
+void e1000_decode_receive_status(uint32_t status_errors_special, E1000ReceivedFrame_t *frame)
+{
+    frame->status = (uint8_t) status_errors_special;
+    frame->errors = (uint8_t) (status_errors_special >> 8);
+}
 
 void e1000_station_address_from_eeprom(const uint16_t *words, uint8_t *address)
 {
@@ -713,12 +722,10 @@ uint32_t e1000_receive_peek(E1000ReceivedFrame_t *frames, uint32_t wanted)
     {
         const uint32_t index = (e1000_receive_next + frame) & (E1000_RECEIVE_DESCRIPTORS - 1u);
         const E1000ReceiveDescriptor_t *const descriptor = &e1000_receive_ring[index];
-        const uint32_t status_errors = descriptor->status_errors_special;
 
         frames[frame].bytes = e1000_receive_buffers + index * E1000_BUFFER_BYTES;
         frames[frame].length = descriptor->length;
-        frames[frame].status = (uint8_t) status_errors;
-        frames[frame].errors = (uint8_t) (status_errors >> 8);
+        e1000_decode_receive_status(descriptor->status_errors_special, &frames[frame]);
     }
     return handed;
 }
@@ -783,6 +790,11 @@ bool e1000_transmit_publish(const uint16_t *lengths, uint32_t count)
     ++e1000_publish_count;
     e1000_transmit_reserved = 0u;
     e1000_counted.frames_sent += count;
+    if (e1000_transmit_tail_held)
+    {
+        e1000_transmit_tail_behind = true;
+        return true;
+    }
     ++e1000_counted.transmit_doorbells;
     e1000_write_register(E1000_REGISTER_TRANSMIT_TAIL, e1000_transmit_tail & (E1000_TRANSMIT_DESCRIPTORS - 1u));
     return true;
@@ -794,3 +806,15 @@ const E1000Counters_t *e1000_counters(void)
         e1000_add_statistics();
     return &e1000_counted;
 }
+
+#if defined(LPL_KERNEL_ENABLE_SMOKE_TESTS)
+void e1000_debug_hold_transmit_tail(bool held)
+{
+    e1000_transmit_tail_held = held;
+    if (held || !e1000_transmit_tail_behind || !e1000_found.controller_ready)
+        return;
+    e1000_transmit_tail_behind = false;
+    ++e1000_counted.transmit_doorbells;
+    e1000_write_register(E1000_REGISTER_TRANSMIT_TAIL, e1000_transmit_tail & (E1000_TRANSMIT_DESCRIPTORS - 1u));
+}
+#endif

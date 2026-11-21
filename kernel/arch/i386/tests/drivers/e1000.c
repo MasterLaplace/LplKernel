@@ -52,6 +52,10 @@
 /** Statistics registers E1000Counters_t adds on each call: MPC, RNBC, CRCERRS, GPRC and GPTC. */
 #define E1000_TEST_STATISTICS_REGISTERS 5u
 
+/** Most peeks a drain makes before it gives up, so that a driver that never runs dry fails a claim instead of hanging.
+ */
+#define E1000_TEST_DRAIN_ROUNDS 8u
+
 /** EFLAGS.IF. */
 #define E1000_TEST_INTERRUPT_FLAG (1u << 9)
 
@@ -252,7 +256,7 @@ static void e1000_test_drain(void)
 {
     uint32_t peeked = e1000_receive_peek(e1000_test_frames, E1000_TEST_OVERFILL);
 
-    while (peeked != 0u)
+    for (uint32_t round = 0u; peeked != 0u && round < E1000_TEST_DRAIN_ROUNDS; ++round)
     {
         (void) e1000_receive_release(peeked);
         peeked = e1000_receive_peek(e1000_test_frames, E1000_TEST_OVERFILL);
@@ -331,6 +335,18 @@ KERNEL_TEST(the_station_address_decodes_as_the_manual_stores_it)
     e1000_station_address_from_eeprom(words, address);
     kernel_test_check(test, memcmp(address, expected, E1000_ADDRESS_BYTES) == 0,
                       "words 3412h, 7856h and AB90h hold the address 12-34-56-78-90-AB (317453-006EN, 5.6.1)");
+}
+
+/**
+ * @brief A receive descriptor's last dword decodes into its status and errors bytes as the manual lays it out.
+ */
+KERNEL_TEST(the_receive_status_decodes_as_the_descriptor_lays_it_out)
+{
+    E1000ReceivedFrame_t frame = {NULL, 0u, 0u, 0u};
+
+    e1000_decode_receive_status(0xBEEF8603u, &frame);
+    kernel_test_check(test, frame.status == 0x03u && frame.errors == 0x86u,
+                      "the dword BEEF8603h holds the status 03h and the errors 86h (317453-006EN, Table 3-1)");
 }
 
 /**
@@ -541,6 +557,59 @@ KERNEL_TEST(the_receive_ring_holds_one_frame_fewer_than_its_descriptors)
     kernel_test_measure(test, "frames_kept_past_the_ring", after_the_overfill);
     kernel_test_measure(test, "missed", (uint32_t) (after->missed - before.missed));
     kernel_test_measure(test, "no_buffers", (uint32_t) (after->no_buffers - before.no_buffers));
+}
+
+/**
+ * @brief A reserve hands a transmit buffer out again only once the controller reported its publish done,
+ *        and never the last free descriptor.
+ *
+ * @details QEMU sends a publish inside the write of its tail, so the test holds the tail back to see a
+ *          controller that has not read the descriptors yet, as a real one has not for a while.
+ */
+KERNEL_TEST(a_reserve_waits_for_the_controller_to_report_a_publish_done)
+{
+    if (!e1000_test_bring_up_in_loopback(test))
+        return;
+
+    uint8_t *buffers[E1000_TRANSMIT_DESCRIPTORS];
+    uint16_t lengths[E1000_TRANSMIT_DESCRIPTORS];
+    InterruptRequestDeadline_t deadline;
+    uint32_t in_order = 0u;
+    uint32_t once_done = 0u;
+
+    e1000_debug_hold_transmit_tail(true);
+    const uint32_t reserved = e1000_transmit_reserve(buffers, E1000_TRANSMIT_DESCRIPTORS);
+
+    for (uint32_t frame = 0u; frame < reserved; ++frame)
+        lengths[frame] = e1000_test_write_frame(buffers[frame], frame);
+
+    const bool published = e1000_transmit_publish(lengths, reserved);
+    const uint32_t while_unread = e1000_transmit_reserve(buffers, 1u);
+
+    e1000_debug_hold_transmit_tail(false);
+    interrupt_request_deadline_start(&deadline, E1000_TEST_LOOPBACK_MICROSECONDS);
+
+    const uint32_t came_back = e1000_test_peek_at_least(reserved, &deadline);
+
+    for (uint32_t frame = 0u; frame < came_back; ++frame)
+        in_order += e1000_test_frame_holds(&e1000_test_frames[frame], frame) ? 1u : 0u;
+    while (once_done == 0u && !interrupt_request_deadline_passed(&deadline))
+    {
+        once_done = e1000_transmit_reserve(buffers, 1u);
+        if (once_done == 0u)
+            e1000_test_wait_a_little();
+    }
+
+    kernel_test_check(test, reserved == E1000_TRANSMIT_DESCRIPTORS - 1u,
+                      "a reserve hands out 63 buffers, one fewer than the 64 transmit descriptors");
+    kernel_test_check(test, published, "and a publish takes the 63");
+    kernel_test_check(test, while_unread == 0u,
+                      "while the controller has not read them, a reserve hands out none of their buffers");
+    kernel_test_check(test, came_back == reserved && in_order == came_back,
+                      "once the tail moves, the 63 frames come back in order");
+    kernel_test_check(test, once_done == 1u, "and their buffers are handed out again");
+    (void) e1000_receive_release(came_back);
+    e1000_test_drain();
 }
 
 /**

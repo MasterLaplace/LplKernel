@@ -145,6 +145,14 @@ extern const E1000State_t *e1000_state(void);
 extern void e1000_station_address_from_eeprom(const uint16_t *words, uint8_t *address);
 
 /**
+ * @brief Decodes the status and errors bytes of a receive descriptor's last dword (317453-006EN, Table 3-1).
+ *
+ * @param status_errors_special The dword: STATUS in bits 7:0, ERRORS in 15:8, special in 31:16.
+ * @param frame                 Receives the status and errors bytes; its other fields are left as they were.
+ */
+extern void e1000_decode_receive_status(uint32_t status_errors_special, E1000ReceivedFrame_t *frame);
+
+/**
  * @brief Turns the PHY loopback on or off, the loop Linux's `ethtool -t` tests the controller through.
  *
  * @details On, the PHY is forced to 1000 Mb/s full duplex with its loopback bit set, and the MAC to the
@@ -207,6 +215,19 @@ extern bool e1000_transmit_publish(const uint16_t *lengths, uint32_t count);
  * @return The counters, never NULL.
  */
 extern const E1000Counters_t *e1000_counters(void);
+
+#if defined(LPL_KERNEL_ENABLE_SMOKE_TESTS)
+/**
+ * @brief Holds the transmit tail back while @p held, so that a debug kernel's tests see a controller slower
+ *        than the driver, which QEMU never is: it sends a publish inside the write of its tail.
+ *
+ * @details While held, a publish describes its frames and counts them, but writes no tail; letting go
+ *          writes the tail once, as one more transmit doorbell, when a publish was held.
+ *
+ * @param held Whether publishes leave the tail where the controller last read it.
+ */
+extern void e1000_debug_hold_transmit_tail(bool held);
+#endif
 
 #ifdef __cplusplus
 }
