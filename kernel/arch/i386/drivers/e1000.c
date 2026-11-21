@@ -606,15 +606,25 @@ static void e1000_reclaim_transmitted(void)
 }
 
 /**
- * @brief Whether a publish may send @p count frames of @p lengths.
+ * @brief Describes the @p count frames of a publish past the tail, where the controller does not read yet.
+ *
+ * @return false at the first length out of range, with the tail left where it was, so that nothing is sent.
  */
-static bool e1000_publish_is_valid(const uint16_t *lengths, uint32_t count)
+static bool e1000_describe_frames(const uint16_t *lengths, uint32_t count)
 {
-    if (count > e1000_transmit_reserved || lengths == NULL || !e1000_found.controller_ready)
-        return false;
     for (uint32_t frame = 0u; frame < count; ++frame)
-        if (lengths[frame] < E1000_FRAME_LEAST_BYTES || lengths[frame] > E1000_FRAME_MOST_BYTES)
+    {
+        const uint32_t length = lengths[frame];
+        const uint32_t command = E1000_TRANSMIT_END_OF_PACKET | E1000_TRANSMIT_INSERT_CRC |
+                                 (frame + 1u == count ? E1000_TRANSMIT_REPORT_STATUS : 0u);
+        E1000TransmitDescriptor_t *const descriptor =
+            &e1000_transmit_ring[(e1000_transmit_tail + frame) & (E1000_TRANSMIT_DESCRIPTORS - 1u)];
+
+        if (length < E1000_FRAME_LEAST_BYTES || length > E1000_FRAME_MOST_BYTES)
             return false;
+        descriptor->length_and_command = length | command << E1000_TRANSMIT_COMMAND_SHIFT;
+        descriptor->status_and_special = 0u;
+    }
     return true;
 }
 
@@ -706,27 +716,24 @@ uint32_t e1000_receive_peek(E1000ReceivedFrame_t *frames, uint32_t wanted)
 {
     if (!e1000_found.controller_ready || frames == NULL)
         return 0u;
-    while (e1000_receive_ready < wanted && e1000_receive_ready < E1000_RECEIVE_DESCRIPTORS - 1u)
+
+    const uint32_t most = wanted < E1000_RECEIVE_DESCRIPTORS - 1u ? wanted : E1000_RECEIVE_DESCRIPTORS - 1u;
+    uint32_t handed = 0u;
+
+    for (; handed < most; ++handed)
     {
-        const E1000ReceiveDescriptor_t *const descriptor =
-            &e1000_receive_ring[(e1000_receive_next + e1000_receive_ready) & (E1000_RECEIVE_DESCRIPTORS - 1u)];
-
-        if ((atomic_load_acquire(&descriptor->status_errors_special) & E1000_RECEIVE_DONE) == 0u)
-            break;
-        ++e1000_receive_ready;
-    }
-
-    const uint32_t handed = e1000_receive_ready < wanted ? e1000_receive_ready : wanted;
-
-    for (uint32_t frame = 0u; frame < handed; ++frame)
-    {
-        const uint32_t index = (e1000_receive_next + frame) & (E1000_RECEIVE_DESCRIPTORS - 1u);
+        const uint32_t index = (e1000_receive_next + handed) & (E1000_RECEIVE_DESCRIPTORS - 1u);
         const E1000ReceiveDescriptor_t *const descriptor = &e1000_receive_ring[index];
+        const uint32_t status_errors_special = atomic_load_acquire(&descriptor->status_errors_special);
 
-        frames[frame].bytes = e1000_receive_buffers + index * E1000_BUFFER_BYTES;
-        frames[frame].length = descriptor->length;
-        e1000_decode_receive_status(descriptor->status_errors_special, &frames[frame]);
+        if ((status_errors_special & E1000_RECEIVE_DONE) == 0u)
+            break;
+        frames[handed].bytes = e1000_receive_buffers + index * E1000_BUFFER_BYTES;
+        frames[handed].length = descriptor->length;
+        e1000_decode_receive_status(status_errors_special, &frames[handed]);
     }
+    if (handed > e1000_receive_ready)
+        e1000_receive_ready = handed;
     return handed;
 }
 
@@ -769,20 +776,11 @@ bool e1000_transmit_publish(const uint16_t *lengths, uint32_t count)
 {
     if (count == 0u)
         return true;
-    if (!e1000_publish_is_valid(lengths, count))
+    if (count > e1000_transmit_reserved || lengths == NULL || !e1000_found.controller_ready ||
+        !e1000_describe_frames(lengths, count))
     {
         ++e1000_counted.refused;
         return false;
-    }
-    for (uint32_t frame = 0u; frame < count; ++frame)
-    {
-        E1000TransmitDescriptor_t *const descriptor =
-            &e1000_transmit_ring[(e1000_transmit_tail + frame) & (E1000_TRANSMIT_DESCRIPTORS - 1u)];
-        const uint32_t command = E1000_TRANSMIT_END_OF_PACKET | E1000_TRANSMIT_INSERT_CRC |
-                                 (frame + 1u == count ? E1000_TRANSMIT_REPORT_STATUS : 0u);
-
-        descriptor->length_and_command = (uint32_t) lengths[frame] | command << E1000_TRANSMIT_COMMAND_SHIFT;
-        descriptor->status_and_special = 0u;
     }
     e1000_transmit_tail += count;
     e1000_publish_ends[(e1000_publish_first + e1000_publish_count) & (E1000_TRANSMIT_DESCRIPTORS - 1u)] =
