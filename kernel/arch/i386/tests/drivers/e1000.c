@@ -13,9 +13,6 @@
 /** EtherType of the test frames: IEEE 802's Local Experimental Ethertype 1, which no stack answers. */
 #define E1000_TEST_ETHER_TYPE 0x88B5u
 
-/** Bytes of a frame's Ethernet header: two addresses and the EtherType. */
-#define E1000_TEST_HEADER_BYTES 14u
-
 /** Where a test frame keeps its sequence number, little-endian, right after the header. */
 #define E1000_TEST_SEQUENCE_OFFSET 14u
 
@@ -51,6 +48,9 @@
 
 /** How long a test waits for a frame it expects never to come back. */
 #define E1000_TEST_SILENCE_MICROSECONDS 20000u
+
+/** Statistics registers E1000Counters_t adds on each call: MPC, RNBC, CRCERRS, GPRC and GPTC. */
+#define E1000_TEST_STATISTICS_REGISTERS 5u
 
 /** EFLAGS.IF. */
 #define E1000_TEST_INTERRUPT_FLAG (1u << 9)
@@ -464,6 +464,13 @@ KERNEL_TEST(frames_sent_come_back_in_order_through_the_loopback)
                       after->good_transmitted - before.good_transmitted == E1000_TEST_FRAMES &&
                           after->good_received - before.good_received == E1000_TEST_FRAMES,
                       "and so does the controller");
+    kernel_test_check(test,
+                      after->register_writes - before.register_writes ==
+                          (after->transmit_doorbells - before.transmit_doorbells) +
+                              (after->receive_doorbells - before.receive_doorbells),
+                      "the frames' path writes no register but the two tails");
+    kernel_test_check(test, after->register_reads - before.register_reads == E1000_TEST_STATISTICS_REGISTERS,
+                      "and reads none: the only reads are the counters' own");
 
     kernel_test_measure(test, "publishes", publishes);
     kernel_test_measure(test, "releases", releases);
@@ -634,4 +641,6 @@ KERNEL_TEST(a_second_bring_up_starts_both_rings_over)
                       counters->frames_sent == 0u && counters->frames_received == 0u &&
                           counters->transmit_doorbells == 0u && counters->receive_doorbells == 0u,
                       "and the counters start from zero again");
+    kernel_test_check(test, counters->good_received == 0u && counters->good_transmitted == 0u,
+                      "and so do the controller's, which counted the three frames before it");
 }
