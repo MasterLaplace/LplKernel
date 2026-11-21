@@ -842,4 +842,6 @@ bool e1000_debug_read_physical_layer_register(uint32_t physical_layer_register, 
 {
     return e1000_found.controller_ready && out_value != NULL && e1000_read_phy(physical_layer_register, out_value);
 }
+
+void e1000_debug_forget_loopback(void) { e1000_before_loopback_saved = false; }
 #endif

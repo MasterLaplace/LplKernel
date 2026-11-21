@@ -263,6 +263,12 @@ extern void e1000_debug_hold_transmit_tail(bool held);
  * @return false when no controller is ready or the PHY did not answer.
  */
 extern bool e1000_debug_read_physical_layer_register(uint32_t physical_layer_register, uint16_t *out_value);
+
+/**
+ * @brief Forgets what the PHY held before the loopback, so that a debug kernel's next bring-up meets a
+ *        loopback it did not set, as after a warm reboot from a kernel that left the PHY in loopback.
+ */
+extern void e1000_debug_forget_loopback(void);
 #endif
 
 #ifdef __cplusplus

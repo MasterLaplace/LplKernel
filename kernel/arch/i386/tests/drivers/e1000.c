@@ -723,3 +723,25 @@ KERNEL_TEST(a_second_bring_up_starts_both_rings_over)
     kernel_test_check(test, counters->good_received == 0u && counters->good_transmitted == 0u,
                       "and so do the controller's, which counted the three frames before it");
 }
+
+/**
+ * @brief A bring-up takes the PHY out of a loopback it did not set itself, as an earlier kernel may leave it.
+ *
+ * @details The PHY keeps its registers across the controller's reset, so a warm reboot can meet it in
+ *          loopback with nothing saved to give back: the bring-up then clears the bit alone.
+ */
+KERNEL_TEST(a_bring_up_takes_the_phy_out_of_a_loopback_it_did_not_set)
+{
+    if (!e1000_test_bring_up_in_loopback(test))
+        return;
+
+    e1000_debug_forget_loopback();
+    e1000_test_loopback_carries_frames = false;
+
+    const bool ready = e1000_initialize();
+
+    kernel_test_check(test, ready && e1000_state()->controller_ready, "the bring-up is ready");
+    kernel_test_check(test, !e1000_state()->loopback, "and its PHY reads out of loopback");
+    if (e1000_state()->failure != NULL)
+        kernel_test_note(test, e1000_state()->failure);
+}
