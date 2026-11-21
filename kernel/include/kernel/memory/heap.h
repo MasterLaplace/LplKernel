@@ -68,6 +68,17 @@ extern void *kmalloc(size_t size);
 
 extern void *kmalloc_sensitive(size_t size);
 
+/**
+ * @brief The sizes a request of @p size bytes takes: its payload rounded up to the heap's alignment, and its block, the
+ *        payload after a block header, rounded the same way.
+ *
+ * @param size         The bytes asked for.
+ * @param payload_size Receives the payload's bytes.
+ * @param block_size   Receives the block's bytes.
+ * @return false when the block, rounded up to whole pages, would not fit in 32 bits: no address space holds it.
+ */
+extern bool kernel_heap_request_sizes(size_t size, uint32_t *payload_size, uint32_t *block_size);
+
 extern void kfree(void *ptr);
 
 extern const char *kernel_heap_get_strategy_name(void);

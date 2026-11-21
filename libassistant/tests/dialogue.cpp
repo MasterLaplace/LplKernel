@@ -250,3 +250,16 @@ LPL_TEST(a_boot_that_fails_leaves_no_mind_to_ask)
     test.check(libassistant_boot_from_slot(0u, &empty), "a boot that fits brings one up again");
     checkTheCanonicalAnswer(test);
 }
+
+/**
+ * @brief A boot asking for an arena no address space holds fails, and the next boot that fits brings the mind up: the
+ *        heap used to hand that boot a block of no payload, which the mind took for 4 GiB and wrote past.
+ */
+LPL_TEST(a_boot_asking_for_an_arena_past_the_address_space_fails)
+{
+    const ModelSlot_t empty{};
+
+    test.check(!libassistant_boot_from_slot(SIZE_MAX, &empty), "a boot asking for an arena of SIZE_MAX fails");
+    test.check(libassistant_boot_from_slot(0u, &empty), "a boot that fits brings the mind up again");
+    checkTheCanonicalAnswer(test);
+}

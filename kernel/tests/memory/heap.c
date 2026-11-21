@@ -7,8 +7,9 @@ KERNEL_TEST_SUITE(heap, KERNEL_TEST_STAGE_INITIALIZATION);
 /** Number of size classes the server heap keeps a free count for. */
 #define HEAP_TEST_SIZE_CLASS_COUNT 7u
 
-#define HEAP_TEST_MOST_HELD 64u /**< The most blocks a test takes to empty one size class of a domain. */
-#define HEAP_TEST_NEIGHBOUR 1u  /**< The slot of the second heap domain, which an application processor fills. */
+#define HEAP_TEST_MOST_HELD       64u /**< The most blocks a test takes to empty one size class of a domain. */
+#define HEAP_TEST_NEIGHBOUR       1u  /**< The slot of the second heap domain, which an application processor fills. */
+#define HEAP_TEST_LARGEST_REQUEST 0xFFFFEFF0u /**< The largest request whose block, in whole pages, fits 32 bits. */
 
 #if !defined(LPL_KERNEL_REAL_TIME_MODE)
 /**
@@ -385,4 +386,56 @@ KERNEL_TEST(hot_loop_serves_bounded_requests_only)
     kernel_test_check(test, kernel_heap_get_hot_loop_bounded_count() >= bounded_before + 3u,
                       "the bounded operations are counted");
 #endif
+}
+
+/**
+ * @brief A request's payload rounds up to 8 bytes and its block adds a header of 16, up to the largest request whose
+ *        block still fits in 32 bits once rounded to whole pages; one byte more, a block past 2^32, or SIZE_MAX is
+ *        refused.
+ *
+ * @details Worked by hand: 1 byte is a payload of 8 and a block of 24; 0xFFFFEFF0 is a payload of 0xFFFFEFF0 and a
+ * block of 0xFFFFF000, the last page boundary below 2^32; 0xFFFFEFF1 rounds to a block of 0xFFFFF008, whose pages pass
+ * 2^32; 0xFFFFFFE9 rounds to a payload of 0xFFFFFFF0, whose block is 2^32.
+ */
+KERNEL_TEST(a_request_s_sizes_are_refused_past_what_32_bits_hold)
+{
+    uint32_t payload = 0u;
+    uint32_t block = 0u;
+
+    kernel_test_check(test, kernel_heap_request_sizes(1u, &payload, &block) && payload == 8u && block == 24u,
+                      "1 byte is a payload of 8 and a block of 24");
+    kernel_test_check(test,
+                      kernel_heap_request_sizes(HEAP_TEST_LARGEST_REQUEST, &payload, &block) &&
+                          payload == HEAP_TEST_LARGEST_REQUEST && block == 0xFFFFF000u,
+                      "0xFFFFEFF0 bytes are a block of 0xFFFFF000, the last page below 2^32");
+    kernel_test_check(test, !kernel_heap_request_sizes(HEAP_TEST_LARGEST_REQUEST + 1u, &payload, &block),
+                      "one byte more is refused");
+    kernel_test_check(test,
+                      !kernel_heap_request_sizes(0xFFFFFFE9u, &payload, &block) &&
+                          !kernel_heap_request_sizes(SIZE_MAX, &payload, &block),
+                      "so are a block of 2^32 and SIZE_MAX");
+}
+
+/**
+ * @brief A request no address space holds returns NULL from kmalloc and from kmalloc_sensitive, and leaves the heap's
+ *        counters as they were: SIZE_MAX used to round to a block of no payload, which its caller took for 4 GiB.
+ */
+KERNEL_TEST(a_request_no_address_space_holds_returns_null)
+{
+    const uint32_t small_free_blocks = kernel_heap_get_small_free_block_count();
+    const uint32_t small_free_bytes = kernel_heap_get_small_free_bytes();
+    const uint32_t large_allocations = kernel_heap_get_large_allocation_count();
+    void *const plain = kmalloc(SIZE_MAX);
+    void *const sensitive = kmalloc_sensitive(SIZE_MAX);
+    const bool counters_kept = kernel_heap_get_small_free_block_count() == small_free_blocks &&
+                               kernel_heap_get_small_free_bytes() == small_free_bytes &&
+                               kernel_heap_get_large_allocation_count() == large_allocations;
+
+    if (plain)
+        kfree(plain);
+    if (sensitive)
+        kfree(sensitive);
+    kernel_test_check(test, plain == NULL, "kmalloc(SIZE_MAX) returns NULL");
+    kernel_test_check(test, sensitive == NULL, "kmalloc_sensitive(SIZE_MAX) returns NULL");
+    kernel_test_check(test, counters_kept, "and the heap's counters are as they were");
 }
