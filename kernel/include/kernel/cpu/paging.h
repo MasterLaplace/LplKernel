@@ -328,6 +328,19 @@ bool paging_is_mapped(uint32_t virt_addr);
 bool paging_set_page_read_only(uint32_t virt_addr);
 
 /**
+ * @brief Clear the R/W bit of every page wholly inside a virtual range, as paging_set_page_read_only does one.
+ *
+ * @details A page the range only touches stays writable: whatever else lives on it would fault on its next store.
+ *          Every other processor drops the range from its translations too, with one shootdown.
+ *
+ * @param virt_start First address of the range
+ * @param virt_end One past its last address
+ * @return Pages turned read-only; a page not mapped is skipped, and a range that holds no whole page, or whose first
+ *         whole page would pass 4 GiB, turns none
+ */
+uint32_t paging_set_range_read_only(uint32_t virt_start, uint32_t virt_end);
+
+/**
  * @brief Report whether the page backing a virtual address is read-only.
  *
  * @param virt_addr Virtual address inside the page to query

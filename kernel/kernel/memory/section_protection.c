@@ -54,18 +54,11 @@ bool kernel_section_protection_apply(void)
     if (range_end <= range_start)
         return false;
 
-    bool all_pages_protected = true;
+    const uint32_t page_count = (range_end - range_start) / SECTION_PROTECTION_PAGE_SIZE_BYTES;
 
-    for (uint32_t page = range_start; page < range_end; page += SECTION_PROTECTION_PAGE_SIZE_BYTES)
-    {
-        if (paging_set_page_read_only(page))
-            ++section_protection_read_only_page_count;
-        else
-            all_pages_protected = false;
-    }
-
-    section_protection_active = all_pages_protected;
-    return all_pages_protected;
+    section_protection_read_only_page_count = paging_set_range_read_only(range_start, range_end);
+    section_protection_active = section_protection_read_only_page_count == page_count;
+    return section_protection_active;
 #endif
 }
 

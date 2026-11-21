@@ -111,3 +111,42 @@ KERNEL_TEST(a_freed_run_costs_one_shootdown)
     kernel_test_measure(test, "online", online);
 #endif
 }
+
+/**
+ * @brief Three pages no other code touches: the range test turns the middle one read-only for good.
+ */
+static uint8_t paging_test_range_pages[3u * PAGE_SIZE] __attribute__((aligned(PAGE_SIZE)));
+
+/**
+ * @brief A range from the middle of a page to the middle of the third turns read-only the one page wholly inside it,
+ *        and leaves the two it only touches writable; a range inside one page, or one whose first whole page would
+ *        pass 4 GiB, turns none.
+ */
+KERNEL_TEST(a_range_turns_read_only_only_the_pages_wholly_inside_it)
+{
+    const uint32_t base = (uint32_t) (uintptr_t) paging_test_range_pages;
+    bool first_read_only = true;
+    bool middle_read_only = false;
+    bool last_read_only = true;
+
+    kernel_test_check(test, paging_set_range_read_only(base + 100u, base + 200u) == 0u,
+                      "a range inside one page turns none");
+    kernel_test_check(test, paging_set_range_read_only(0xFFFFF800u, 0xFFFFFFFFu) == 0u,
+                      "nor one whose first whole page would pass 4 GiB");
+
+    const uint32_t shootdowns_before = advanced_pic_ipi_get_tlb_shootdown_broadcast_count();
+    const uint32_t turned = paging_set_range_read_only(base + PAGE_SIZE / 2u, base + 2u * PAGE_SIZE + PAGE_SIZE / 2u);
+    const uint32_t shootdowns = advanced_pic_ipi_get_tlb_shootdown_broadcast_count() - shootdowns_before;
+    const uint32_t online = cpu_topology_get_online_cpu_count();
+
+    kernel_test_check(test, turned == 1u, "a range over the middle of three pages turns one");
+    kernel_test_check(test, shootdowns == (online > 1u ? 1u : 0u),
+                      "and drops it from every other processor's translations with one shootdown");
+    kernel_test_check(test, paging_page_is_read_only(base + PAGE_SIZE, &middle_read_only) && middle_read_only,
+                      "the page wholly inside it");
+    kernel_test_check(test,
+                      paging_page_is_read_only(base, &first_read_only) && !first_read_only &&
+                          paging_page_is_read_only(base + 2u * PAGE_SIZE, &last_read_only) && !last_read_only,
+                      "and not the two it only touches");
+    kernel_test_measure(test, "turned_read_only", turned);
+}

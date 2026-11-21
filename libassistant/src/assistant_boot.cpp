@@ -11,6 +11,7 @@
 #include <lpl/infer/Tokenizer.hpp>
 
 #include <new>
+#include <stdckdint.h>
 
 namespace {
 
@@ -60,6 +61,22 @@ struct MindState {
 alignas(alignof(MindState)) unsigned char gMindStorage[sizeof(MindState)];
 MindState *gMind = nullptr;
 ModelSlot_t gSlot{};
+
+/**
+ * @enum WeightsOrigin
+ * @brief Where the live mind's weights came from.
+ */
+enum class WeightsOrigin : lpl::core::u8 {
+    None,          ///< No boot yet.
+    Seed,          ///< Derived from the parity seed.
+    ModuleInPlace, ///< Read where the slot's image lies, its whole pages read-only.
+    ModuleCopied,  ///< Copied out of the slot's image into the arena.
+};
+
+WeightsOrigin gOrigin = WeightsOrigin::None;
+const char *gTable = "none";
+const char *gReading = "none";
+lpl::core::u32 gProtectedPages = 0u;
 
 /**
  * @brief Tokens one reply may cost.
@@ -167,6 +184,106 @@ bool isGrammarPhrase(const char *text, lpl::core::u32 length)
     return matched;
 }
 
+/**
+ * @brief Claims @p bytes for the tensor arena, the arena of an earlier boot given back first when it is smaller.
+ * @return false when the kernel cannot provide them.
+ */
+bool claimArena(size_t bytes)
+{
+    if (kernel_tensor_arena_initialize(bytes))
+        return true;
+    if (kernel_tensor_arena_base() == nullptr)
+        return false;
+    kernel_tensor_arena_release();
+    return kernel_tensor_arena_initialize(bytes);
+}
+
+/**
+ * @brief Gives the mind the weights of the slot's image: read where they lie when @p placement is Read, their whole
+ *        pages then read-only, or copied into the arena when @p placement says why they cannot be.
+ * @return false when the reading refused the image, which leaves the arena empty and the slot malformed unless the
+ *         arena was the one short.
+ */
+bool takeModule(lpl::infer::ModelReadVerdict placement)
+{
+    const bool inPlace = placement == lpl::infer::ModelReadVerdict::Read;
+    const lpl::infer::ModelReadReport report = inPlace ? gMind->model.view(gMind->arena, gSlot.bytes, gSlot.size) :
+                                                         gMind->model.copy(gMind->arena, gSlot.bytes, gSlot.size);
+    if (report.verdict != lpl::infer::ModelReadVerdict::Read)
+    {
+        gReading = lpl::infer::modelReadVerdictName(report.verdict);
+        if (report.verdict != lpl::infer::ModelReadVerdict::ArenaExhausted)
+            gSlot.state = MODEL_SLOT_MALFORMED;
+        gMind->arena.reset();
+        return false;
+    }
+
+    gReading = lpl::infer::modelReadVerdictName(placement);
+    gOrigin = inPlace ? WeightsOrigin::ModuleInPlace : WeightsOrigin::ModuleCopied;
+    gProtectedPages = inPlace ? kernel_model_slot_protect(&gSlot) : 0u;
+    gMind->vocab = gMind->model.vocab();
+    return true;
+}
+
+/**
+ * @brief Gives the mind the parity model, its weights derived from the seed.
+ * @return false when the arena cannot hold them.
+ */
+bool takeSeed()
+{
+    if (!lpl::infer::buildParityVocab(gMind->arena, gMind->vocab))
+        return false;
+
+    lpl::infer::ModelConfig shape = lpl::infer::parityModelConfig();
+    shape.vocabSize = gMind->vocab.size();
+    if (!gMind->model.synthesise(gMind->arena, shape, gMind->vocab, lpl::infer::parityModelSeed()))
+        return false;
+    gOrigin = WeightsOrigin::Seed;
+    return true;
+}
+
+/**
+ * @brief Brings the mind up from gSlot in a region of @p arena_bytes, grown by the image's bytes when they are copied.
+ * @return false when the arena, the weights, the grammar or the inference cannot be had; the mind is then dropped.
+ */
+bool bringTheMindUp(size_t arena_bytes)
+{
+    const bool presented = gSlot.state == MODEL_SLOT_LOADED;
+    const char *const refusal = libassistant_judge_model_slot(&gSlot);
+    if (presented)
+        gTable = refusal != nullptr ? refusal : "accepted";
+    if (refusal != nullptr)
+        gReading = lpl::infer::modelReadVerdictName(lpl::infer::ModelReadVerdict::ImageRefused);
+
+    const bool loaded = gSlot.state == MODEL_SLOT_LOADED;
+    const lpl::infer::ModelReadVerdict placement =
+        loaded ? lpl::infer::judgeModelView(gSlot.bytes, lpl::infer::kHostIsLittleEndian) :
+                 lpl::infer::ModelReadVerdict::Read;
+    size_t region = arena_bytes;
+    if (loaded && placement != lpl::infer::ModelReadVerdict::Read && ckd_add(&region, arena_bytes, gSlot.size))
+        return false;
+    if (!claimArena(region))
+        return false;
+
+    gMind = new (gMindStorage) MindState{kernel_tensor_arena_base(), kernel_tensor_arena_size()};
+    lpl::core::u32 phraseCount = 0u;
+    const char *const *phrases = lpl::infer::parityGrammarPhrases(phraseCount);
+    const bool ready = ((loaded && takeModule(placement)) || takeSeed()) &&
+                       gMind->grammar.build(gMind->arena, phrases, phraseCount) &&
+                       gMind->inference.initialise(gMind->arena, gMind->model, lpl::infer::CachePolicy::Refuse);
+    if (!ready)
+    {
+        gMind = nullptr;
+        return false;
+    }
+
+    gMind->tokenizer = lpl::infer::Tokenizer{gMind->vocab};
+    kernel_tensor_arena_record_used(gMind->arena.used());
+    kernel_dialogue_channel_reset();
+    kernel_inference_budget_open(kReplyTokenBudget);
+    return true;
+}
+
 } // namespace
 
 extern "C" size_t libassistant_recommended_arena_bytes(void)
@@ -189,53 +306,42 @@ extern "C" const char *libassistant_judge_model_slot(ModelSlot_t *slot)
     return lpl::infer::modelImageVerdictName(inspection.verdict);
 }
 
+extern "C" const char *libassistant_model_origin(void)
+{
+    switch (gOrigin)
+    {
+    case WeightsOrigin::Seed: return "seed";
+    case WeightsOrigin::ModuleInPlace: return "module_in_place";
+    case WeightsOrigin::ModuleCopied: return "module_copied";
+    case WeightsOrigin::None: break;
+    }
+    return "none";
+}
+
+extern "C" const char *libassistant_model_reading(void) { return gReading; }
+
+extern "C" uint32_t libassistant_model_protected_pages(void) { return gProtectedPages; }
+
+extern "C" bool libassistant_boot_from_slot(size_t arena_bytes, const ModelSlot_t *slot)
+{
+    gMind = nullptr;
+    gSlot = slot != nullptr ? *slot : ModelSlot_t{};
+    gOrigin = WeightsOrigin::None;
+    gTable = "none";
+    gReading = "none";
+    gProtectedPages = 0u;
+
+    const bool booted = bringTheMindUp(arena_bytes != 0u ? arena_bytes : libassistant_recommended_arena_bytes());
+    kernel_model_slot_report(&gSlot, libassistant_model_origin(), gTable, gReading, gProtectedPages, booted);
+    return booted;
+}
+
 extern "C" bool libassistant_boot(size_t arena_bytes)
 {
-    if (arena_bytes == 0u)
-        arena_bytes = libassistant_recommended_arena_bytes();
+    ModelSlot_t probed{};
 
-    if (!kernel_tensor_arena_initialize(arena_bytes))
-        return false;
-
-    (void) kernel_model_slot_probe(&gSlot);
-    (void) libassistant_judge_model_slot(&gSlot);
-
-    gMind = new (gMindStorage) MindState{kernel_tensor_arena_base(), kernel_tensor_arena_size()};
-
-    if (!lpl::infer::buildParityVocab(gMind->arena, gMind->vocab))
-    {
-        gMind = nullptr;
-        return false;
-    }
-
-    lpl::infer::ModelConfig shape = lpl::infer::parityModelConfig();
-    shape.vocabSize = gMind->vocab.size();
-    if (!gMind->model.synthesise(gMind->arena, shape, gMind->vocab, lpl::infer::parityModelSeed()))
-    {
-        gMind = nullptr;
-        return false;
-    }
-
-    lpl::core::u32 phraseCount = 0u;
-    const char *const *phrases = lpl::infer::parityGrammarPhrases(phraseCount);
-    if (!gMind->grammar.build(gMind->arena, phrases, phraseCount))
-    {
-        gMind = nullptr;
-        return false;
-    }
-
-    if (!gMind->inference.initialise(gMind->arena, gMind->model, lpl::infer::CachePolicy::Refuse))
-    {
-        gMind = nullptr;
-        return false;
-    }
-
-    gMind->tokenizer = lpl::infer::Tokenizer{gMind->vocab};
-
-    kernel_tensor_arena_record_used(gMind->arena.used());
-    kernel_dialogue_channel_reset();
-    kernel_inference_budget_open(kReplyTokenBudget);
-    return true;
+    (void) kernel_model_slot_probe(&probed);
+    return libassistant_boot_from_slot(arena_bytes, &probed);
 }
 
 extern "C" bool libassistant_dialogue_round_trip(libassistant_dialogue_result_t *out)
