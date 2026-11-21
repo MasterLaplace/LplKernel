@@ -735,6 +735,22 @@ KERNEL_TEST(a_depth_entered_with_the_tick_stopped_is_probed_at_its_first_sleep)
 #define TICKLESS_TEST_DUE_CLOSES_MICROSECONDS  100u   /**< One open from the arming closes nearer than the bound. */
 /** @} */
 
+_Static_assert(KERNEL_TICKLESS_PROBES == 4u, "the near window's wake-up grows the first probe three times");
+
+/**
+ * When the near window's wake-up comes after its arming: its close, less the bound a depth that learned nothing is led
+ * by, half the longest probe sleep.
+ */
+#define TICKLESS_TEST_NEAR_WAKE_MICROSECONDS                                                                           \
+    (TICKLESS_TEST_NEAR_CLOSES_MICROSECONDS - KERNEL_TICKLESS_FIRST_PROBE_MICROSECONDS *                               \
+                                                  KERNEL_TICKLESS_PROBE_GROWTH * KERNEL_TICKLESS_PROBE_GROWTH *        \
+                                                  KERNEL_TICKLESS_PROBE_GROWTH / 2u)
+
+/**
+ * How many near windows a test arms at most: one more each time the one before was planned once its wake-up was due.
+ */
+#define TICKLESS_TEST_NEAR_ATTEMPTS 4u
+
 /**
  * @struct TicklessTestUnlearned_t
  * @brief What serving windows taught, each at a depth made to have learned nothing.
@@ -749,6 +765,7 @@ typedef struct {
     uint32_t probes;         /**< Windows before which the depth was probed. */
     uint64_t returned;       /**< Microseconds the sleeps on the plan returned. */
     uint64_t slept;          /**< Microseconds counted with the tick stopped meanwhile. */
+    uint64_t served_after;   /**< Cycles from the last window's arming to its service, once it is served. */
 } TicklessTestUnlearned_t;
 
 /**
@@ -774,6 +791,8 @@ static void tickless_test_serve_round(uint32_t duty, uint32_t opens, uint32_t cl
     for (uint32_t sleeps = 0u; tickless_test_runs == runs && sleeps < TICKLESS_TEST_SLEEPS; ++sleeps)
         seen->returned += kernel_tickless_sleep_on(&tickless_test_plan);
     seen->served = seen->served && tickless_test_runs != runs;
+    if (tickless_test_runs != runs)
+        seen->served_after = tickless_test_instant - armed;
     seen->samples = kernel_tickless_wake_samples();
     seen->on_the_bound += kernel_tickless_wakes_planned_on_the_bound() - bound_before;
     seen->on_a_published += kernel_tickless_wakes_planned_on_a_published_lead() - published_before;
@@ -817,33 +836,84 @@ static TicklessTestUnlearned_t tickless_test_serve_at_an_unlearned_depth(uint32_
 }
 
 /**
+ * @struct TicklessTestNear_t
+ * @brief The near window served at a depth that learned nothing, and the ones armed before it whose plan came once
+ *        their wake-up was due.
+ */
+typedef struct {
+    TicklessTestUnlearned_t seen; /**< What the last window taught. */
+    uint32_t late_plans;          /**< Windows planned once their wake-up was due, each followed by another. */
+    uint32_t latest_late_plan;    /**< Microseconds from the arming of the last of those to its service. */
+} TicklessTestNear_t;
+
+/**
+ * @brief Whether the window @p seen tells of was served without sleeping because it was planned once its wake-up was
+ *        due: the time from its arming to its service is then its plan's, and only a slow emulator takes that long.
+ */
+static bool tickless_test_planned_once_due(const TicklessTestUnlearned_t *seen)
+{
+    return seen->stopped && seen->served && seen->sleeps == 0u &&
+           seen->served_after >= kernel_tickless_cycles_from_microseconds(TICKLESS_TEST_NEAR_WAKE_MICROSECONDS);
+}
+
+/**
+ * @brief Serves the near window at a depth that learned nothing, and arms another while the one before was planned
+ *        once its wake-up was due, TICKLESS_TEST_NEAR_ATTEMPTS windows at most.
+ * @return The last window, and how many before it were planned too late.
+ */
+static TicklessTestNear_t tickless_test_serve_the_near_window(void)
+{
+    TicklessTestNear_t near = {0};
+
+    for (uint32_t attempt = 0u; attempt < TICKLESS_TEST_NEAR_ATTEMPTS; ++attempt)
+    {
+        near.seen = tickless_test_serve_at_an_unlearned_depth(TICKLESS_TEST_NEAR_OPENS_MICROSECONDS,
+                                                              TICKLESS_TEST_NEAR_CLOSES_MICROSECONDS, 1u);
+        if (!tickless_test_planned_once_due(&near.seen))
+            break;
+        ++near.late_plans;
+        near.latest_late_plan = kernel_tickless_microseconds_from_cycles(near.seen.served_after);
+    }
+    return near;
+}
+
+/**
  * @brief A window whose wake-up, a bound before its latest, comes before a probe would end is served at a depth that
  *        learned nothing without a probe, its wake-up planned on the bound, the shallowest depth having no shallower
  *        lead, and the depth learns from that sleep; what the sleeps return is the time counted slept.
  *
  * @details The window closes 3000 us after its arming: its wake-up comes 2488 us after it, short of the 3408 us a
- *          probe may take, and long after the 1260 us TCG took to plan a window that closed at 1000 us (#834).
+ *          probe may take. The first plan of a boot runs the cold path for the first time: under KVM it is made 1 us
+ *          after the arming, under TCG 0.4 to 1.3 ms after it, and 18 ms once on a host loaded three times over, while
+ *          the next plans take less than 30 us (#874). A window planned once its wake-up was due is served without
+ *          sleeping, as it should be: it is counted, and another is armed. One served without sleeping before its
+ *          wake-up was due is never armed again, and fails.
  */
 KERNEL_TEST(a_near_window_at_a_depth_that_learned_nothing_is_planned_on_the_bound_without_a_probe)
 {
     if (!tickless_test_can_stop_the_tick(test))
         return;
 
-    const TicklessTestUnlearned_t seen = tickless_test_serve_at_an_unlearned_depth(
-        TICKLESS_TEST_NEAR_OPENS_MICROSECONDS, TICKLESS_TEST_NEAR_CLOSES_MICROSECONDS, 1u);
+    const TicklessTestNear_t near = tickless_test_serve_the_near_window();
+    const TicklessTestUnlearned_t *const seen = &near.seen;
 
-    kernel_test_check(test, seen.stopped && seen.served, "the tick stops and the window is served");
-    kernel_test_check(test, seen.probes == 0u, "no probe, which would end after the wake-up");
-    kernel_test_check(test, seen.sleeps >= 1u, "the window is slept on, not found due once its wake-up is planned");
-    kernel_test_check(test, seen.on_the_bound >= 1u && seen.on_a_published == 0u,
+    kernel_test_check(test, near.late_plans < TICKLESS_TEST_NEAR_ATTEMPTS,
+                      "one of the windows is planned before its wake-up is due");
+    kernel_test_check(test, seen->stopped && seen->served, "the tick stops and the window is served");
+    kernel_test_check(test, seen->probes == 0u, "no probe, which would end after the wake-up");
+    kernel_test_check(test, seen->sleeps >= 1u, "the window is slept on, not found due once its wake-up is planned");
+    kernel_test_check(test, seen->on_the_bound >= 1u && seen->on_a_published == 0u,
                       "the wake-up is planned on the bound, never on a published latency alone");
-    kernel_test_check(test, seen.samples >= 1u || seen.on_the_bound > 1u,
+    kernel_test_check(test, seen->samples >= 1u || seen->on_the_bound > 1u,
                       "the depth learns from its sleep, or plans the next on the bound again");
-    kernel_test_check(test, seen.returned == seen.slept, "what the sleeps return is the time counted slept");
-    kernel_test_measure(test, "near_wakes_on_bound", seen.on_the_bound);
-    kernel_test_measure(test, "near_samples", seen.samples);
-    kernel_test_measure(test, "near_sleeps", seen.sleeps);
-    kernel_test_measure(test, "near_slept_us", (uint32_t) seen.slept);
+    kernel_test_check(test, seen->returned == seen->slept, "what the sleeps return is the time counted slept");
+    kernel_test_measure(test, "near_wakes_on_bound", seen->on_the_bound);
+    kernel_test_measure(test, "near_samples", seen->samples);
+    kernel_test_measure(test, "near_sleeps", seen->sleeps);
+    kernel_test_measure(test, "near_slept_us", (uint32_t) seen->slept);
+    kernel_test_measure(test, "near_late_plans", near.late_plans);
+    if (near.late_plans != 0u)
+        kernel_test_measure(test, "near_late_plan_us", near.latest_late_plan);
 }
 
 /**
