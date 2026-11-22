@@ -226,6 +226,9 @@ i686-elf-gdb kernel/lpl.kernel
 - **ACPI tables**: `-append lpl.acpi.tables=print` prints the tables of the boot's ACPI directory (the root table's
   entries and the DSDT) as acpidump does; `build/acpi-host/test-acpi --firmware-log serial.log` runs the ACPI tests
   on those bytes on the build machine
+- **Network card**: QEMU's `pc` machine attaches an Intel 82540EM, which the `e1000` tests drive through its PHY
+  loopback; one test sends a frame with the loopback off, which reaches QEMU's network backend. `-nic none` skips
+  them, and so does q35, whose 82574L the driver does not drive yet (#878): `-nic user,model=e1000` gives it an 82540EM
 
 ### Requirements
 

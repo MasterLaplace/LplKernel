@@ -1,0 +1,901 @@
+#include <kernel/cpu/irq.h>
+#include <kernel/cpu/pci.h>
+#include <kernel/drivers/e1000.h>
+#include <kernel/lib/asmutils.h>
+#include <kernel/testing/test.h>
+
+#include <stddef.h>
+#include <string.h>
+
+#define E1000_TEST_VENDOR                 0x8086u     /**< Vendor ID of Intel. */
+#define E1000_TEST_ETHER_TYPE             0x88B5u     /**< IEEE 802's Local Experimental 1: no stack answers. */
+#define E1000_TEST_SEQUENCE_OFFSET        14u         /**< A frame's sequence number, little-endian. */
+#define E1000_TEST_PATTERN_OFFSET         18u         /**< Where a test frame's pattern starts. */
+#define E1000_TEST_FRAME_LEAST_BYTES      60u         /**< Ethernet's minimum, CRC left out: never padded. */
+#define E1000_TEST_FRAMES                 200u        /**< Frames of the order test: over three rings' worth. */
+#define E1000_TEST_BATCH                  16u         /**< Frames one publish of the order test sends. */
+#define E1000_TEST_MOST_IN_FLIGHT         48u         /**< Most frames the order test lets wait, below 63. */
+#define E1000_TEST_OVERFILL               80u         /**< Frames the full-ring test sends before it reads any. */
+#define E1000_TEST_AFTER_RELEASE_SEQUENCE 1000u       /**< The frame sent once the full ring is released. */
+#define E1000_TEST_PROBE_SEQUENCE         0xFFFFFFFFu /**< The frames that probe whether the loopback carries frames. */
+#define E1000_TEST_LOOPBACK_MICROSECONDS  2000000u    /**< A frame's way back, past QEMU's 1 s after RCTL. */
+#define E1000_TEST_PROBE_MICROSECONDS     10000u      /**< How long the probe waits for one probe frame. */
+#define E1000_TEST_SILENCE_MICROSECONDS   20000u      /**< How long a test waits for a frame that must not come back. */
+#define E1000_TEST_STATISTICS_REGISTERS   5u          /**< MPC, RNBC, CRCERRS, GPRC, GPTC: a counters call. */
+#define E1000_TEST_DRAIN_ROUNDS           8u          /**< Peeks a drain makes: a ring never dry fails. */
+#define E1000_TEST_INTERRUPT_FLAG         (1u << 9)   /**< EFLAGS.IF. */
+#define E1000_TEST_BOUNCE_FRAMES          1024u /**< Frames the bounce sends: the loop dwarfs the calls around it. */
+#define E1000_TEST_BOUNCE_IDLE_ROUNDS     4096u /**< Empty peeks after which the bounce gives up. */
+#define E1000_TEST_PHY_SPECIFIC_CONTROL   0x10u /**< The M88's specific control, which the loopback rewrites. */
+#define E1000_TEST_DONE_AND_END_OF_PACKET 0x03u /**< DD and EOP, of which a harvested frame keeps EOP alone. */
+#define E1000_TEST_END_OF_PACKET          0x02u /**< EOP. */
+
+/**
+ * @brief PCI device IDs of the 8254x copper parts this driver drives, written apart from its own table:
+ *        the 82540EM and EP and the 82545EM and GM, from Linux's e1000_hw.h.
+ */
+static const uint16_t e1000_test_device_identifiers[] = {0x100Eu, 0x1015u, 0x1016u, 0x1017u, 0x101Eu, 0x100Fu, 0x1026u};
+
+/**
+ * @brief A received frame as a test reads it, copied out of its slot's descriptor and buffer address.
+ */
+typedef struct E1000TestFrame {
+    const uint8_t *bytes; /**< Its first byte, in its slot's buffer. */
+    uint16_t length;      /**< Its bytes. */
+    uint8_t status;       /**< Its slot's status byte. */
+    uint8_t errors;       /**< Its slot's errors byte. */
+} E1000TestFrame_t;
+
+static bool e1000_test_loopback_carries_frames = false;
+static bool e1000_test_first_phy_specific_control_read = false;
+static uint16_t e1000_test_first_phy_specific_control = 0u;
+static E1000TestFrame_t e1000_test_frames[E1000_TEST_OVERFILL];
+
+/**
+ * @brief The first 8254x the bus lists, found without the driver.
+ */
+static const PeripheralComponentInterconnectDevice_t *e1000_test_bus_controller(void)
+{
+    return peripheral_component_interconnect_find_by_identifiers(E1000_TEST_VENDOR, e1000_test_device_identifiers,
+                                                                 sizeof(e1000_test_device_identifiers) /
+                                                                     sizeof(e1000_test_device_identifiers[0]));
+}
+
+/**
+ * @brief Bytes of the test frame numbered @p sequence: the shortest, the longest, then lengths in between.
+ */
+static uint16_t e1000_test_frame_length(uint32_t sequence)
+{
+    if (sequence % 4u == 0u)
+        return E1000_TEST_FRAME_LEAST_BYTES;
+    if (sequence % 4u == 1u)
+        return E1000_FRAME_MOST_BYTES;
+    return (uint16_t) (E1000_TEST_FRAME_LEAST_BYTES +
+                       (sequence * 151u) % (E1000_FRAME_MOST_BYTES - E1000_TEST_FRAME_LEAST_BYTES + 1u));
+}
+
+/**
+ * @brief The byte the test frame numbered @p sequence carries at @p offset of its pattern.
+ */
+static uint8_t e1000_test_pattern_byte(uint32_t sequence, uint32_t offset)
+{
+    return (uint8_t) (sequence * 31u + offset * 7u + 1u);
+}
+
+/**
+ * @brief Writes the test frame numbered @p sequence, addressed from and to the controller itself.
+ *
+ * @return Its length.
+ */
+static uint16_t e1000_test_write_frame(uint8_t *buffer, uint32_t sequence)
+{
+    const uint8_t *const address = e1000_state()->address;
+    const uint16_t length = e1000_test_frame_length(sequence);
+
+    memcpy(buffer, address, E1000_ADDRESS_BYTES);
+    memcpy(buffer + E1000_ADDRESS_BYTES, address, E1000_ADDRESS_BYTES);
+    buffer[12] = (uint8_t) (E1000_TEST_ETHER_TYPE >> 8);
+    buffer[13] = (uint8_t) E1000_TEST_ETHER_TYPE;
+    for (uint32_t byte = 0u; byte < 4u; ++byte)
+        buffer[E1000_TEST_SEQUENCE_OFFSET + byte] = (uint8_t) (sequence >> (8u * byte));
+    for (uint32_t offset = E1000_TEST_PATTERN_OFFSET; offset < length; ++offset)
+        buffer[offset] = e1000_test_pattern_byte(sequence, offset - E1000_TEST_PATTERN_OFFSET);
+    return length;
+}
+
+/**
+ * @brief The sequence number a received frame carries, or E1000_TEST_PROBE_SEQUENCE when it is too short to carry one.
+ */
+static uint32_t e1000_test_sequence_of(const E1000TestFrame_t *frame)
+{
+    uint32_t sequence = 0u;
+
+    if (frame->length < E1000_TEST_PATTERN_OFFSET)
+        return E1000_TEST_PROBE_SEQUENCE;
+    for (uint32_t byte = 0u; byte < 4u; ++byte)
+        sequence |= (uint32_t) frame->bytes[E1000_TEST_SEQUENCE_OFFSET + byte] << (8u * byte);
+    return sequence;
+}
+
+/**
+ * @brief Whether a received frame holds exactly the bytes of the test frame numbered @p sequence.
+ */
+static bool e1000_test_frame_holds(const E1000TestFrame_t *frame, uint32_t sequence)
+{
+    const uint8_t *const address = e1000_state()->address;
+
+    if (frame->length != e1000_test_frame_length(sequence) || memcmp(frame->bytes, address, E1000_ADDRESS_BYTES) != 0 ||
+        memcmp(frame->bytes + E1000_ADDRESS_BYTES, address, E1000_ADDRESS_BYTES) != 0 ||
+        frame->bytes[12] != (uint8_t) (E1000_TEST_ETHER_TYPE >> 8) ||
+        frame->bytes[13] != (uint8_t) E1000_TEST_ETHER_TYPE || e1000_test_sequence_of(frame) != sequence)
+        return false;
+    for (uint32_t offset = E1000_TEST_PATTERN_OFFSET; offset < frame->length; ++offset)
+        if (frame->bytes[offset] != e1000_test_pattern_byte(sequence, offset - E1000_TEST_PATTERN_OFFSET))
+            return false;
+    return true;
+}
+
+/**
+ * @brief Waits for the next interrupt when interrupts are on, or spins once when they are off.
+ */
+static void e1000_test_wait_a_little(void)
+{
+    const uint32_t flags = asmutils_save_flags_and_disable_interrupts();
+
+    asmutils_restore_flags(flags);
+    if ((flags & E1000_TEST_INTERRUPT_FLAG) != 0u)
+        asmutils_halt();
+    else
+        asmutils_pause();
+}
+
+/**
+ * @brief Sends the test frames numbered @p first_sequence on, at most @p count of them, in one publish
+ *        and one kick.
+ *
+ * @return How many were published: fewer when fewer transmit slots were free before the wrap.
+ */
+static uint32_t e1000_test_send(uint32_t first_sequence, uint32_t count)
+{
+    E1000Transmit_t *const transmit = e1000_transmit();
+    uint32_t first_slot = 0u;
+
+    (void) e1000_transmit_kick();
+
+    const uint32_t wanted = count < E1000_TRANSMIT_DESCRIPTORS ? count : E1000_TRANSMIT_DESCRIPTORS;
+    const uint32_t reserved = kernel_spsc_ring_reserve(&transmit->ring, wanted, &first_slot);
+
+    for (uint32_t frame = 0u; frame < reserved; ++frame)
+    {
+        const uint32_t slot = first_slot + frame;
+
+        if (!e1000_transmit_describe(
+                transmit, slot, e1000_test_write_frame(e1000_transmit_buffer(transmit, slot), first_sequence + frame)))
+            return 0u;
+    }
+    kernel_spsc_ring_publish(&transmit->ring, reserved);
+    (void) e1000_transmit_kick();
+    return reserved;
+}
+
+/**
+ * @brief Sends the test frames numbered @p first_sequence to @p first_sequence + @p count - 1,
+ *        publish after publish, within @p deadline.
+ *
+ * @return How many were sent.
+ */
+static uint32_t e1000_test_send_all(uint32_t first_sequence, uint32_t count, InterruptRequestDeadline_t *deadline)
+{
+    uint32_t sent = 0u;
+
+    while (sent < count && !interrupt_request_deadline_passed(deadline))
+    {
+        const uint32_t batch = count - sent < E1000_TEST_BATCH ? count - sent : E1000_TEST_BATCH;
+        const uint32_t published = e1000_test_send(first_sequence + sent, batch);
+
+        sent += published;
+        if (published == 0u)
+            e1000_test_wait_a_little();
+    }
+    return sent;
+}
+
+/**
+ * @brief Harvests, then copies out the frames waiting in the receive ring, oldest first, without releasing them.
+ *
+ * @return How many were copied out, at most E1000_TEST_OVERFILL.
+ */
+static uint32_t e1000_test_collect(void)
+{
+    E1000Receive_t *const receive = e1000_receive();
+
+    (void) e1000_receive_harvest();
+
+    const uint32_t ready = kernel_spsc_ring_ready_count(&receive->ring);
+    const uint32_t count = ready < E1000_TEST_OVERFILL ? ready : E1000_TEST_OVERFILL;
+
+    for (uint32_t frame = 0u; frame < count; ++frame)
+    {
+        const uint32_t slot = kernel_spsc_ring_slot_at(&receive->ring, frame);
+
+        e1000_test_frames[frame].bytes = e1000_receive_bytes(receive, slot);
+        e1000_test_frames[frame].length = e1000_receive_length(receive, slot);
+        e1000_test_frames[frame].status = e1000_receive_status(receive, slot);
+        e1000_test_frames[frame].errors = e1000_receive_errors(receive, slot);
+    }
+    return count;
+}
+
+/**
+ * @brief Releases the @p count oldest frames waiting, which the next harvest gives back to the controller.
+ */
+static void e1000_test_release(uint32_t count) { kernel_spsc_ring_release(&e1000_receive()->ring, count); }
+
+/**
+ * @brief Collects until at least @p least frames are waiting, or @p deadline passes.
+ *
+ * @return How many frames the last collect copied out.
+ */
+static uint32_t e1000_test_collect_at_least(uint32_t least, InterruptRequestDeadline_t *deadline)
+{
+    uint32_t collected = e1000_test_collect();
+
+    while (collected < least && !interrupt_request_deadline_passed(deadline))
+    {
+        e1000_test_wait_a_little();
+        collected = e1000_test_collect();
+    }
+    return collected;
+}
+
+/**
+ * @brief Releases every frame waiting, until none is left, and gives them back to the controller.
+ */
+static void e1000_test_drain(void)
+{
+    uint32_t collected = e1000_test_collect();
+
+    for (uint32_t round = 0u; collected != 0u && round < E1000_TEST_DRAIN_ROUNDS; ++round)
+    {
+        e1000_test_release(collected);
+        collected = e1000_test_collect();
+    }
+    (void) e1000_receive_harvest();
+}
+
+/**
+ * @brief Sends probe frames until one comes back, within E1000_TEST_LOOPBACK_MICROSECONDS.
+ *
+ * @details QEMU drops a looped-back frame for 1 s after each write of RCTL, without counting it
+ *          (hw/net/e1000.c, set_rx_control and e1000_can_receive; net/net.c, qemu_receive_packet),
+ *          where the controller itself would take it: the tests send their frames once a probe made it.
+ */
+static bool e1000_test_wait_for_the_loopback(void)
+{
+    InterruptRequestDeadline_t deadline;
+
+    interrupt_request_deadline_start(&deadline, E1000_TEST_LOOPBACK_MICROSECONDS);
+    while (!interrupt_request_deadline_passed(&deadline))
+    {
+        InterruptRequestDeadline_t probe;
+
+        (void) e1000_test_send(E1000_TEST_PROBE_SEQUENCE, 1u);
+        interrupt_request_deadline_start(&probe, E1000_TEST_PROBE_MICROSECONDS);
+        if (e1000_test_collect_at_least(1u, &probe) != 0u)
+        {
+            e1000_test_drain();
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * @brief Brings the controller up unless an earlier test left it ready, turns the loopback on, and
+ *        waits until it carries frames.
+ *
+ * @return true when the test may send; false when it skipped or failed.
+ */
+static bool e1000_test_bring_up_in_loopback(KernelTest_t *test)
+{
+    if (e1000_test_bus_controller() == NULL)
+    {
+        kernel_test_skip(test, "no 8254x on the bus");
+        return false;
+    }
+    if (!e1000_state()->controller_ready)
+    {
+        e1000_test_loopback_carries_frames = false;
+        if (!kernel_test_check(test, e1000_initialize(), "the controller the bus lists comes out of reset"))
+            return false;
+    }
+    if (!e1000_state()->loopback)
+    {
+        e1000_test_loopback_carries_frames = false;
+        if (!kernel_test_check(test, e1000_set_loopback(true), "its PHY takes the loopback"))
+            return false;
+    }
+    if (!e1000_test_loopback_carries_frames)
+        e1000_test_loopback_carries_frames = e1000_test_wait_for_the_loopback();
+    e1000_test_drain();
+    (void) e1000_transmit_kick();
+    return kernel_test_check(test, e1000_test_loopback_carries_frames, "a frame sent comes back through the loopback");
+}
+
+/**
+ * @brief Sends and receives @p frames test frames of 60 bytes through the loopback, @p batch a publish,
+ *        writing no byte of them: the frames' path alone, for tools/instructions.sh --inside to count.
+ *
+ * @details The transmit buffers already hold their frames, written once by the caller. Kept out of line and
+ *          out of interprocedural optimisation (noipa), so that its symbol keeps its name and that a count
+ *          of it holds the driver's calls, the ring's and this loop, and nothing the test does around it.
+ *
+ * @return The bytes the frames received carried, summed.
+ */
+__attribute__((noipa)) static uint32_t e1000_test_bounce(uint32_t frames, uint32_t batch)
+{
+    E1000Receive_t *const receive = e1000_receive();
+    E1000Transmit_t *const transmit = e1000_transmit();
+    uint32_t sent = 0u;
+    uint32_t received = 0u;
+    uint32_t bytes = 0u;
+    uint32_t idle = 0u;
+
+    while (received < frames && idle < E1000_TEST_BOUNCE_IDLE_ROUNDS)
+    {
+        uint32_t first_slot = 0u;
+
+        if (sent < frames)
+        {
+            const uint32_t wanted = frames - sent < batch ? frames - sent : batch;
+            const uint32_t reserved = kernel_spsc_ring_reserve(&transmit->ring, wanted, &first_slot);
+
+            for (uint32_t frame = 0u; frame < reserved; ++frame)
+                (void) e1000_transmit_describe(transmit, first_slot + frame, E1000_TEST_FRAME_LEAST_BYTES);
+            kernel_spsc_ring_publish(&transmit->ring, reserved);
+            sent += reserved;
+            (void) e1000_transmit_kick();
+        }
+        (void) e1000_receive_harvest();
+
+        const uint32_t peeked = kernel_spsc_ring_peek(&receive->ring, E1000_RECEIVE_DESCRIPTORS, &first_slot);
+
+        for (uint32_t frame = 0u; frame < peeked; ++frame)
+            bytes += e1000_receive_length(receive, first_slot + frame);
+        kernel_spsc_ring_release(&receive->ring, peeked);
+        received += peeked;
+        idle = peeked == 0u ? idle + 1u : 0u;
+    }
+    (void) e1000_receive_harvest();
+    return bytes;
+}
+
+KERNEL_TEST_SUITE(e1000, KERNEL_TEST_STAGE_BOOTED);
+
+/**
+ * @brief The station address decodes from EEPROM words 00h to 02h as the manual's example stores it.
+ */
+KERNEL_TEST(the_station_address_decodes_as_the_manual_stores_it)
+{
+    static const uint16_t words[E1000_STATION_ADDRESS_WORDS] = {0x3412u, 0x7856u, 0xAB90u};
+    static const uint8_t expected[E1000_ADDRESS_BYTES] = {0x12u, 0x34u, 0x56u, 0x78u, 0x90u, 0xABu};
+    uint8_t address[E1000_ADDRESS_BYTES] = {0u};
+
+    e1000_station_address_from_words(words, address);
+    kernel_test_check(test, memcmp(address, expected, E1000_ADDRESS_BYTES) == 0,
+                      "words 3412h, 7856h and AB90h hold the address 12-34-56-78-90-AB (317453-006EN, 5.6.1)");
+}
+
+/**
+ * @brief A receive slot reads its frame, its length, its status and its errors where its descriptor and
+ *        its buffer hold them, as the manual lays the descriptor out.
+ *
+ * @details The descriptors and the buffers are made up: QEMU never sets an error bit in loopback.
+ */
+KERNEL_TEST(a_receive_slot_reads_as_its_descriptor_lays_it_out)
+{
+    static E1000ReceiveDescriptor_t descriptors[2];
+    static uint8_t buffers[2u * E1000_BUFFER_BYTES];
+    const E1000Receive_t receive = {.descriptors = descriptors, .buffers = buffers};
+
+    descriptors[1].length = 1234u;
+    descriptors[1].status_errors_special = 0xBEEF8603u;
+    kernel_test_check(test, e1000_receive_length(&receive, 1u) == 1234u, "slot 1's length is its descriptor's");
+    kernel_test_check(test, e1000_receive_status(&receive, 1u) == 0x03u && e1000_receive_errors(&receive, 1u) == 0x86u,
+                      "the dword BEEF8603h holds the status 03h and the errors 86h (317453-006EN, Table 3-1)");
+    kernel_test_check(test, e1000_receive_bytes(&receive, 1u) == buffers + E1000_BUFFER_BYTES,
+                      "and its frame starts one buffer in");
+}
+
+/**
+ * @brief Each statistics register adds what a read gave to the counter it feeds, and an offset that feeds none adds
+ *        nothing.
+ *
+ * @details QEMU never counts a missed frame in loopback, so the reads the controller gives here are 0: the
+ *          offsets are those of 317453-006EN, Table 13-2, written apart from the driver's own.
+ */
+KERNEL_TEST(each_statistics_register_adds_to_the_counter_it_feeds)
+{
+    E1000Counters_t counters;
+
+    memset(&counters, 0, sizeof(counters));
+    kernel_test_check(test,
+                      e1000_add_statistics_register(&counters, 0x4000u, 3u) &&
+                          e1000_add_statistics_register(&counters, 0x4010u, 5u) &&
+                          e1000_add_statistics_register(&counters, 0x4074u, 7u) &&
+                          e1000_add_statistics_register(&counters, 0x4080u, 11u) &&
+                          e1000_add_statistics_register(&counters, 0x40A0u, 13u),
+                      "CRCERRS, MPC, GPRC, GPTC and RNBC each feed a counter");
+    kernel_test_check(test,
+                      counters.cyclic_redundancy_check_errors == 3u && counters.missed == 5u &&
+                          counters.good_received == 7u && counters.good_transmitted == 11u &&
+                          counters.no_buffers == 13u,
+                      "each its own");
+    kernel_test_check(test, e1000_add_statistics_register(&counters, 0x4010u, 2u) && counters.missed == 7u,
+                      "a second read of MPC adds to the first, the register having cleared");
+    kernel_test_check(test,
+                      !e1000_add_statistics_register(&counters, 0x4014u, 1u) && counters.missed == 7u &&
+                          counters.cyclic_redundancy_check_errors == 3u,
+                      "an offset that feeds no counter adds nothing");
+}
+
+/**
+ * @brief The driver finds the 8254x the bus lists, brings it up, and reads its station address.
+ *
+ * @details Skipped where the bus lists no 8254x, as with `-nic none`; QEMU's `pc` machine attaches an 82540EM.
+ */
+KERNEL_TEST(the_driver_brings_up_the_controller_the_bus_lists)
+{
+    const PeripheralComponentInterconnectDevice_t *const device = e1000_test_bus_controller();
+
+    if (device == NULL)
+    {
+        kernel_test_skip(test, "no 8254x on the bus");
+        return;
+    }
+
+    e1000_test_loopback_carries_frames = false;
+    const bool ready = e1000_initialize();
+    const E1000State_t *const state = e1000_state();
+    const E1000Counters_t *const counters = e1000_counters();
+    static const uint8_t no_address[E1000_ADDRESS_BYTES] = {0u};
+
+    kernel_test_check(test, state->controller_present, "the driver finds the 8254x the bus lists");
+    kernel_test_check(test, state->device_identifier == device->device_id, "and gives its device ID");
+    kernel_test_check(test, ready && state->controller_ready, "it comes out of reset with both rings");
+    kernel_test_check(test, (state->address[0] & 0x01u) == 0u, "its station address is a unicast address");
+    kernel_test_check(test, memcmp(state->address, no_address, E1000_ADDRESS_BYTES) != 0, "and not all zeros");
+    kernel_test_check(test, !state->loopback, "the bring-up leaves the PHY out of loopback");
+    kernel_test_check(test,
+                      e1000_receive()->buffers != NULL && e1000_receive()->descriptors != NULL &&
+                          e1000_transmit()->buffers != NULL &&
+                          kernel_spsc_ring_capacity(&e1000_receive()->ring) == E1000_RECEIVE_DESCRIPTORS &&
+                          kernel_spsc_ring_capacity(&e1000_transmit()->ring) == E1000_TRANSMIT_DESCRIPTORS,
+                      "each side is a ring of 64 slots with a buffer each");
+    kernel_test_check(test,
+                      kernel_spsc_ring_size(&e1000_receive()->ring) == 0u &&
+                          kernel_spsc_ring_size(&e1000_transmit()->ring) == 0u,
+                      "and both rings start empty");
+    kernel_test_check(test,
+                      counters->receive_doorbells == 0u && counters->transmit_doorbells == 0u &&
+                          counters->frames_received == 0u && counters->frames_sent == 0u,
+                      "and the counters start from zero");
+    if (state->failure != NULL)
+        kernel_test_note(test, state->failure);
+
+    kernel_test_measure_hexadecimal(test, "device_identifier", state->device_identifier);
+    kernel_test_measure_hexadecimal(test, "address_high",
+                                    (uint32_t) state->address[0] << 8 | (uint32_t) state->address[1]);
+    kernel_test_measure_hexadecimal(test, "address_low",
+                                    (uint32_t) state->address[2] << 24 | (uint32_t) state->address[3] << 16 |
+                                        (uint32_t) state->address[4] << 8 | (uint32_t) state->address[5]);
+    e1000_test_first_phy_specific_control_read = e1000_debug_read_physical_layer_register(
+        E1000_TEST_PHY_SPECIFIC_CONTROL, &e1000_test_first_phy_specific_control);
+    kernel_test_check(test, e1000_test_first_phy_specific_control_read, "its PHY's specific control reads");
+    kernel_test_measure_hexadecimal(test, "phy_specific_control", e1000_test_first_phy_specific_control);
+    kernel_test_measure(test, "link_up", state->link_up ? 1u : 0u);
+    kernel_test_measure(test, "bring_up_register_reads", counters->register_reads);
+    kernel_test_measure(test, "bring_up_register_writes", counters->register_writes);
+}
+
+/**
+ * @brief 200 frames sent through the loopback come back in order, byte for byte, where the controller wrote them.
+ *
+ * @details The frames go in publishes of 16, each handed over by one kick, with at most 48 waiting in the
+ *          receive ring, and take every length from 60 to 1514 bytes. Each kick that hands frames and each
+ *          harvest that gives slots back writes its tail once, and the controller counts as many frames as
+ *          the driver.
+ */
+KERNEL_TEST(frames_sent_come_back_in_order_through_the_loopback)
+{
+    if (!e1000_test_bring_up_in_loopback(test))
+        return;
+
+    const E1000Counters_t before = *e1000_counters();
+    InterruptRequestDeadline_t deadline;
+    uint32_t sent = 0u;
+    uint32_t received = 0u;
+    uint32_t publishes = 0u;
+    uint32_t releases = 0u;
+    uint32_t in_order = 0u;
+    uint32_t holding_their_bytes = 0u;
+    uint32_t sound = 0u;
+
+    interrupt_request_deadline_start(&deadline, E1000_TEST_LOOPBACK_MICROSECONDS);
+    while (received < E1000_TEST_FRAMES && !interrupt_request_deadline_passed(&deadline))
+    {
+        if (sent < E1000_TEST_FRAMES && sent - received + E1000_TEST_BATCH <= E1000_TEST_MOST_IN_FLIGHT)
+        {
+            const uint32_t batch =
+                E1000_TEST_FRAMES - sent < E1000_TEST_BATCH ? E1000_TEST_FRAMES - sent : E1000_TEST_BATCH;
+            const uint32_t published = e1000_test_send(sent, batch);
+
+            sent += published;
+            publishes += published != 0u ? 1u : 0u;
+        }
+
+        const uint32_t collected = e1000_test_collect();
+
+        for (uint32_t frame = 0u; frame < collected; ++frame)
+        {
+            const E1000TestFrame_t *const received_frame = &e1000_test_frames[frame];
+
+            in_order += e1000_test_sequence_of(received_frame) == received + frame ? 1u : 0u;
+            holding_their_bytes += e1000_test_frame_holds(received_frame, received + frame) ? 1u : 0u;
+            sound += (received_frame->status & E1000_TEST_DONE_AND_END_OF_PACKET) == E1000_TEST_END_OF_PACKET &&
+                             received_frame->errors == 0u ?
+                         1u :
+                         0u;
+        }
+        if (collected == 0u)
+        {
+            e1000_test_wait_a_little();
+            continue;
+        }
+        e1000_test_release(collected);
+        ++releases;
+        received += collected;
+    }
+    (void) e1000_receive_harvest();
+    (void) e1000_transmit_kick();
+
+    const E1000Counters_t *const after = e1000_counters();
+    const uint32_t register_accesses =
+        (after->register_reads - before.register_reads) + (after->register_writes - before.register_writes);
+
+    kernel_test_check(test, sent == E1000_TEST_FRAMES, "the 200 frames are sent");
+    kernel_test_check(test, received == E1000_TEST_FRAMES, "and the 200 come back");
+    kernel_test_check(test, in_order == received, "in the order they were sent");
+    kernel_test_check(test, holding_their_bytes == received, "each holding the bytes it was sent with");
+    kernel_test_check(test, sound == received, "each with EOP set, DD taken by the harvest, and no error");
+    kernel_test_check(test, after->transmit_doorbells - before.transmit_doorbells == publishes,
+                      "each kick that hands a publish writes the transmit tail once");
+    kernel_test_check(test, after->receive_doorbells - before.receive_doorbells == releases,
+                      "each harvest that gives slots back writes the receive tail once");
+    kernel_test_check(test,
+                      after->frames_sent - before.frames_sent == E1000_TEST_FRAMES &&
+                          after->frames_received - before.frames_received == E1000_TEST_FRAMES,
+                      "the driver counts 200 frames each way");
+    kernel_test_check(test,
+                      after->good_transmitted - before.good_transmitted == E1000_TEST_FRAMES &&
+                          after->good_received - before.good_received == E1000_TEST_FRAMES,
+                      "and so does the controller");
+    kernel_test_check(test,
+                      after->register_writes - before.register_writes ==
+                          (after->transmit_doorbells - before.transmit_doorbells) +
+                              (after->receive_doorbells - before.receive_doorbells),
+                      "the frames' path writes no register but the two tails");
+    kernel_test_check(test, after->register_reads - before.register_reads == E1000_TEST_STATISTICS_REGISTERS,
+                      "and reads none: the only reads are the counters' own");
+
+    kernel_test_measure(test, "publishes", publishes);
+    kernel_test_measure(test, "releases", releases);
+    kernel_test_measure(test, "register_accesses", register_accesses);
+    kernel_test_measure(test, "register_accesses_per_1000_frames", register_accesses * 1000u / E1000_TEST_FRAMES);
+}
+
+/**
+ * @brief Frames sent while nothing is harvested fill the receive ring to one frame fewer than its
+ *        descriptors, and a frame sent once they are released comes back.
+ *
+ * @details The 17 frames sent past what the ring holds are lost: QEMU drops them before the controller
+ *          sees them, uncounted, where a controller keeps them in its FIFO or counts them in MPC. So the
+ *          frames read after the release are only required to be among those sent, in order.
+ */
+KERNEL_TEST(the_receive_ring_holds_one_frame_fewer_than_its_descriptors)
+{
+    if (!e1000_test_bring_up_in_loopback(test))
+        return;
+
+    const E1000Counters_t before = *e1000_counters();
+    InterruptRequestDeadline_t deadline;
+    uint32_t in_order = 0u;
+
+    interrupt_request_deadline_start(&deadline, E1000_TEST_LOOPBACK_MICROSECONDS);
+    const uint32_t sent = e1000_test_send_all(0u, E1000_TEST_OVERFILL, &deadline);
+    const uint32_t held = e1000_test_collect_at_least(E1000_RECEIVE_DESCRIPTORS - 1u, &deadline);
+
+    for (uint32_t frame = 0u; frame < held; ++frame)
+        in_order += e1000_test_frame_holds(&e1000_test_frames[frame], frame) ? 1u : 0u;
+    kernel_test_check(test, sent == E1000_TEST_OVERFILL, "the 80 frames are sent");
+    kernel_test_check(test, held == E1000_RECEIVE_DESCRIPTORS - 1u,
+                      "the receive ring holds 63 of them, one fewer than its 64 descriptors");
+    kernel_test_check(test, in_order == held, "the first ones sent, in order");
+    e1000_test_release(held);
+
+    uint32_t last_sequence = held - 1u;
+    uint32_t increasing = 0u;
+    uint32_t after_the_overfill = 0u;
+    bool came_back = false;
+
+    (void) e1000_receive_harvest();
+    (void) e1000_test_send(E1000_TEST_AFTER_RELEASE_SEQUENCE, 1u);
+    while (!came_back && !interrupt_request_deadline_passed(&deadline))
+    {
+        const uint32_t collected = e1000_test_collect_at_least(1u, &deadline);
+
+        for (uint32_t frame = 0u; frame < collected; ++frame)
+        {
+            const uint32_t sequence = e1000_test_sequence_of(&e1000_test_frames[frame]);
+
+            increasing += sequence > last_sequence ? 1u : 0u;
+            after_the_overfill += sequence < E1000_TEST_OVERFILL ? 1u : 0u;
+            came_back = came_back || sequence == E1000_TEST_AFTER_RELEASE_SEQUENCE;
+            last_sequence = sequence;
+        }
+        e1000_test_release(collected);
+        if (!came_back)
+            kernel_test_check(test, collected != 0u, "frames keep coming until the one sent after the release");
+        if (collected == 0u)
+            break;
+    }
+    (void) e1000_receive_harvest();
+
+    const E1000Counters_t *const after = e1000_counters();
+
+    kernel_test_check(test, came_back, "the frame sent after the release comes back");
+    kernel_test_check(test, increasing == after_the_overfill + (came_back ? 1u : 0u),
+                      "after the frames the controller kept, in the order they were sent");
+    kernel_test_check(test, after->receive_ring_full_harvests != before.receive_ring_full_harvests,
+                      "and the driver counts the harvests that left the 63 frames waiting");
+    kernel_test_measure(test, "frames_kept_past_the_ring", after_the_overfill);
+    kernel_test_measure(test, "missed", (uint32_t) (after->missed - before.missed));
+    kernel_test_measure(test, "no_buffers", (uint32_t) (after->no_buffers - before.no_buffers));
+}
+
+/**
+ * @brief 1024 frames bounce through the loopback with no byte written per frame, so that a count of
+ *        e1000_test_bounce measures the frames' path.
+ *
+ * @details `tools/instructions.sh --inside e1000_test_bounce --times 1 --append lpl.test=e1000.*bounce*` on a
+ *          debug kernel counts it. Every transmit buffer holds a frame of 60 bytes to the controller itself,
+ *          written once before the loop.
+ */
+KERNEL_TEST(frames_bounce_with_no_byte_written_per_frame)
+{
+    if (!e1000_test_bring_up_in_loopback(test))
+        return;
+
+    for (uint32_t slot = 0u; slot < E1000_TRANSMIT_DESCRIPTORS; ++slot)
+        (void) e1000_test_write_frame(e1000_transmit_buffer(e1000_transmit(), slot), 0u);
+
+    const uint32_t bytes = e1000_test_bounce(E1000_TEST_BOUNCE_FRAMES, E1000_TEST_BATCH);
+
+    kernel_test_check(test, bytes == E1000_TEST_BOUNCE_FRAMES * E1000_TEST_FRAME_LEAST_BYTES,
+                      "1024 frames of 60 bytes bounce");
+    e1000_test_drain();
+}
+
+/**
+ * @brief A kick hands the controller at most 63 frames, and a transmit slot comes back to the producer
+ *        only once the controller reported its frame sent; the 64th frame waits for the next kick.
+ *
+ * @details QEMU sends a kick's frames inside the write of its tail, so the test holds the tail back to see a
+ *          controller that has not read the descriptors yet, as a real one has not for a while.
+ */
+KERNEL_TEST(a_kick_hands_63_frames_and_a_slot_comes_back_once_reported)
+{
+    if (!e1000_test_bring_up_in_loopback(test))
+        return;
+
+    E1000Transmit_t *const transmit = e1000_transmit();
+    InterruptRequestDeadline_t deadline;
+    uint32_t published = 0u;
+    uint32_t in_order = 0u;
+    uint32_t first_slot = 0u;
+
+    for (uint32_t run = 0u; run < 2u && published < E1000_TRANSMIT_DESCRIPTORS; ++run)
+    {
+        const uint32_t reserved =
+            kernel_spsc_ring_reserve(&transmit->ring, E1000_TRANSMIT_DESCRIPTORS - published, &first_slot);
+
+        uint32_t described = 0u;
+
+        for (uint32_t frame = 0u; frame < reserved; ++frame)
+            described +=
+                e1000_transmit_describe(
+                    transmit, first_slot + frame,
+                    e1000_test_write_frame(e1000_transmit_buffer(transmit, first_slot + frame), published + frame)) ?
+                    1u :
+                    0u;
+        kernel_spsc_ring_publish(&transmit->ring, described);
+        published += described;
+    }
+
+    e1000_debug_hold_transmit_tail(true);
+    const uint32_t first_kick = e1000_transmit_kick();
+    const uint32_t while_unread = e1000_transmit_kick();
+    const uint32_t reserved_while_unread = kernel_spsc_ring_reserve(&transmit->ring, 1u, &first_slot);
+
+    e1000_debug_hold_transmit_tail(false);
+    interrupt_request_deadline_start(&deadline, E1000_TEST_LOOPBACK_MICROSECONDS);
+
+    const uint32_t came_back = e1000_test_collect_at_least(E1000_TRANSMIT_DESCRIPTORS - 1u, &deadline);
+
+    for (uint32_t frame = 0u; frame < came_back; ++frame)
+        in_order += e1000_test_frame_holds(&e1000_test_frames[frame], frame) ? 1u : 0u;
+    e1000_test_release(came_back);
+    (void) e1000_receive_harvest();
+
+    const uint32_t last_kick = e1000_transmit_kick();
+    const uint32_t last_came_back = e1000_test_collect_at_least(1u, &deadline);
+    const bool last_holds = last_came_back == 1u && e1000_test_frame_holds(&e1000_test_frames[0], published - 1u);
+
+    e1000_test_release(last_came_back);
+    (void) e1000_transmit_kick();
+
+    kernel_test_check(test, published == E1000_TRANSMIT_DESCRIPTORS, "all 64 transmit slots take a frame");
+    kernel_test_check(test, first_kick == E1000_TRANSMIT_DESCRIPTORS - 1u,
+                      "a kick hands the controller 63 of them, one fewer than its descriptors");
+    kernel_test_check(test, while_unread == 0u && reserved_while_unread == 0u,
+                      "while the controller has not reported them sent, no kick hands more and no slot comes back");
+    kernel_test_check(test, came_back == E1000_TRANSMIT_DESCRIPTORS - 1u && in_order == came_back,
+                      "once the tail moves, the 63 frames come back in order");
+    kernel_test_check(test, last_kick == 1u && last_holds, "and the next kick hands the 64th, which comes back too");
+    kernel_test_check(test, kernel_spsc_ring_reserve(&transmit->ring, 1u, &first_slot) == 1u,
+                      "and the slots come back to the producer once reported");
+    e1000_test_drain();
+}
+
+/**
+ * @brief A frame of a length out of range is not described, and its slot keeps its descriptor; a kick with
+ *        nothing new published hands nothing and writes no register.
+ */
+KERNEL_TEST(a_frame_of_a_length_out_of_range_is_not_described)
+{
+    if (!e1000_test_bring_up_in_loopback(test))
+        return;
+
+    E1000Transmit_t *const transmit = e1000_transmit();
+    const E1000Counters_t before = *e1000_counters();
+    uint32_t first_slot = 0u;
+
+    kernel_test_check(test, kernel_spsc_ring_reserve(&transmit->ring, 2u, &first_slot) == 2u,
+                      "a reserve of two slots is served");
+
+    const uint32_t descriptor_before = transmit->descriptors[first_slot].length_and_command;
+
+    kernel_test_check(test, !e1000_transmit_describe(transmit, first_slot, E1000_FRAME_MOST_BYTES + 1u),
+                      "a frame over 1514 bytes is not described");
+    kernel_test_check(test, !e1000_transmit_describe(transmit, first_slot, E1000_FRAME_LEAST_BYTES - 1u),
+                      "nor one shorter than its header");
+    kernel_test_check(test, transmit->descriptors[first_slot].length_and_command == descriptor_before,
+                      "and the slot keeps the descriptor it had");
+    kernel_test_check(test,
+                      e1000_transmit_describe(transmit, first_slot, E1000_FRAME_LEAST_BYTES) &&
+                          e1000_transmit_describe(transmit, first_slot, E1000_FRAME_MOST_BYTES),
+                      "where 14 and 1514 bytes are described");
+    kernel_test_check(test, e1000_transmit_kick() == 0u, "a kick with nothing published hands nothing");
+
+    const E1000Counters_t *const after = e1000_counters();
+
+    kernel_test_check(test,
+                      after->transmit_doorbells == before.transmit_doorbells &&
+                          after->frames_sent == before.frames_sent && after->register_writes == before.register_writes,
+                      "and writes no register");
+
+    InterruptRequestDeadline_t deadline;
+
+    kernel_test_check(
+        test,
+        e1000_transmit_describe(transmit, first_slot,
+                                e1000_test_write_frame(e1000_transmit_buffer(transmit, first_slot), 0u)) &&
+            e1000_transmit_describe(transmit, first_slot + 1u,
+                                    e1000_test_write_frame(e1000_transmit_buffer(transmit, first_slot + 1u), 1u)),
+        "the two slots then take their frames");
+    kernel_spsc_ring_publish(&transmit->ring, 2u);
+    kernel_test_check(test, e1000_transmit_kick() == 2u, "and a kick hands both");
+    interrupt_request_deadline_start(&deadline, E1000_TEST_LOOPBACK_MICROSECONDS);
+    kernel_test_check(test,
+                      e1000_test_collect_at_least(2u, &deadline) == 2u &&
+                          e1000_test_frame_holds(&e1000_test_frames[0], 0u) &&
+                          e1000_test_frame_holds(&e1000_test_frames[1], 1u),
+                      "and both come back");
+    e1000_test_drain();
+}
+
+/**
+ * @brief With the loopback turned off, a frame the controller sends to its own address does not come back.
+ */
+KERNEL_TEST(without_the_loopback_a_frame_sent_does_not_come_back)
+{
+    if (!e1000_test_bring_up_in_loopback(test))
+        return;
+
+    InterruptRequestDeadline_t negotiation;
+    InterruptRequestDeadline_t silence;
+
+    kernel_test_check(test, e1000_set_loopback(false), "the PHY leaves the loopback");
+    kernel_test_check(test, !e1000_state()->loopback, "and the state says so");
+    e1000_test_loopback_carries_frames = false;
+    interrupt_request_deadline_start(&negotiation, E1000_TEST_LOOPBACK_MICROSECONDS);
+    while (!e1000_link_up() && !interrupt_request_deadline_passed(&negotiation))
+        e1000_test_wait_a_little();
+    kernel_test_check(test, e1000_state()->link_up,
+                      "the link comes back up once the PHY negotiated, so that a frame would come back if it could");
+    kernel_test_check(test, e1000_test_send(7u, 1u) == 1u, "a frame to the controller's own address is sent");
+    interrupt_request_deadline_start(&silence, E1000_TEST_SILENCE_MICROSECONDS);
+    kernel_test_check(test, e1000_test_collect_at_least(1u, &silence) == 0u, "and it does not come back");
+    e1000_test_drain();
+}
+
+/**
+ * @brief A second bring-up drops the frames not released and starts both rings and the counters over.
+ */
+KERNEL_TEST(a_second_bring_up_starts_both_rings_over)
+{
+    if (!e1000_test_bring_up_in_loopback(test))
+        return;
+
+    InterruptRequestDeadline_t deadline;
+
+    interrupt_request_deadline_start(&deadline, E1000_TEST_LOOPBACK_MICROSECONDS);
+    kernel_test_check(test, e1000_test_send_all(0u, 3u, &deadline) == 3u, "three frames are sent");
+    kernel_test_check(test, e1000_test_collect_at_least(3u, &deadline) == 3u, "and wait in the receive ring");
+
+    e1000_test_loopback_carries_frames = false;
+    const bool ready = e1000_initialize();
+    const E1000Counters_t *const counters = e1000_counters();
+
+    kernel_test_check(test, ready && e1000_state()->controller_ready, "a second bring-up is ready");
+    kernel_test_check(test, !e1000_state()->loopback, "and takes the PHY out of loopback");
+
+    uint16_t phy_specific_control = 0u;
+
+    kernel_test_check(
+        test,
+        e1000_test_first_phy_specific_control_read &&
+            e1000_debug_read_physical_layer_register(E1000_TEST_PHY_SPECIFIC_CONTROL, &phy_specific_control) &&
+            phy_specific_control == e1000_test_first_phy_specific_control,
+        "and gives it back the specific control it had at the first bring-up");
+    kernel_test_measure_hexadecimal(test, "phy_specific_control", phy_specific_control);
+    kernel_test_check(test, e1000_test_collect() == 0u, "the frames not released are gone");
+    kernel_test_check(test,
+                      counters->frames_sent == 0u && counters->frames_received == 0u &&
+                          counters->transmit_doorbells == 0u && counters->receive_doorbells == 0u,
+                      "and the counters start from zero again");
+    kernel_test_check(test, counters->good_received == 0u && counters->good_transmitted == 0u,
+                      "and so do the controller's, which counted the three frames before it");
+}
+
+/**
+ * @brief A bring-up takes the PHY out of a loopback it did not set itself, as an earlier kernel may leave it.
+ *
+ * @details The PHY keeps its registers across the controller's reset, so a warm reboot can meet it in
+ *          loopback with nothing saved to give back: the bring-up then clears the bit alone.
+ */
+KERNEL_TEST(a_bring_up_takes_the_phy_out_of_a_loopback_it_did_not_set)
+{
+    if (!e1000_test_bring_up_in_loopback(test))
+        return;
+
+    e1000_debug_forget_loopback();
+    e1000_test_loopback_carries_frames = false;
+
+    const bool ready = e1000_initialize();
+
+    kernel_test_check(test, ready && e1000_state()->controller_ready, "the bring-up is ready");
+    kernel_test_check(test, !e1000_state()->loopback, "and its PHY reads out of loopback");
+    if (e1000_state()->failure != NULL)
+        kernel_test_note(test, e1000_state()->failure);
+}
