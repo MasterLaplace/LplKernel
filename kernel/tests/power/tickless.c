@@ -291,8 +291,9 @@ static TicklessTestHeldChoice_t tickless_test_sleep_with_the_choice_held(uint32_
  *        core woke: a lead before its latest, and when the latency passed the lead, the plan's overshoot holds how
  *        late; the time it counts asleep stays within the window and its lateness. A sleep counts from before it
  *        chooses its depth: one whose choice is held past its window's close, as TCG's first translation of the choice
- *        may take (#299), counts the hold asleep, or, when its window was due before it began, serves the duty at once
- *        and only then chooses; either way the hold lies between the start of the count and the sleep's return.
+ *        may take (#299), counts the hold asleep, or, when its window was due before it began, serves the duty at the
+ *        cycle it began, once the held choice is made; either way the hold lies between the start of the count and the
+ *        sleep's return.
  *
  * @details The start of the count is not read against the test's own reading of the counter before the sleep: on a
  *          loaded host the processor may be held for milliseconds between the two, and a lead learned on that host may
