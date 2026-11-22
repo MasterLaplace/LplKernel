@@ -1,4 +1,5 @@
 #include <kernel/net/byte_order.h>
+#include <kernel/net/checksum.h>
 #include <kernel/net/ethernet.h>
 #include <kernel/net/icmp.h>
 #include <kernel/net/interface.h>
@@ -264,6 +265,97 @@ kernel_network_interface_take_control_message(KernelNetworkInterface_t *interfac
 }
 
 /**
+ * @brief The port bound as @p port, or NULL.
+ */
+static KernelNetworkPortBinding_t *kernel_network_interface_port(KernelNetworkInterface_t *interface, uint16_t port)
+{
+    for (uint32_t place = 0u; place < KERNEL_NETWORK_INTERFACE_PORTS; ++place)
+        if (interface->ports[place].port == port)
+            return &interface->ports[place];
+    return NULL;
+}
+
+/**
+ * @brief Lends @p datagram where the card wrote it, its frame held until the consumer releases it.
+ */
+static KernelNetworkInterfaceFate_t kernel_network_interface_lend(KernelNetworkInterface_t *interface,
+                                                                  const KernelNetworkDatagram_t *datagram)
+{
+    uint32_t slot = 0u;
+
+    if (kernel_spsc_ring_reserve(&interface->lent_ring, 1u, &slot) == 0u)
+    {
+        kernel_spsc_ring_count_rejected(&interface->lent_ring, 1u);
+        return KERNEL_NETWORK_INTERFACE_DATAGRAM_LENT_FULL;
+    }
+    interface->lent[slot] = *datagram;
+    kernel_spsc_ring_publish(&interface->lent_ring, 1u);
+    return KERNEL_NETWORK_INTERFACE_DATAGRAM_LENT;
+}
+
+/**
+ * @brief Copies @p datagram into @p port's own ring.
+ */
+static KernelNetworkInterfaceFate_t kernel_network_interface_copy(const KernelNetworkPortBinding_t *port,
+                                                                  const KernelNetworkDatagram_t *datagram)
+{
+    const KernelNetworkPortRing_t *const copies = &port->copies;
+    uint32_t slot = 0u;
+
+    if (datagram->payload_bytes > copies->buffer_bytes)
+        return KERNEL_NETWORK_INTERFACE_DATAGRAM_TOO_LONG_FOR_PORT;
+    if (kernel_spsc_ring_reserve(copies->ring, 1u, &slot) == 0u)
+    {
+        kernel_spsc_ring_count_rejected(copies->ring, 1u);
+        return KERNEL_NETWORK_INTERFACE_DATAGRAM_PORT_FULL;
+    }
+
+    uint8_t *const copy = copies->buffers + slot * copies->buffer_bytes;
+
+    memcpy(copy, datagram->payload, datagram->payload_bytes);
+    copies->datagrams[slot] = *datagram;
+    copies->datagrams[slot].payload = copy;
+    kernel_spsc_ring_publish(copies->ring, 1u);
+    return KERNEL_NETWORK_INTERFACE_DATAGRAM_COPIED;
+}
+
+/**
+ * @brief The fate of a UDP datagram sent to the interface: delivered to its port, lent or copied, or refused.
+ */
+static KernelNetworkInterfaceFate_t
+kernel_network_interface_take_user_datagram(KernelNetworkInterface_t *interface,
+                                            const KernelInternetProtocolPacket_t *packet)
+{
+    KernelUserDatagram_t datagram;
+    const KernelUserDatagramStatus_t status = kernel_user_datagram_parse(packet, &datagram);
+
+    if (status == KERNEL_USER_DATAGRAM_TRUNCATED || status == KERNEL_USER_DATAGRAM_BAD_LENGTH)
+        return KERNEL_NETWORK_INTERFACE_USER_DATAGRAM_MALFORMED;
+    if (status == KERNEL_USER_DATAGRAM_BAD_CHECKSUM)
+        return KERNEL_NETWORK_INTERFACE_USER_DATAGRAM_BAD_CHECKSUM;
+
+    const KernelNetworkPortBinding_t *const port =
+        datagram.destination_port == 0u ? NULL : kernel_network_interface_port(interface, datagram.destination_port);
+
+    if (port == NULL)
+        return KERNEL_NETWORK_INTERFACE_USER_DATAGRAM_PORT_UNBOUND;
+    if (status == KERNEL_USER_DATAGRAM_NO_CHECKSUM && !port->without_checksum)
+        return KERNEL_NETWORK_INTERFACE_USER_DATAGRAM_CHECKSUM_ABSENT;
+
+    const KernelNetworkDatagram_t delivered = {.payload = datagram.payload,
+                                               .payload_bytes = datagram.payload_bytes,
+                                               .payload_sum = datagram.payload_sum,
+                                               .source_address = packet->source,
+                                               .source_port = datagram.source_port,
+                                               .destination_port = datagram.destination_port,
+                                               .arrival = interface->arrival};
+
+    if (port->delivery == KERNEL_NETWORK_DELIVERY_LENT)
+        return kernel_network_interface_lend(interface, &delivered);
+    return kernel_network_interface_copy(port, &delivered);
+}
+
+/**
  * @brief The fate of an IPv4 packet: what is the interface's handed to its protocol.
  *
  * @return Its fate, or KERNEL_NETWORK_INTERFACE_FATES when its parse refused it, then counted by status.
@@ -286,6 +378,8 @@ static KernelNetworkInterfaceFate_t kernel_network_interface_take_internet_proto
         return KERNEL_NETWORK_INTERFACE_INTERNET_PROTOCOL_LINK_BROADCAST;
     if (!kernel_internet_protocol_source_is_acceptable(packet.source, interface->address, interface->netmask))
         return KERNEL_NETWORK_INTERFACE_INTERNET_PROTOCOL_SOURCE_REFUSED;
+    if (packet.protocol == KERNEL_INTERNET_PROTOCOL_USER_DATAGRAM)
+        return kernel_network_interface_take_user_datagram(interface, &packet);
     if (packet.protocol != KERNEL_INTERNET_PROTOCOL_CONTROL_MESSAGE)
         return KERNEL_NETWORK_INTERFACE_INTERNET_PROTOCOL_UNHANDLED;
     return kernel_network_interface_take_control_message(interface, frame, &packet);
@@ -316,6 +410,69 @@ static KernelNetworkInterfaceFate_t kernel_network_interface_take_frame(KernelNe
 }
 
 /**
+ * @brief Gives the card back every frame taken from its oldest held up to the oldest a lent datagram lies in.
+ */
+static void kernel_network_interface_give_back(KernelNetworkInterface_t *interface)
+{
+    uint32_t oldest_lent = 0u;
+    uint32_t held_from = interface->receive_released + interface->receive_taken;
+
+    if (kernel_spsc_ring_peek(&interface->lent_ring, 1u, &oldest_lent) == 1u)
+        held_from = interface->lent[oldest_lent].arrival;
+
+    const uint32_t frames = held_from - interface->receive_released;
+
+    kernel_spsc_ring_release(kernel_network_interface_queue(interface)->receive, frames);
+    interface->receive_released = held_from;
+    interface->receive_taken -= frames;
+}
+
+/**
+ * @brief Whether @p binding can be bound: a port other than 0, a known delivery, and a copied port's whole ring.
+ */
+static bool kernel_network_interface_binding_is_sound(const KernelNetworkPortBinding_t *binding)
+{
+    const KernelNetworkPortRing_t *const copies = &binding->copies;
+
+    if (binding->port == 0u)
+        return false;
+    if (binding->delivery == KERNEL_NETWORK_DELIVERY_LENT)
+        return true;
+    return binding->delivery == KERNEL_NETWORK_DELIVERY_COPIED && copies->ring != NULL && copies->datagrams != NULL &&
+           copies->buffers != NULL && copies->buffer_bytes != 0u;
+}
+
+/**
+ * @brief The checksum @p datagram carries, the payload at @p payload summed when the caller gave no sum.
+ *
+ * @return false when its checksum is to be none and its source port is not bound to send none.
+ */
+static bool kernel_network_interface_datagram_checksum(KernelNetworkInterface_t *interface,
+                                                       const KernelNetworkDatagramOut_t *datagram,
+                                                       const uint8_t *payload, uint16_t *out_checksum)
+{
+    uint32_t payload_sum = datagram->payload_sum;
+
+    if (datagram->checksum == KERNEL_NETWORK_CHECKSUM_NONE)
+    {
+        const KernelNetworkPortBinding_t *const port = kernel_network_interface_port(interface, datagram->source_port);
+
+        *out_checksum = 0u;
+        return datagram->source_port != 0u && port != NULL && port->without_checksum;
+    }
+    if (datagram->checksum != KERNEL_NETWORK_CHECKSUM_FROM_SUM)
+    {
+        payload_sum = kernel_internet_checksum_add(0u, payload, datagram->payload_bytes);
+        ++interface->counters.checksums_computed;
+    }
+    *out_checksum = kernel_user_datagram_checksum(
+        kernel_user_datagram_pseudo_header_sum(interface->address, datagram->destination_address,
+                                               KERNEL_USER_DATAGRAM_HEADER_BYTES + datagram->payload_bytes),
+        datagram->source_port, datagram->destination_port, datagram->payload_bytes, payload_sum);
+    return true;
+}
+
+/**
  * @brief Why @p device cannot carry an interface, or KERNEL_NETWORK_INTERFACE_READY.
  */
 static KernelNetworkInterfaceSetup_t kernel_network_interface_check_device(const KernelNetworkDevice_t *device)
@@ -339,9 +496,8 @@ static KernelNetworkInterfaceSetup_t kernel_network_interface_check_device(const
 }
 
 KernelNetworkInterfaceSetup_t kernel_network_interface_initialize(KernelNetworkInterface_t *interface,
-                                                                  KernelNetworkDevice_t *device, uint32_t address,
-                                                                  uint32_t netmask, uint32_t gateway,
-                                                                  uint32_t cache_lifetime)
+                                                                  KernelNetworkDevice_t *device,
+                                                                  const KernelNetworkInterfaceConfig_t *config)
 {
     const KernelNetworkInterfaceSetup_t setup = kernel_network_interface_check_device(device);
 
@@ -349,10 +505,12 @@ KernelNetworkInterfaceSetup_t kernel_network_interface_initialize(KernelNetworkI
         return setup;
     memset(interface, 0, sizeof(*interface));
     interface->device = device;
-    interface->address = address;
-    interface->netmask = netmask;
-    interface->gateway = gateway;
-    kernel_address_resolution_cache_initialize(&interface->cache, cache_lifetime);
+    interface->address = config->address;
+    interface->netmask = config->netmask;
+    interface->gateway = config->gateway;
+    interface->request_interval = config->request_interval;
+    kernel_address_resolution_cache_initialize(&interface->cache, config->cache_lifetime);
+    (void) kernel_spsc_ring_initialize(&interface->lent_ring, KERNEL_NETWORK_INTERFACE_LENT_DATAGRAMS);
     return KERNEL_NETWORK_INTERFACE_READY;
 }
 
@@ -367,10 +525,14 @@ uint32_t kernel_network_interface_poll(KernelNetworkInterface_t *interface, uint
     (void) card.operations->harvest(device, 0u);
 
     const uint32_t ready = kernel_spsc_ring_ready_count(queue.receive);
+    const uint32_t first = interface->receive_taken;
 
-    for (uint32_t frame = 0u; frame < ready; ++frame)
+    for (uint32_t frame = first; frame < ready; ++frame)
     {
         const uint32_t slot = kernel_spsc_ring_slot_at(queue.receive, frame);
+
+        interface->arrival = interface->receive_released + frame;
+
         const KernelNetworkInterfaceFate_t fate =
             kernel_network_interface_take_frame(interface, kernel_network_receive_bytes(&card, &queue, slot),
                                                 kernel_network_receive_length(&queue, slot), now);
@@ -379,9 +541,10 @@ uint32_t kernel_network_interface_poll(KernelNetworkInterface_t *interface, uint
         if (fate != KERNEL_NETWORK_INTERFACE_FATES)
             ++interface->counters.fates[fate];
     }
-    kernel_spsc_ring_release(queue.receive, ready);
+    interface->receive_taken = ready;
+    kernel_network_interface_give_back(interface);
     (void) card.operations->kick(device, 0u);
-    return ready;
+    return ready - first;
 }
 
 KernelNetworkInterfaceRequest_t kernel_network_interface_request_address(KernelNetworkInterface_t *interface,
@@ -433,4 +596,104 @@ bool kernel_network_interface_find_station(const KernelNetworkInterface_t *inter
     }
     return kernel_address_resolution_cache_find(
         &interface->cache, kernel_network_interface_next_hop(interface, destination), now, out_station);
+}
+
+KernelNetworkInterfaceBind_t kernel_network_interface_bind(KernelNetworkInterface_t *interface,
+                                                           const KernelNetworkPortBinding_t *binding)
+{
+    if (!kernel_network_interface_binding_is_sound(binding))
+        return KERNEL_NETWORK_INTERFACE_BIND_BAD_BINDING;
+    if (kernel_network_interface_port(interface, binding->port) != NULL)
+        return KERNEL_NETWORK_INTERFACE_BIND_PORT_TAKEN;
+
+    KernelNetworkPortBinding_t *const place = kernel_network_interface_port(interface, 0u);
+
+    if (place == NULL)
+        return KERNEL_NETWORK_INTERFACE_BIND_PORTS_FULL;
+    *place = *binding;
+    return KERNEL_NETWORK_INTERFACE_BIND_BOUND;
+}
+
+uint32_t kernel_network_interface_lent_count(KernelNetworkInterface_t *interface)
+{
+    return kernel_spsc_ring_ready_count(&interface->lent_ring);
+}
+
+const KernelNetworkDatagram_t *kernel_network_interface_lent_at(const KernelNetworkInterface_t *interface,
+                                                                uint32_t offset)
+{
+    return &interface->lent[kernel_spsc_ring_slot_at(&interface->lent_ring, offset)];
+}
+
+uint32_t kernel_network_interface_release_lent(KernelNetworkInterface_t *interface, uint32_t count)
+{
+    const uint32_t lent = kernel_spsc_ring_ready_count(&interface->lent_ring);
+    const uint32_t released = count < lent ? count : lent;
+
+    kernel_spsc_ring_release(&interface->lent_ring, released);
+    kernel_network_interface_give_back(interface);
+    return released;
+}
+
+uint8_t *kernel_network_interface_reserve_datagram(KernelNetworkInterface_t *interface, uint32_t *out_slot,
+                                                   uint32_t *out_room)
+{
+    uint8_t *const frame = kernel_network_interface_reserve_frame(interface, out_slot);
+
+    if (frame == NULL)
+        return NULL;
+    interface->datagram_reserved = true;
+    interface->reserved_slot = *out_slot;
+    *out_room = interface->device->frame_most_bytes - KERNEL_NETWORK_INTERFACE_HEADERS_BYTES;
+    return frame + KERNEL_NETWORK_INTERFACE_HEADERS_BYTES;
+}
+
+KernelNetworkInterfaceSend_t kernel_network_interface_send_datagram(KernelNetworkInterface_t *interface, uint32_t slot,
+                                                                    const KernelNetworkDatagramOut_t *datagram,
+                                                                    uint32_t now)
+{
+    KernelNetworkDevice_t *const device = interface->device;
+    KernelNetworkQueue_t *const queue = kernel_network_interface_queue(interface);
+    const uint32_t length = KERNEL_NETWORK_INTERFACE_HEADERS_BYTES + datagram->payload_bytes;
+    uint32_t next_slot = 0u;
+    uint8_t station[KERNEL_NETWORK_ADDRESS_BYTES];
+    uint16_t checksum = 0u;
+    KernelNetworkInterfaceSend_t result = KERNEL_NETWORK_INTERFACE_SEND_SENT;
+    const bool reserved = interface->datagram_reserved && interface->reserved_slot == slot &&
+                          kernel_spsc_ring_reserve(queue->transmit, 1u, &next_slot) == 1u && next_slot == slot;
+    uint8_t *const frame = kernel_network_transmit_buffer(device, queue, slot);
+
+    interface->datagram_reserved = false;
+    if (!reserved)
+        result = KERNEL_NETWORK_INTERFACE_SEND_STALE_SLOT;
+    else if (length > device->frame_most_bytes)
+        result = KERNEL_NETWORK_INTERFACE_SEND_TOO_LONG;
+    else if (kernel_network_interface_is_unreachable(datagram->destination_address))
+        result = KERNEL_NETWORK_INTERFACE_SEND_UNREACHABLE;
+    else if (!kernel_network_interface_find_station(interface, datagram->destination_address, now, station))
+    {
+        if (!kernel_address_resolution_cache_is_pending(
+                &interface->cache, kernel_network_interface_next_hop(interface, datagram->destination_address), now,
+                interface->request_interval))
+            (void) kernel_network_interface_request_address(interface, datagram->destination_address, now);
+        result = KERNEL_NETWORK_INTERFACE_SEND_NO_STATION;
+    }
+    else if (!kernel_network_interface_datagram_checksum(interface, datagram,
+                                                         frame + KERNEL_NETWORK_INTERFACE_HEADERS_BYTES, &checksum))
+        result = KERNEL_NETWORK_INTERFACE_SEND_ZERO_CHECKSUM_REFUSED;
+    else
+    {
+        kernel_ethernet_write_header(frame, station, device->address, KERNEL_ETHERNET_TYPE_INTERNET_PROTOCOL_VERSION_4);
+        kernel_internet_protocol_write_header(frame + KERNEL_ETHERNET_HEADER_BYTES, interface->address,
+                                              datagram->destination_address, KERNEL_INTERNET_PROTOCOL_USER_DATAGRAM,
+                                              KERNEL_USER_DATAGRAM_HEADER_BYTES + datagram->payload_bytes,
+                                              interface->next_identification++);
+        kernel_user_datagram_write_header(frame + KERNEL_ETHERNET_HEADER_BYTES + KERNEL_INTERNET_PROTOCOL_HEADER_BYTES,
+                                          datagram->source_port, datagram->destination_port, datagram->payload_bytes,
+                                          checksum);
+        if (!kernel_network_interface_publish_frame(interface, slot, frame, length))
+            result = KERNEL_NETWORK_INTERFACE_SEND_REFUSED;
+    }
+    ++interface->counters.sends[result];
+    return result;
 }

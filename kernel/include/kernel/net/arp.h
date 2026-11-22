@@ -157,6 +157,19 @@ extern bool kernel_address_resolution_cache_find(const KernelAddressResolutionCa
                                                  uint32_t now, uint8_t *out_station);
 
 /**
+ * @brief Whether @p address was asked for less than @p interval ago and is still unresolved: a reply is on its way,
+ *        or soon to be given up on.
+ *
+ * @param cache    The cache.
+ * @param address  The IPv4 address.
+ * @param now      The caller's time.
+ * @param interval How long a request is waited for.
+ * @return true while another request for @p address would come too soon.
+ */
+extern bool kernel_address_resolution_cache_is_pending(const KernelAddressResolutionCache_t *cache, uint32_t address,
+                                                       uint32_t now, uint32_t interval);
+
+/**
  * @brief Frees every entry learned, or asked for, a lifetime ago or more.
  *
  * @details Called once a batch, it keeps an entry nobody looks at from coming back to life when the caller's

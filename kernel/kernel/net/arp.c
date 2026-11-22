@@ -149,6 +149,19 @@ bool kernel_address_resolution_cache_find(const KernelAddressResolutionCache_t *
     return false;
 }
 
+bool kernel_address_resolution_cache_is_pending(const KernelAddressResolutionCache_t *cache, uint32_t address,
+                                                uint32_t now, uint32_t interval)
+{
+    for (uint32_t entry = 0u; entry < KERNEL_ADDRESS_RESOLUTION_CACHE_ENTRIES; ++entry)
+    {
+        const KernelAddressResolutionEntry_t *const candidate = &cache->entries[entry];
+
+        if (address != 0u && candidate->address == address)
+            return !candidate->resolved && now - candidate->since < interval;
+    }
+    return false;
+}
+
 void kernel_address_resolution_cache_expire(KernelAddressResolutionCache_t *cache, uint32_t now)
 {
     for (uint32_t entry = 0u; entry < KERNEL_ADDRESS_RESOLUTION_CACHE_ENTRIES; ++entry)
