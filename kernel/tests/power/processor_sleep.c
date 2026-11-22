@@ -808,6 +808,39 @@ KERNEL_TEST(the_port_sleep_reads_its_port_before_the_step_that_enables_interrupt
                       "movl 4(%esp), %edx; inb %dx, %al; sti; nop; ret");
 }
 
+/** How far into the timed port sleep its IN is looked for: it saves a register and loads two arguments first. */
+#define PROCESSOR_SLEEP_TEST_TIMED_SLEEP_BYTES 40u
+
+/**
+ * @brief The timed port sleep reads its port between two counter reads, each after an LFENCE, then enables interrupts
+ *        and lets a pending one in before it returns: LFENCE, RDTSC, IN, LFENCE, RDTSC, POP, STI, NOP, RET, so that
+ *        neither an interrupt nor the host after the read lengthens it.
+ */
+KERNEL_TEST(the_timed_port_sleep_reads_its_port_between_two_fenced_counter_reads_before_enabling_interrupts)
+{
+    static const uint8_t lfence_rdtsc[] = {0x0Fu, 0xAEu, 0xE8u, 0x0Fu, 0x31u};
+    static const uint8_t after_the_read[] = {0x0Fu, 0xAEu, 0xE8u, 0x0Fu, 0x31u, 0x5Bu, PROCESSOR_SLEEP_TEST_STI,
+                                             0x90u, 0xC3u};
+    const uint8_t *routine = (const uint8_t *) (uintptr_t) asmutils_timed_input_byte_then_enable_interrupts;
+    uint32_t first = PROCESSOR_SLEEP_TEST_TIMED_SLEEP_BYTES;
+    uint32_t in = PROCESSOR_SLEEP_TEST_TIMED_SLEEP_BYTES;
+
+    for (uint32_t offset = 0u; offset + sizeof(lfence_rdtsc) < PROCESSOR_SLEEP_TEST_TIMED_SLEEP_BYTES; ++offset)
+    {
+        if (first == PROCESSOR_SLEEP_TEST_TIMED_SLEEP_BYTES &&
+            memcmp(routine + offset, lfence_rdtsc, sizeof(lfence_rdtsc)) == 0)
+            first = offset;
+        if (in == PROCESSOR_SLEEP_TEST_TIMED_SLEEP_BYTES && first != PROCESSOR_SLEEP_TEST_TIMED_SLEEP_BYTES &&
+            routine[offset] == 0xECu)
+            in = offset;
+    }
+    kernel_test_check(test, first < in, "LFENCE; RDTSC before the IN");
+    kernel_test_check(test,
+                      in < PROCESSOR_SLEEP_TEST_TIMED_SLEEP_BYTES - sizeof(after_the_read) &&
+                          memcmp(routine + in + 1u, after_the_read, sizeof(after_the_read)) == 0,
+                      "LFENCE; RDTSC right after it, then popl %ebx; sti; nop; ret");
+}
+
 /**
  * @brief A port depth found not to stop the processor is refused, and the active depth lowered to the deepest left;
  *        C1, a depth no longer available and an MWAIT depth are never refused.

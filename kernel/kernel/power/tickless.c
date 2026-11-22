@@ -28,6 +28,8 @@ static uint32_t tickless_probed_depths = 0u;
 static uint32_t tickless_wakes_planned_on_a_published_lead = 0u;
 static uint32_t tickless_wakes_planned_on_the_bound = 0u;
 static uint32_t tickless_unstopped_probe_ranks[PROCESSOR_SLEEP_DEPTHS] = {0u};
+static uint32_t tickless_stopped_probe_ranks[PROCESSOR_SLEEP_DEPTHS] = {0u};
+static uint32_t tickless_probe_retakes = 0u;
 static uint64_t tickless_residency_cycles[PROCESSOR_SLEEP_DEPTHS] = {0u};
 static KernelSleepCost_t tickless_sleep_costs[PROCESSOR_SLEEP_DEPTHS] = {{0}};
 static bool tickless_sleep_costs_settled = false;
@@ -129,6 +131,46 @@ static void tickless_count_ticks_avoided(uint32_t slept)
     interrupt_request_advance_tick_count(ticks);
 }
 
+#if defined(LPL_KERNEL_ENABLE_SMOKE_TESTS)
+static uint64_t tickless_probe_hold_before_the_read_cycles = 0u;
+static uint64_t tickless_probe_hold_after_the_read_cycles = 0u;
+
+/**
+ * @brief Spins @p cycles of the timestamp counter.
+ */
+static void tickless_spin_for(uint64_t cycles)
+{
+    for (const uint64_t until = asmutils_read_timestamp_counter() + cycles; asmutils_read_timestamp_counter() < until;)
+        asmutils_pause();
+}
+
+/**
+ * @brief Spins the hold a debug kernel's test asked of every probe sleep before its read.
+ */
+static void tickless_hold_before_the_probe_read_when_asked(void)
+{
+    tickless_spin_for(tickless_probe_hold_before_the_read_cycles);
+}
+
+/**
+ * @brief Spins the hold a debug kernel's test asked of every probe sleep once its read returned.
+ */
+static void tickless_hold_after_the_probe_read_when_asked(void)
+{
+    tickless_spin_for(tickless_probe_hold_after_the_read_cycles);
+}
+#else
+/**
+ * @brief Holds nothing: only a debug kernel's tests hold a probe sleep.
+ */
+static inline void tickless_hold_before_the_probe_read_when_asked(void) {}
+
+/**
+ * @brief Holds nothing: only a debug kernel's tests hold a probe sleep.
+ */
+static inline void tickless_hold_after_the_probe_read_when_asked(void) {}
+#endif
+
 /**
  * @brief Arms the local timer at @p armed and sleeps until an interrupt at @p depth, interrupts masked from the arming
  *        to the sleep: a deadline that passes while it is armed ends the sleep.
@@ -136,10 +178,13 @@ static void tickless_count_ticks_avoided(uint32_t slept)
  * @param out_after   Receives the cycle the core woke at, when it slept.
  * @param out_outcome Receives how the processor slept, when it did.
  * @param depth       The depth asked (processor_sleep_until_interrupt_at).
+ * @param out_read    Receives when a port read began and returned, for a probe; NULL not to time it.
  * @return How the sleep ended.
  */
-__attribute__((always_inline)) static inline TicklessWake_t
-tickless_sleep_until(uint64_t armed, uint64_t *out_after, ProcessorSleepOutcome_t *out_outcome, uint32_t depth)
+__attribute__((always_inline)) static inline TicklessWake_t tickless_sleep_until(uint64_t armed, uint64_t *out_after,
+                                                                                 ProcessorSleepOutcome_t *out_outcome,
+                                                                                 uint32_t depth,
+                                                                                 ProcessorSleepRead_t *out_read)
 {
     const uint32_t flags = asmutils_save_flags_and_disable_interrupts();
     if (!advanced_pic_timer_backend_arm_at_cycle(armed))
@@ -148,7 +193,13 @@ tickless_sleep_until(uint64_t armed, uint64_t *out_after, ProcessorSleepOutcome_
         return TICKLESS_WAKE_UNARMED;
     }
 
-    *out_outcome = processor_sleep_until_interrupt_at(depth);
+    if (out_read == NULL)
+        *out_outcome = processor_sleep_until_interrupt_at(depth);
+    else
+    {
+        *out_outcome = processor_sleep_until_interrupt_at_timing_its_read(depth, out_read);
+        tickless_hold_after_the_probe_read_when_asked();
+    }
     const uint64_t after = asmutils_read_timestamp_counter();
     const bool woken_early = advanced_pic_timer_backend_disarm(after) != 0u;
     asmutils_restore_flags(flags);
@@ -231,7 +282,9 @@ static bool tickless_probe_sleep(uint32_t depth, uint64_t length, uint64_t *out_
     const uint64_t armed = asmutils_read_timestamp_counter() + length;
     uint64_t after = armed;
     ProcessorSleepOutcome_t outcome = {PROCESSOR_SLEEP_NONE, false, depth};
-    const TicklessWake_t wake = tickless_sleep_until(armed, &after, &outcome, depth);
+    ProcessorSleepRead_t read = {0u, 0u};
+    tickless_hold_before_the_probe_read_when_asked();
+    const TicklessWake_t wake = tickless_sleep_until(armed, &after, &outcome, depth, &read);
     const bool entered = outcome.depth == depth;
 
     *out_timer_ended = entered && wake == TICKLESS_WAKE_TIMER;
@@ -244,9 +297,9 @@ static bool tickless_probe_sleep(uint32_t depth, uint64_t length, uint64_t *out_
  *        one more sleep of KERNEL_TICKLESS_CONFIRMATION_MICROSECONDS deciding when @ref kernel_tickless_judge_a_probe
  *        asks.
  */
-static bool tickless_probe_refuses(uint32_t depth, uint32_t unstopped_ranks)
+static bool tickless_probe_refuses(uint32_t depth, uint32_t stopped_ranks)
 {
-    const KernelTicklessProbeVerdict_t verdict = kernel_tickless_judge_a_probe(unstopped_ranks);
+    const KernelTicklessProbeVerdict_t verdict = kernel_tickless_judge_a_probe(stopped_ranks);
     uint64_t latency = 0u;
     bool timer_ended = false;
 
@@ -289,7 +342,8 @@ static uint32_t tickless_probe(uint32_t depth)
         else if (timer_ended)
             latencies[taught++] = latency;
     }
-    const bool refused = tickless_probe_refuses(depth, unstopped_ranks);
+    const uint32_t stopped_ranks = ~unstopped_ranks & ((1u << KERNEL_TICKLESS_PROBES) - 1u);
+    const bool refused = tickless_probe_refuses(depth, stopped_ranks);
     if (validating)
         kernel_processor_sleep_end_probe(!refused);
     else if (refused)
@@ -301,6 +355,7 @@ static uint32_t tickless_probe(uint32_t depth)
         kernel_wake_latency_learn_from_the_longest(&tickless_wake_latency[depth], latencies, taught);
     tickless_probed_depths |= 1u << depth;
     tickless_unstopped_probe_ranks[depth] = unstopped_ranks;
+    tickless_stopped_probe_ranks[depth] = stopped_ranks;
     tickless_probe_cycles = asmutils_read_timestamp_counter() - began;
     const uint32_t probed = tickless_microseconds_from_cycles(
         tickless_probe_cycles, advanced_pic_timer_backend_get_calibrated_timestamp_counter_frequency_hz());
@@ -380,7 +435,7 @@ __attribute__((always_inline)) static inline uint32_t tickless_sleep_at(KernelWa
     const uint64_t armed = planned < longest ? planned : longest;
     uint64_t after = armed;
     ProcessorSleepOutcome_t outcome = {PROCESSOR_SLEEP_NONE, false, PROCESSOR_SLEEP_DEPTH_C1};
-    const TicklessWake_t wake = tickless_sleep_until(armed, &after, &outcome, depth);
+    const TicklessWake_t wake = tickless_sleep_until(armed, &after, &outcome, depth, NULL);
     if (wake == TICKLESS_WAKE_UNARMED)
         return tickless_sleep_until_any_interrupt(plan);
     if (wake == TICKLESS_WAKE_EARLY)
@@ -554,7 +609,7 @@ static uint32_t tickless_measure_a_series(uint32_t depth, const TicklessCalibrat
     {
         uint64_t woke = 0u;
         ProcessorSleepOutcome_t outcome = {PROCESSOR_SLEEP_NONE, false, depth};
-        if (tickless_sleep_until(asmutils_read_timestamp_counter() + length, &woke, &outcome, depth) ==
+        if (tickless_sleep_until(asmutils_read_timestamp_counter() + length, &woke, &outcome, depth, NULL) ==
             TICKLESS_WAKE_UNARMED)
             return KERNEL_SLEEP_COST_UNTIMED;
         demoted = demoted || outcome.depth != depth;
@@ -681,8 +736,7 @@ static void tickless_hold_the_choice_when_asked(void)
     const uint64_t hold = tickless_choice_hold_cycles;
 
     tickless_choice_hold_cycles = 0u;
-    for (const uint64_t until = asmutils_read_timestamp_counter() + hold; asmutils_read_timestamp_counter() < until;)
-        asmutils_pause();
+    tickless_spin_for(hold);
 }
 #else
 /**
@@ -819,14 +873,20 @@ uint32_t kernel_tickless_wake_samples_at(uint32_t depth)
     return depth < PROCESSOR_SLEEP_DEPTHS ? tickless_wake_latency[depth].samples : 0u;
 }
 
-KernelTicklessProbeVerdict_t kernel_tickless_judge_a_probe(uint32_t unstopped_ranks)
+KernelTicklessProbeVerdict_t kernel_tickless_judge_a_probe(uint32_t stopped_ranks)
 {
     const uint32_t longest = 1u << (KERNEL_TICKLESS_PROBES - 1u);
     const uint32_t second_longest = 1u << (KERNEL_TICKLESS_PROBES - 2u);
 
-    if ((unstopped_ranks & longest) == 0u)
+    if ((stopped_ranks & longest) != 0u)
         return KERNEL_TICKLESS_PROBE_KEEPS;
-    return (unstopped_ranks & second_longest) != 0u ? KERNEL_TICKLESS_PROBE_REFUSES : KERNEL_TICKLESS_PROBE_CONFIRMS;
+    return (stopped_ranks & second_longest) == 0u ? KERNEL_TICKLESS_PROBE_REFUSES : KERNEL_TICKLESS_PROBE_CONFIRMS;
+}
+
+KernelTicklessProbeRead_t kernel_tickless_judge_a_probe_read(uint64_t began, uint64_t returned, uint64_t deadline)
+{
+    (void) began;
+    return returned < deadline ? KERNEL_TICKLESS_PROBE_READ_RETURNED : KERNEL_TICKLESS_PROBE_READ_STOPPED;
 }
 
 bool kernel_tickless_probe_sleep_did_not_stop(bool before_its_deadline, const ProcessorSleepOutcome_t *outcome)
@@ -838,6 +898,13 @@ uint32_t kernel_tickless_unstopped_probe_ranks_at(uint32_t depth)
 {
     return depth < PROCESSOR_SLEEP_DEPTHS ? tickless_unstopped_probe_ranks[depth] : 0u;
 }
+
+uint32_t kernel_tickless_stopped_probe_ranks_at(uint32_t depth)
+{
+    return depth < PROCESSOR_SLEEP_DEPTHS ? tickless_stopped_probe_ranks[depth] : 0u;
+}
+
+uint32_t kernel_tickless_probe_retakes(void) { return tickless_probe_retakes; }
 
 uint64_t kernel_tickless_probe_cycles(void) { return tickless_probe_cycles; }
 
@@ -913,5 +980,11 @@ void kernel_tickless_debug_exchange_depth_estimate(uint32_t depth, KernelWakeLat
 void kernel_tickless_debug_hold_the_next_depth_choice(uint32_t microseconds)
 {
     tickless_choice_hold_cycles = kernel_tickless_cycles_from_microseconds(microseconds);
+}
+
+void kernel_tickless_debug_hold_the_probe_sleeps(uint32_t before_the_read, uint32_t after_the_read)
+{
+    tickless_probe_hold_before_the_read_cycles = kernel_tickless_cycles_from_microseconds(before_the_read);
+    tickless_probe_hold_after_the_read_cycles = kernel_tickless_cycles_from_microseconds(after_the_read);
 }
 #endif

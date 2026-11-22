@@ -103,6 +103,14 @@ typedef struct ProcessorSleepOutcome {
                                     for PROCESSOR_SLEEP_NONE, the one asked. */
 } ProcessorSleepOutcome_t;
 
+/**
+ * @brief When a sleep's port read began and returned, on the timestamp counter.
+ */
+typedef struct ProcessorSleepRead {
+    uint64_t began;    /**< The counter just before the read; 0 when the sleep read no port. */
+    uint64_t returned; /**< The counter just after it, before interrupts are enabled; 0 when it read no port. */
+} ProcessorSleepRead_t;
+
 #define PROCESSOR_SLEEP_DEPTHS        7u /**< Depths a ladder holds: C1, then six deeper at most. */
 #define PROCESSOR_SLEEP_DEPTH_C1      0u /**< The depth of C1, which every processor enters. */
 #define PROCESSOR_SLEEP_DEPTH_DEEPEST (PROCESSOR_SLEEP_DEPTHS - 1u) /**< The deepest depth a request can name. */
@@ -625,6 +633,18 @@ ProcessorSleepOutcome_t processor_sleep_until_interrupt(void);
  * @return As @ref processor_sleep_until_interrupt.
  */
 ProcessorSleepOutcome_t processor_sleep_until_interrupt_at(uint32_t depth);
+
+/**
+ * @brief Sleeps as @ref processor_sleep_until_interrupt_at does, and times the read of a port depth's port: when it
+ *        began and when it returned, before interrupts are enabled (@ref
+ * asmutils_timed_input_byte_then_enable_interrupts), so that a probe judges the read itself rather than what the host
+ * did around it (#880).
+ * @param depth    The depth chosen for this sleep.
+ * @param out_read Receives when the read began and returned; zeros when the depth entered reads no port.
+ * @return As @ref processor_sleep_until_interrupt.
+ */
+ProcessorSleepOutcome_t processor_sleep_until_interrupt_at_timing_its_read(uint32_t depth,
+                                                                           ProcessorSleepRead_t *out_read);
 
 /**
  * @brief Whether what a sleeper waits for has happened; called with interrupts masked.
