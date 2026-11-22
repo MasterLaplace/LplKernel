@@ -24,8 +24,10 @@
 #define E1000_TEST_STATISTICS_REGISTERS   5u          /**< MPC, RNBC, CRCERRS, GPRC, GPTC: a counters call. */
 #define E1000_TEST_DRAIN_ROUNDS           8u          /**< Peeks a drain makes: a ring never dry fails. */
 #define E1000_TEST_INTERRUPT_FLAG         (1u << 9)   /**< EFLAGS.IF. */
-#define E1000_TEST_PHY_SPECIFIC_CONTROL   0x10u       /**< The M88's specific control, which the loopback rewrites. */
-#define E1000_TEST_DONE_AND_END_OF_PACKET 0x03u       /**< The status bits a sound frame carries: DD and EOP. */
+#define E1000_TEST_BOUNCE_FRAMES          1024u /**< Frames the bounce sends: the loop dwarfs the calls around it. */
+#define E1000_TEST_BOUNCE_IDLE_ROUNDS     4096u /**< Empty peeks after which the bounce gives up. */
+#define E1000_TEST_PHY_SPECIFIC_CONTROL   0x10u /**< The M88's specific control, which the loopback rewrites. */
+#define E1000_TEST_DONE_AND_END_OF_PACKET 0x03u /**< The status bits a sound frame carries: DD and EOP. */
 
 /**
  * @brief PCI device IDs of the 8254x copper parts this driver drives, written apart from its own table:
@@ -551,6 +553,71 @@ KERNEL_TEST(the_receive_ring_holds_one_frame_fewer_than_its_descriptors)
     kernel_test_measure(test, "frames_kept_past_the_ring", after_the_overfill);
     kernel_test_measure(test, "missed", (uint32_t) (after->missed - before.missed));
     kernel_test_measure(test, "no_buffers", (uint32_t) (after->no_buffers - before.no_buffers));
+}
+
+/**
+ * @brief Sends and receives @p frames test frames of 60 bytes through the loopback, @p batch a publish,
+ *        writing no byte of them: the frames' path alone, for tools/instructions.sh --inside to count.
+ *
+ * @details The transmit buffers already hold their frames, written once by the caller. Kept out of line so
+ *          that a count of it holds the driver's calls and this loop, and nothing the test does around it.
+ *
+ * @return The bytes the frames received carried, summed.
+ */
+__attribute__((noinline)) static uint32_t e1000_test_bounce(uint32_t frames, uint32_t batch)
+{
+    static const uint16_t lengths[E1000_TRANSMIT_DESCRIPTORS] = {[0 ... E1000_TRANSMIT_DESCRIPTORS - 1u] = 60u};
+    uint8_t *buffers[E1000_TRANSMIT_DESCRIPTORS];
+    uint32_t sent = 0u;
+    uint32_t received = 0u;
+    uint32_t bytes = 0u;
+    uint32_t idle = 0u;
+
+    while (received < frames && idle < E1000_TEST_BOUNCE_IDLE_ROUNDS)
+    {
+        if (sent < frames)
+        {
+            const uint32_t reserved = e1000_transmit_reserve(buffers, batch);
+
+            sent += e1000_transmit_publish(lengths, reserved) ? reserved : 0u;
+        }
+
+        const uint32_t peeked = e1000_receive_peek(e1000_test_frames, E1000_TEST_OVERFILL);
+
+        for (uint32_t frame = 0u; frame < peeked; ++frame)
+            bytes += e1000_test_frames[frame].length;
+        (void) e1000_receive_release(peeked);
+        received += peeked;
+        idle = peeked == 0u ? idle + 1u : 0u;
+    }
+    return bytes;
+}
+
+/**
+ * @brief 1024 frames bounce through the loopback with no byte written per frame, so that a count of
+ *        e1000_test_bounce measures the frames' path.
+ *
+ * @details `tools/instructions.sh --inside e1000_test_bounce --times 1 --append lpl.test=e1000.*bounce*` on a
+ *          debug kernel counts it. Every transmit buffer holds a frame of 60 bytes to the controller itself,
+ *          written once before the loop.
+ */
+KERNEL_TEST(frames_bounce_with_no_byte_written_per_frame)
+{
+    if (!e1000_test_bring_up_in_loopback(test))
+        return;
+
+    uint8_t *buffers[E1000_TRANSMIT_DESCRIPTORS];
+    const uint32_t reserved = e1000_transmit_reserve(buffers, E1000_TRANSMIT_DESCRIPTORS);
+
+    for (uint32_t buffer = 0u; buffer < reserved; ++buffer)
+        (void) e1000_test_write_frame(buffers[buffer], 0u);
+
+    const uint32_t bytes = e1000_test_bounce(E1000_TEST_BOUNCE_FRAMES, E1000_TEST_BATCH);
+
+    kernel_test_check(test, reserved == E1000_TRANSMIT_DESCRIPTORS - 1u, "every transmit buffer holds a frame");
+    kernel_test_check(test, bytes == E1000_TEST_BOUNCE_FRAMES * E1000_TEST_FRAME_LEAST_BYTES,
+                      "1024 frames of 60 bytes bounce");
+    e1000_test_drain();
 }
 
 /**
