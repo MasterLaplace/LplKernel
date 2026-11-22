@@ -152,27 +152,11 @@
 /** Bytes of the page that holds both rings: the receive ring first, then the transmit ring. */
 #define E1000_RINGS_BYTES 4096u
 
-/**
- * @brief A legacy receive descriptor (317453-006EN, Table 3-1).
- */
-typedef struct E1000ReceiveDescriptor {
-    uint64_t buffer_address;                 /**< Physical address of the descriptor's buffer. */
-    volatile uint16_t length;                /**< Bytes the controller wrote. */
-    volatile uint16_t checksum;              /**< Packet checksum. */
-    volatile uint32_t status_errors_special; /**< STATUS in bits 7:0, ERRORS in 15:8, special in 31:16. */
-} E1000ReceiveDescriptor_t;
-
-/**
- * @brief A legacy transmit descriptor (317453-006EN, Table 3-8).
- */
-typedef struct E1000TransmitDescriptor {
-    uint64_t buffer_address;              /**< Physical address of the descriptor's buffer. */
-    uint32_t length_and_command;          /**< Length in bits 15:0, CSO in 23:16, CMD in 31:24. */
-    volatile uint32_t status_and_special; /**< STA in bits 3:0, CSS in 15:8, special in 31:16. */
-} E1000TransmitDescriptor_t;
-
 _Static_assert(sizeof(E1000ReceiveDescriptor_t) == 16u && sizeof(E1000TransmitDescriptor_t) == 16u,
                "a legacy descriptor is 16 bytes");
+_Static_assert(E1000_TRANSMIT_FRAME_COMMAND == (E1000_TRANSMIT_END_OF_PACKET | E1000_TRANSMIT_INSERT_CRC)
+                                                   << E1000_TRANSMIT_COMMAND_SHIFT,
+               "a described frame's command is EOP and IFCS");
 _Static_assert((E1000_RECEIVE_DESCRIPTORS & (E1000_RECEIVE_DESCRIPTORS - 1u)) == 0u &&
                    (E1000_TRANSMIT_DESCRIPTORS & (E1000_TRANSMIT_DESCRIPTORS - 1u)) == 0u,
                "the free-running indices are masked into the rings");
@@ -202,14 +186,13 @@ static E1000TransmitDescriptor_t *e1000_transmit_ring = NULL;
 static uint32_t e1000_rings_physical = 0u;
 static uint8_t *e1000_receive_buffers = NULL;
 static uint8_t *e1000_transmit_buffers = NULL;
-static uint32_t e1000_receive_next = 0u;
-static uint32_t e1000_receive_ready = 0u;
-static uint32_t e1000_transmit_tail = 0u;
-static uint32_t e1000_transmit_clean = 0u;
-static uint32_t e1000_transmit_reserved = 0u;
-static uint32_t e1000_publish_ends[E1000_TRANSMIT_DESCRIPTORS];
-static uint32_t e1000_publish_first = 0u;
-static uint32_t e1000_publish_count = 0u;
+static E1000Receive_t e1000_receive_side;
+static E1000Transmit_t e1000_transmit_side;
+static uint32_t e1000_receive_given_back = 0u;
+static uint32_t e1000_transmit_kicked = 0u;
+static uint32_t e1000_kick_ends[E1000_TRANSMIT_DESCRIPTORS];
+static uint32_t e1000_kick_first = 0u;
+static uint32_t e1000_kick_count = 0u;
 static bool e1000_before_loopback_saved = false;
 static uint32_t e1000_device_control_before_loopback = 0u;
 static uint16_t e1000_phy_control_before_loopback = 0u;
@@ -431,13 +414,14 @@ static bool e1000_fill_rings(void)
             return false;
         e1000_transmit_ring[descriptor].buffer_address = physical;
     }
-    e1000_receive_next = 0u;
-    e1000_receive_ready = 0u;
-    e1000_transmit_tail = 0u;
-    e1000_transmit_clean = 0u;
-    e1000_transmit_reserved = 0u;
-    e1000_publish_first = 0u;
-    e1000_publish_count = 0u;
+    e1000_receive_side.descriptors = e1000_receive_ring;
+    e1000_receive_side.buffers = e1000_receive_buffers;
+    e1000_transmit_side.descriptors = e1000_transmit_ring;
+    e1000_transmit_side.buffers = e1000_transmit_buffers;
+    e1000_receive_given_back = 0u;
+    e1000_transmit_kicked = 0u;
+    e1000_kick_first = 0u;
+    e1000_kick_count = 0u;
     return true;
 }
 
@@ -582,45 +566,66 @@ static void e1000_start_rings(void)
 }
 
 /**
- * @brief Marks as free the transmit descriptors of every publish the controller reported done.
+ * @brief Gives the transmit ring back the slots of every kick the controller reported done: DD on a kick's
+ *        last descriptor, the one that asked for a report, covers every descriptor before it (§3.3.3.2).
  */
 static void e1000_reclaim_transmitted(void)
 {
-    while (e1000_publish_count != 0u)
+    while (e1000_kick_count != 0u)
     {
-        const uint32_t last = e1000_publish_ends[e1000_publish_first];
+        const uint32_t last = e1000_kick_ends[e1000_kick_first];
         const E1000TransmitDescriptor_t *const descriptor =
             &e1000_transmit_ring[last & (E1000_TRANSMIT_DESCRIPTORS - 1u)];
 
         if ((atomic_load_acquire(&descriptor->status_and_special) & E1000_TRANSMIT_DONE) == 0u)
             return;
-        e1000_transmit_clean = last + 1u;
-        e1000_publish_first = (e1000_publish_first + 1u) & (E1000_TRANSMIT_DESCRIPTORS - 1u);
-        --e1000_publish_count;
+        kernel_spsc_ring_release(&e1000_transmit_side.ring, last + 1u - e1000_transmit_side.ring.consumer.read_index);
+        e1000_kick_first = (e1000_kick_first + 1u) & (E1000_TRANSMIT_DESCRIPTORS - 1u);
+        --e1000_kick_count;
     }
 }
 
 /**
- * @brief Describes the @p count frames of a publish past the tail, where the controller does not read yet.
+ * @brief Takes the receive descriptors from slot @p first_slot on, at most @p most short of the wrap, that the
+ *        controller wrote: those with DD set, up to the first without, each one's DD cleared as it is read.
  *
- * @return false at the first length out of range, with the tail left where it was, so that nothing is sent.
+ * @details DD is read relaxed, as Linux reads it before its dma_rmb(): x86 keeps the loads in order, and the
+ *          release store that publishes the descriptors orders them before the consumer's reads of the frames.
+ *          Clearing it here, with the status in hand, spares the give-back a pass over the descriptors.
+ *
+ * @return How many were taken.
  */
-static bool e1000_describe_frames(const uint16_t *lengths, uint32_t count)
+static uint32_t e1000_take_received(uint32_t first_slot, uint32_t most)
 {
-    for (uint32_t frame = 0u; frame < count; ++frame)
-    {
-        const uint32_t length = lengths[frame];
-        const uint32_t command = E1000_TRANSMIT_END_OF_PACKET | E1000_TRANSMIT_INSERT_CRC |
-                                 (frame + 1u == count ? E1000_TRANSMIT_REPORT_STATUS : 0u);
-        E1000TransmitDescriptor_t *const descriptor =
-            &e1000_transmit_ring[(e1000_transmit_tail + frame) & (E1000_TRANSMIT_DESCRIPTORS - 1u)];
+    E1000ReceiveDescriptor_t *const first = &e1000_receive_ring[first_slot];
+    const E1000ReceiveDescriptor_t *const end = first + most;
+    E1000ReceiveDescriptor_t *descriptor = first;
 
-        if (length < E1000_FRAME_LEAST_BYTES || length > E1000_FRAME_MOST_BYTES)
-            return false;
-        descriptor->length_and_command = length | command << E1000_TRANSMIT_COMMAND_SHIFT;
-        descriptor->status_and_special = 0u;
+    for (; descriptor != end; ++descriptor)
+    {
+        const uint32_t status_errors_special = atomic_load_relaxed(&descriptor->status_errors_special);
+
+        if ((status_errors_special & E1000_RECEIVE_DONE) == 0u)
+            break;
+        descriptor->status_errors_special = status_errors_special & ~E1000_RECEIVE_DONE;
     }
-    return true;
+    return (uint32_t) (descriptor - first);
+}
+
+/**
+ * @brief Gives the controller back the receive slots the consumer released since the last harvest, the tail
+ *        one slot behind the oldest held; the harvest cleared their DD bit when it took them.
+ */
+static void e1000_give_back_received(void)
+{
+    const uint32_t read_index = atomic_load_acquire(&e1000_receive_side.ring.consumer.read_index);
+
+    if (read_index == e1000_receive_given_back)
+        return;
+    e1000_counted.frames_received += read_index - e1000_receive_given_back;
+    e1000_receive_given_back = read_index;
+    ++e1000_counted.receive_doorbells;
+    e1000_write_register(E1000_REGISTER_RECEIVE_TAIL, (read_index - 1u) & (E1000_RECEIVE_DESCRIPTORS - 1u));
 }
 
 bool e1000_initialize(void)
@@ -630,9 +635,9 @@ bool e1000_initialize(void)
 
     memset(&e1000_found, 0, sizeof(e1000_found));
     memset(&e1000_counted, 0, sizeof(e1000_counted));
-    e1000_receive_ready = 0u;
-    e1000_transmit_reserved = 0u;
     e1000_transmit_tail_behind = false;
+    (void) kernel_spsc_ring_initialize(&e1000_receive_side.ring, E1000_RECEIVE_DESCRIPTORS);
+    (void) kernel_spsc_ring_initialize(&e1000_transmit_side.ring, E1000_TRANSMIT_DESCRIPTORS);
     if (device == NULL)
         return e1000_fail("no 8254x of a model this driver drives on the bus");
     e1000_found.controller_present = true;
@@ -644,8 +649,6 @@ bool e1000_initialize(void)
     peripheral_component_interconnect_disable_pin_interrupt(device);
     if (!e1000_claim_memory())
         return e1000_fail("no pinned memory for its rings and buffers");
-    e1000_found.receive_buffers = e1000_receive_buffers;
-    e1000_found.receive_buffers_bytes = E1000_RECEIVE_DESCRIPTORS * E1000_BUFFER_BYTES;
 
     if (!e1000_reset())
         return e1000_fail("it did not come out of reset");
@@ -684,12 +687,6 @@ bool e1000_link_up(void)
         return false;
     e1000_found.link_up = (e1000_read_register(E1000_REGISTER_DEVICE_STATUS) & E1000_STATUS_LINK_UP) != 0u;
     return e1000_found.link_up;
-}
-
-void e1000_decode_receive_status(uint32_t status_errors_special, E1000ReceivedFrame_t *frame)
-{
-    frame->status = (uint8_t) status_errors_special;
-    frame->errors = (uint8_t) (status_errors_special >> 8);
 }
 
 void e1000_station_address_from_words(const uint16_t *words, uint8_t *address)
@@ -732,92 +729,63 @@ bool e1000_set_loopback(bool enabled)
     return e1000_read_loopback() && e1000_found.loopback;
 }
 
-uint32_t e1000_receive_peek(E1000ReceivedFrame_t *frames, uint32_t wanted)
+E1000Receive_t *e1000_receive(void) { return &e1000_receive_side; }
+
+uint32_t e1000_receive_harvest(void)
 {
-    if (!e1000_found.controller_ready || frames == NULL)
+    if (!e1000_found.controller_ready)
         return 0u;
+    e1000_give_back_received();
 
-    const uint32_t most = wanted < E1000_RECEIVE_DESCRIPTORS - 1u ? wanted : E1000_RECEIVE_DESCRIPTORS - 1u;
-    uint32_t handed = 0u;
+    KernelSpscRing_t *const ring = &e1000_receive_side.ring;
+    const uint32_t write_index = ring->producer.write_index;
+    const uint32_t room = e1000_receive_given_back + (E1000_RECEIVE_DESCRIPTORS - 1u) - write_index;
+    const uint32_t first_slot = write_index & (E1000_RECEIVE_DESCRIPTORS - 1u);
+    const uint32_t until_wrap = E1000_RECEIVE_DESCRIPTORS - first_slot;
+    uint32_t arrived = e1000_take_received(first_slot, room < until_wrap ? room : until_wrap);
 
-    for (; handed < most; ++handed)
-    {
-        const uint32_t index = (e1000_receive_next + handed) & (E1000_RECEIVE_DESCRIPTORS - 1u);
-        const E1000ReceiveDescriptor_t *const descriptor = &e1000_receive_ring[index];
-        const uint32_t status_errors_special = atomic_load_acquire(&descriptor->status_errors_special);
-
-        if ((status_errors_special & E1000_RECEIVE_DONE) == 0u)
-            break;
-        frames[handed].bytes = e1000_receive_buffers + index * E1000_BUFFER_BYTES;
-        frames[handed].length = descriptor->length;
-        e1000_decode_receive_status(status_errors_special, &frames[handed]);
-    }
-    if (handed > e1000_receive_ready)
-        e1000_receive_ready = handed;
-    if (e1000_receive_ready == E1000_RECEIVE_DESCRIPTORS - 1u)
-        ++e1000_counted.receive_ring_full_peeks;
-    return handed;
+    if (arrived == until_wrap && room > until_wrap)
+        arrived += e1000_take_received(0u, room - until_wrap);
+    if (arrived == room)
+        ++e1000_counted.receive_ring_full_harvests;
+    kernel_spsc_ring_publish(ring, arrived);
+    return arrived;
 }
 
-bool e1000_receive_release(uint32_t count)
-{
-    if (count > e1000_receive_ready || (count != 0u && !e1000_found.controller_ready))
-    {
-        ++e1000_counted.refused;
-        return false;
-    }
-    if (count == 0u)
-        return true;
-    for (uint32_t frame = 0u; frame < count; ++frame)
-        e1000_receive_ring[(e1000_receive_next + frame) & (E1000_RECEIVE_DESCRIPTORS - 1u)].status_errors_special = 0u;
-    e1000_receive_next += count;
-    e1000_receive_ready -= count;
-    e1000_counted.frames_received += count;
-    ++e1000_counted.receive_doorbells;
-    e1000_write_register(E1000_REGISTER_RECEIVE_TAIL, (e1000_receive_next - 1u) & (E1000_RECEIVE_DESCRIPTORS - 1u));
-    return true;
-}
+E1000Transmit_t *e1000_transmit(void) { return &e1000_transmit_side; }
 
-uint32_t e1000_transmit_reserve(uint8_t **buffers, uint32_t wanted)
+uint32_t e1000_transmit_kick(void)
 {
-    if (!e1000_found.controller_ready || buffers == NULL)
+    if (!e1000_found.controller_ready)
         return 0u;
     e1000_reclaim_transmitted();
 
-    const uint32_t free_descriptors = E1000_TRANSMIT_DESCRIPTORS - 1u - (e1000_transmit_tail - e1000_transmit_clean);
-    const uint32_t handed = free_descriptors < wanted ? free_descriptors : wanted;
+    KernelSpscRing_t *const ring = &e1000_transmit_side.ring;
+    const uint32_t read_index = ring->consumer.read_index;
+    const uint32_t published = atomic_load_acquire(&ring->producer.write_index);
+    const uint32_t tail = published - read_index > E1000_TRANSMIT_DESCRIPTORS - 1u ?
+                              read_index + (E1000_TRANSMIT_DESCRIPTORS - 1u) :
+                              published;
+    const uint32_t handed = tail - e1000_transmit_kicked;
 
-    for (uint32_t buffer = 0u; buffer < handed; ++buffer)
-        buffers[buffer] = e1000_transmit_buffers +
-                          ((e1000_transmit_tail + buffer) & (E1000_TRANSMIT_DESCRIPTORS - 1u)) * E1000_BUFFER_BYTES;
-    e1000_transmit_reserved = handed;
-    return handed;
-}
+    if (handed == 0u)
+        return 0u;
+    E1000TransmitDescriptor_t *const last = &e1000_transmit_ring[(tail - 1u) & (E1000_TRANSMIT_DESCRIPTORS - 1u)];
 
-bool e1000_transmit_publish(const uint16_t *lengths, uint32_t count)
-{
-    if (count == 0u)
-        return true;
-    if (count > e1000_transmit_reserved || lengths == NULL || !e1000_found.controller_ready ||
-        !e1000_describe_frames(lengths, count))
-    {
-        ++e1000_counted.refused;
-        return false;
-    }
-    e1000_transmit_tail += count;
-    e1000_publish_ends[(e1000_publish_first + e1000_publish_count) & (E1000_TRANSMIT_DESCRIPTORS - 1u)] =
-        e1000_transmit_tail - 1u;
-    ++e1000_publish_count;
-    e1000_transmit_reserved = 0u;
-    e1000_counted.frames_sent += count;
+    last->status_and_special = 0u;
+    last->length_and_command |= E1000_TRANSMIT_REPORT_STATUS << E1000_TRANSMIT_COMMAND_SHIFT;
+    e1000_kick_ends[(e1000_kick_first + e1000_kick_count) & (E1000_TRANSMIT_DESCRIPTORS - 1u)] = tail - 1u;
+    ++e1000_kick_count;
+    e1000_transmit_kicked = tail;
+    e1000_counted.frames_sent += handed;
     if (e1000_transmit_tail_held)
     {
         e1000_transmit_tail_behind = true;
-        return true;
+        return handed;
     }
     ++e1000_counted.transmit_doorbells;
-    e1000_write_register(E1000_REGISTER_TRANSMIT_TAIL, e1000_transmit_tail & (E1000_TRANSMIT_DESCRIPTORS - 1u));
-    return true;
+    e1000_write_register(E1000_REGISTER_TRANSMIT_TAIL, tail & (E1000_TRANSMIT_DESCRIPTORS - 1u));
+    return handed;
 }
 
 const E1000Counters_t *e1000_counters(void)
@@ -835,7 +803,7 @@ void e1000_debug_hold_transmit_tail(bool held)
         return;
     e1000_transmit_tail_behind = false;
     ++e1000_counted.transmit_doorbells;
-    e1000_write_register(E1000_REGISTER_TRANSMIT_TAIL, e1000_transmit_tail & (E1000_TRANSMIT_DESCRIPTORS - 1u));
+    e1000_write_register(E1000_REGISTER_TRANSMIT_TAIL, e1000_transmit_kicked & (E1000_TRANSMIT_DESCRIPTORS - 1u));
 }
 
 bool e1000_debug_read_physical_layer_register(uint32_t physical_layer_register, uint16_t *out_value)
