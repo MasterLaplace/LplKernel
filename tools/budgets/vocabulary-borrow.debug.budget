@@ -1,0 +1,13 @@
+# What indexing a vocabulary costs: the first call of lpl::infer::Vocab::borrow in the test
+# a_hundred_thousand_made_up_tokens_are_found_where_today_s_order_puts_them of vocabulary, a hundred thousand
+# made-up tokens, on a debug server kernel (./build.sh --server) built with the siblings of DEPENDENCIES.lock, the test
+# alone selected. The radix sort of the tokens' bytes holds it (LplAssistant#99); the insertion sort it replaced
+# counted 81,857,478,043 instructions there, so a sort that turns quadratic again passes the budget a thousand times
+# over. Checked by tools/instructions.sh --budget tools/budgets/vocabulary-borrow.debug.budget kernel/lpl.kernel; a
+# pull request that moves the lock records the new counts.
+inside=lpl::infer::Vocab::borrow
+times=1
+append=lpl.test=vocabulary.a_hundred_thousand_made_up_tokens_are_found_where_today_s_order_puts_them
+instructions=39539145
+accesses=22176534
+tolerance=1
