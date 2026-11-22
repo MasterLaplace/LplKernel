@@ -153,6 +153,7 @@ LPL_TEST(the_mind_reads_a_module_on_a_page_boundary_where_it_lies_and_seals_its_
         everyWholePageFaults = kernel_section_protection_probe_write(gSealedModule + page * kPageBytes);
 
     test.check(libassistant_model_protected_pages() == wholePages, "each whole page of the image turned read-only");
+    test.check(libassistant_model_index_fallbacks() == 0u, "its vocabulary indexed without a fallback");
     test.check(everyWholePageFaults, "a write into any of them faults");
     test.check(!kernel_section_protection_probe_write(gSealedModule + wholePages * kPageBytes),
                "and the page the image only touches stays writable");
@@ -224,6 +225,7 @@ LPL_TEST(the_mind_takes_its_seed_from_a_refused_or_an_empty_slot)
     test.check(sameText(libassistant_model_origin(), "seed") && sameText(libassistant_model_reading(), "none") &&
                    sameText(libassistant_model_slot_state(), "empty"),
                "on its seed, the slot empty");
+    test.check(libassistant_model_index_fallbacks() == 0u, "its seed's vocabulary indexed without a fallback");
     checkTheCanonicalAnswer(test);
 }
 
@@ -246,6 +248,8 @@ LPL_TEST(a_boot_that_fails_leaves_no_mind_to_ask)
     test.check(libassistant_boot_from_slot(0u, &empty), "a mind boots on its seed");
     test.check(!libassistant_boot_from_slot(SIZE_MAX, &copied),
                "a second boot, whose region and copy would pass the address space, fails");
+    test.check(libassistant_model_index_fallbacks() == KERNEL_MODEL_SLOT_NOT_COUNTED,
+               "and counts no fallback of an index, since it indexed no vocabulary");
     test.check(!libassistant_dialogue_round_trip(&dialogue), "and leaves no mind to ask");
     test.check(libassistant_boot_from_slot(0u, &empty), "a boot that fits brings one up again");
     checkTheCanonicalAnswer(test);
