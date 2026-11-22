@@ -19,5 +19,6 @@ Each script prints its usage with `--help`. This page says where each kind of to
 | `acpi/boot-cst.sh`, `acpi/boot-cst.asl`, `acpi/boot-cst-ports.asl` | a kernel booted on QEMU with a made-up `_CST`, MWAIT states or AMD's port states (`--ports`), and the C-states and sleep depths it prints |
 | `power/rapl_models.py` | the Intel models the energy counter reads, against Linux's `rapl_ids` |
 | `pci/against-linux.sh` | each PCI function the kernel reads through ECAM against what Linux reads of it, on the same QEMU q35 |
+| `net/linux-peer.sh` | a kernel answering a real Linux peer, ARP and ping, through a tap device of an unprivileged network namespace: no root |
 | `qemu/` | the QEMU plugin `instructions.sh` counts with |
 | `xmake/` | the xmake module that builds the kernel image |

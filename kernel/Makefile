@@ -182,6 +182,12 @@ kernel/diag/idle_states.o \
 kernel/diag/machine.o \
 kernel/diag/sysmon.o \
 kernel/diag/telemetry.o \
+kernel/net/checksum.o \
+kernel/net/ethernet.o \
+kernel/net/arp.o \
+kernel/net/ipv4.o \
+kernel/net/icmp.o \
+kernel/net/interface.o \
 kernel/core/kernel.o \
 kernel/memory/helpers/pmm_helper.o \
 kernel/memory/helpers/heap_helper.o \
