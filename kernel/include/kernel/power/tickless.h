@@ -411,6 +411,17 @@ uint32_t kernel_tickless_nominal_frequency_hz(void);
  * @param estimate The estimate to put in; receives the one taken out.
  */
 void kernel_tickless_debug_exchange_depth_estimate(uint32_t depth, KernelWakeLatency_t *estimate);
+
+/**
+ * @brief Holds the next depth choice a sleep makes for @p microseconds before it chooses, so that a debug kernel's
+ *        tests see a choice as slow as TCG's first translation of it, which may outlast a window (#299, #879).
+ *
+ * @details The hold is spun once, by the next sleep that chooses a depth, then forgotten. A sleep counts from before
+ *          its choice, so the hold is time slept with the tick stopped.
+ *
+ * @param microseconds How long the next choice spins; 0 holds nothing.
+ */
+void kernel_tickless_debug_hold_the_next_depth_choice(uint32_t microseconds);
 #endif
 
 #ifdef __cplusplus
