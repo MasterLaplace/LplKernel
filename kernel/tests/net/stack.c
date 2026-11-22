@@ -62,7 +62,7 @@ KERNEL_TEST(an_ethernet_header_reads_where_it_lies_and_writes_back)
     uint8_t frame[20] = {0u};
     KernelEthernetFrame_t parsed;
 
-    kernel_ethernet_write_header(frame, own, other, KERNEL_ETHERNET_TYPE_ARP);
+    kernel_ethernet_write_header(frame, own, other, KERNEL_ETHERNET_TYPE_ADDRESS_RESOLUTION);
     kernel_test_check(test, kernel_ethernet_parse(frame, sizeof(frame), &parsed), "a frame of 20 bytes reads");
     kernel_test_check(test,
                       parsed.destination == frame && memcmp(parsed.source, other, 6u) == 0 && parsed.type == 0x0806u &&
@@ -71,10 +71,12 @@ KERNEL_TEST(an_ethernet_header_reads_where_it_lies_and_writes_back)
     kernel_test_check(test, frame[12] == 0x08u && frame[13] == 0x06u, "the EtherType is written big-endian");
     kernel_test_check(test, kernel_ethernet_is_for(&parsed, own), "it is for the station it names");
     kernel_test_check(test, !kernel_ethernet_is_for(&parsed, other), "and not for another");
-    kernel_ethernet_write_header(frame, broadcast, other, KERNEL_ETHERNET_TYPE_ARP);
+    kernel_ethernet_write_header(frame, broadcast, other, KERNEL_ETHERNET_TYPE_ADDRESS_RESOLUTION);
     (void) kernel_ethernet_parse(frame, sizeof(frame), &parsed);
     kernel_test_check(test, kernel_ethernet_is_for(&parsed, own), "a broadcast frame is for every station");
     kernel_test_check(test, !kernel_ethernet_parse(frame, 13u, &parsed), "a frame of 13 bytes does not read");
+    kernel_test_check(test, kernel_ethernet_is_group(broadcast) && !kernel_ethernet_is_group(own),
+                      "the broadcast address is a group, the station's own is not");
 }
 
 /**
@@ -101,10 +103,21 @@ KERNEL_TEST(an_arp_packet_reads_as_rfc_826_lays_it_out)
     kernel_test_check(test, !kernel_address_resolution_parse(wrong, 28u, &packet),
                       "a protocol address of 16 bytes does not");
     kernel_test_check(test, !kernel_address_resolution_parse(request, 27u, &packet), "nor does a packet of 27 bytes");
+    memcpy(wrong, request, 28u);
+    wrong[1] = 6u;
+    kernel_test_check(test, !kernel_address_resolution_parse(wrong, 28u, &packet), "nor hardware 6, IEEE 802");
+    memcpy(wrong, request, 28u);
+    wrong[4] = 8u;
+    kernel_test_check(test, !kernel_address_resolution_parse(wrong, 28u, &packet), "nor station addresses of 8 bytes");
+    memcpy(wrong, request, 28u);
+    wrong[2] = 0x86u;
+    wrong[3] = 0xDDu;
+    kernel_test_check(test, !kernel_address_resolution_parse(wrong, 28u, &packet), "nor protocol 86DDh, IPv6");
 }
 
 /**
- * @brief The ARP cache learns, refreshes, forgets after its lifetime, and evicts its oldest entry when full.
+ * @brief The ARP cache learns, refreshes by merge, forgets after its lifetime, and lets a station that only talked to
+ *        the interface evict none it asked for.
  */
 KERNEL_TEST(the_arp_cache_forgets_by_the_time_it_is_given)
 {
@@ -113,23 +126,91 @@ KERNEL_TEST(the_arp_cache_forgets_by_the_time_it_is_given)
     uint8_t found[6] = {0u};
 
     kernel_address_resolution_cache_initialize(&cache, 100u);
-    kernel_address_resolution_cache_learn(&cache, 0x0A000001u, station, 10u);
+    kernel_test_check(test, kernel_address_resolution_cache_add(&cache, 0x0A000001u, station, 10u),
+                      "an address is added at 10");
     kernel_test_check(test, kernel_address_resolution_cache_find(&cache, 0x0A000001u, 109u, found) && found[5] == 6u,
-                      "an address learned at 10 is found at 109");
+                      "and found at 109");
     kernel_test_check(test, !kernel_address_resolution_cache_find(&cache, 0x0A000001u, 110u, found),
                       "and forgotten at 110, a lifetime of 100 later");
-    kernel_address_resolution_cache_learn(&cache, 0x0A000001u, station, 150u);
-    kernel_test_check(test, kernel_address_resolution_cache_find(&cache, 0x0A000001u, 200u, found),
-                      "learned again at 150, it is found at 200");
-    for (uint32_t entry = 1u; entry < KERNEL_ADDRESS_RESOLUTION_CACHE_ENTRIES; ++entry)
-        kernel_address_resolution_cache_learn(&cache, 0x0A000100u + entry, station, 150u + entry);
     station[5] = 7u;
-    kernel_address_resolution_cache_learn(&cache, 0x0A000200u, station, 180u);
-    kernel_test_check(test, !kernel_address_resolution_cache_find(&cache, 0x0A000001u, 180u, found),
-                      "a 17th address evicts the oldest");
-    kernel_test_check(test, kernel_address_resolution_cache_find(&cache, 0x0A000200u, 180u, found) && found[5] == 7u,
-                      "and is found itself");
+    kernel_test_check(test,
+                      kernel_address_resolution_cache_merge(&cache, 0x0A000001u, station, 150u) &&
+                          kernel_address_resolution_cache_find(&cache, 0x0A000001u, 200u, found) && found[5] == 7u,
+                      "merged at 150 with a new station, it is found at 200 with it");
+    kernel_test_check(test, !kernel_address_resolution_cache_merge(&cache, 0x0A000002u, station, 150u),
+                      "an address the cache does not hold is not merged");
     kernel_test_check(test, !kernel_address_resolution_cache_find(&cache, 0u, 180u, found), "address 0 is never found");
+    kernel_address_resolution_cache_expire(&cache, 250u);
+    kernel_test_check(test, !kernel_address_resolution_cache_find(&cache, 0x0A000001u, 150u, found),
+                      "expired at 250, it is gone at 150 too, as the time comes back around");
+}
+
+/**
+ * @brief An address asked for is held unresolved until a merge resolves it, and a full cache evicts its oldest entry
+ *        not asked for, never one asked for, to add a station.
+ */
+KERNEL_TEST(the_arp_cache_keeps_the_addresses_asked_for)
+{
+    static KernelAddressResolutionCache_t cache;
+    uint8_t station[6] = {2u, 0u, 0u, 0u, 0u, 1u};
+    uint8_t found[6] = {0u};
+
+    kernel_address_resolution_cache_initialize(&cache, 100u);
+    kernel_address_resolution_cache_ask(&cache, 0x0A0000FEu, 0u);
+    kernel_test_check(test, !kernel_address_resolution_cache_find(&cache, 0x0A0000FEu, 1u, found),
+                      "an address asked for is not found before its reply");
+    kernel_test_check(test,
+                      kernel_address_resolution_cache_merge(&cache, 0x0A0000FEu, station, 1u) &&
+                          kernel_address_resolution_cache_find(&cache, 0x0A0000FEu, 2u, found),
+                      "and is once its reply merged");
+    (void) kernel_address_resolution_cache_add(&cache, 0x0A000101u, station, 2u);
+    (void) kernel_address_resolution_cache_add(&cache, 0x0A000102u, station, 3u);
+    (void) kernel_address_resolution_cache_merge(&cache, 0x0A000101u, station, 4u);
+    for (uint32_t entry = 3u; entry < KERNEL_ADDRESS_RESOLUTION_CACHE_ENTRIES; ++entry)
+        (void) kernel_address_resolution_cache_add(&cache, 0x0A000100u + entry, station, 10u + entry);
+    kernel_test_check(test, kernel_address_resolution_cache_add(&cache, 0x0A000200u, station, 50u),
+                      "a 17th address is added to the full cache");
+    kernel_test_check(test,
+                      !kernel_address_resolution_cache_find(&cache, 0x0A000102u, 50u, found) &&
+                          kernel_address_resolution_cache_find(&cache, 0x0A000101u, 50u, found) &&
+                          kernel_address_resolution_cache_find(&cache, 0x0A000200u, 50u, found),
+                      "in the place of the oldest not asked for, learned at 3, not the first, refreshed at 4");
+    kernel_test_check(test, kernel_address_resolution_cache_find(&cache, 0x0A0000FEu, 50u, found),
+                      "and the address asked for, learned at 1, the oldest of all, stays");
+    for (uint32_t entry = 0u; entry < KERNEL_ADDRESS_RESOLUTION_CACHE_ENTRIES; ++entry)
+        kernel_address_resolution_cache_ask(&cache, 0x0A000300u + entry, 60u + entry);
+    kernel_test_check(test, !kernel_address_resolution_cache_add(&cache, 0x0A000400u, station, 80u),
+                      "a cache of 16 addresses asked for takes no station that only talked");
+    kernel_address_resolution_cache_ask(&cache, 0x0A000500u, 90u);
+    kernel_test_check(test,
+                      kernel_address_resolution_cache_merge(&cache, 0x0A000500u, station, 91u) &&
+                          !kernel_address_resolution_cache_merge(&cache, 0x0A000300u, station, 91u),
+                      "but an address asked for takes the place of the oldest asked for");
+}
+
+/**
+ * @brief Asking again for an expired address starts it over unresolved, so that the expiry of a batch does not
+ *        free it before its reply.
+ */
+KERNEL_TEST(asking_again_for_an_expired_address_starts_it_over)
+{
+    static KernelAddressResolutionCache_t cache;
+    uint8_t station[6] = {2u, 0u, 0u, 0u, 0u, 1u};
+    uint8_t found[6] = {0u};
+
+    kernel_address_resolution_cache_initialize(&cache, 100u);
+    (void) kernel_address_resolution_cache_add(&cache, 0x0A000001u, station, 10u);
+    kernel_address_resolution_cache_ask(&cache, 0x0A000001u, 50u);
+    kernel_test_check(test, kernel_address_resolution_cache_find(&cache, 0x0A000001u, 60u, found),
+                      "asked for while alive, it keeps its station");
+    kernel_address_resolution_cache_ask(&cache, 0x0A000001u, 200u);
+    kernel_test_check(test, !kernel_address_resolution_cache_find(&cache, 0x0A000001u, 200u, found),
+                      "asked for again once expired, it is unresolved");
+    kernel_address_resolution_cache_expire(&cache, 250u);
+    kernel_test_check(test,
+                      kernel_address_resolution_cache_merge(&cache, 0x0A000001u, station, 260u) &&
+                          kernel_address_resolution_cache_find(&cache, 0x0A000001u, 261u, found),
+                      "and survives the expiry of 250 to take its reply at 260");
 }
 
 /**
@@ -173,9 +254,30 @@ KERNEL_TEST(an_ipv4_header_is_taken_or_refused_by_its_cause)
                           KERNEL_INTERNET_PROTOCOL_BAD_HEADER_LENGTH,
                       "an IHL of 4 is refused");
 
+    packet[0] = 0x45u;
+    packet[2] = 0x00u;
+    packet[3] = 19u;
+    kernel_test_check(test,
+                      kernel_internet_protocol_parse(packet, sizeof(packet), &parsed) ==
+                          KERNEL_INTERNET_PROTOCOL_BAD_TOTAL_LENGTH,
+                      "a total length of 19 under its 20 of header is refused as such");
+    packet[0] = 0x4Fu;
+    packet[3] = 0x73u;
+    kernel_test_check(test, kernel_internet_protocol_parse(packet, 40u, &parsed) == KERNEL_INTERNET_PROTOCOL_TRUNCATED,
+                      "an IHL of 60 bytes in 40 is truncated");
+    memcpy(packet, header, sizeof(header));
+    packet[6] = 0x00u;
+    packet[7] = 0x10u;
+    kernel_network_write_16(packet + 10u, 0u);
+    kernel_network_write_16(packet + 10u, network_stack_test_naive_checksum(packet, 20u));
+    kernel_test_check(
+        test, kernel_internet_protocol_parse(packet, sizeof(packet), &parsed) == KERNEL_INTERNET_PROTOCOL_FRAGMENT,
+        "a last fragment, MF clear at offset 128, its checksum sound, is refused as a fragment");
+
     uint8_t written[20 + 8] = {0u};
 
-    kernel_internet_protocol_write_header(written, 0x0A00020Fu, 0x0A000202u, KERNEL_INTERNET_PROTOCOL_ICMP, 8u, 7u);
+    kernel_internet_protocol_write_header(written, 0x0A00020Fu, 0x0A000202u, KERNEL_INTERNET_PROTOCOL_CONTROL_MESSAGE,
+                                          8u, 7u);
     kernel_test_check(test,
                       network_stack_test_naive_checksum(written, 20u) == 0u && written[0] == 0x45u && written[9] == 1u,
                       "a header written has a checksum that holds by the test's sum");
@@ -191,51 +293,64 @@ KERNEL_TEST(an_ipv4_header_is_taken_or_refused_by_its_cause)
 }
 
 /**
- * @brief An echo request is recognised and answered with its identifier, sequence and data, its checksum sound.
+ * @brief An echo request is recognised and answered with its identifier, sequence and data, its checksum the one a
+ *        sum from scratch gives, a message of zeros and one of odd length included.
  */
 KERNEL_TEST(an_echo_request_is_answered_with_its_own_data)
 {
     uint8_t request[12] = {8u, 0u, 0u, 0u, 0x12u, 0x34u, 0x00u, 0x05u, 'p', 'i', 'n', 'g'};
-    uint8_t reply[12] = {0u};
+    uint8_t zeros[8] = {8u, 0u, 0u, 0u, 0u, 0u, 0u, 0u};
+    uint8_t odd[13] = {8u, 0u, 0u, 0u, 0xABu, 0xCDu, 0u, 1u, 1u, 2u, 3u, 4u, 5u};
+    uint8_t reply[13] = {0u};
+    KernelInternetControlMessage_t message;
 
     kernel_network_write_16(request + 2u, network_stack_test_naive_checksum(request, 12u));
-    kernel_test_check(test, kernel_internet_control_message_is_echo_request(request, 12u),
+    kernel_test_check(test,
+                      kernel_internet_control_message_parse(request, 12u, &message) &&
+                          kernel_internet_control_message_is_echo_request(&message),
                       "a sound echo request is recognised");
-    kernel_internet_control_message_write_echo_reply(reply, request, 12u);
+    kernel_internet_control_message_write_echo_reply(reply, &message);
     kernel_test_check(test, reply[0] == 0u && reply[1] == 0u && memcmp(reply + 4, request + 4, 8u) == 0,
                       "its reply is type 0 with the request's identifier, sequence and data");
     kernel_test_check(test, network_stack_test_naive_checksum(reply, 12u) == 0u,
                       "and its checksum holds by the test's sum");
+    kernel_network_write_16(zeros + 2u, network_stack_test_naive_checksum(zeros, 8u));
+    (void) kernel_internet_control_message_parse(zeros, 8u, &message);
+    kernel_internet_control_message_write_echo_reply(reply, &message);
+    kernel_test_check(test,
+                      reply[2] == 0xFFu && reply[3] == 0xFFu && network_stack_test_naive_checksum(reply, 8u) == 0u,
+                      "the reply of zeros carries FFFFh, as from scratch, not RFC 1624's 0000h");
+    kernel_network_write_16(odd + 2u, network_stack_test_naive_checksum(odd, 13u));
+    (void) kernel_internet_control_message_parse(odd, 13u, &message);
+    kernel_internet_control_message_write_echo_reply(reply, &message);
+    kernel_test_check(test, network_stack_test_naive_checksum(reply, 13u) == 0u, "and a reply of 13 bytes holds too");
     request[11] ^= 0x01u;
-    kernel_test_check(test, !kernel_internet_control_message_is_echo_request(request, 12u),
-                      "a request with a flipped bit is not");
+    kernel_test_check(test, !kernel_internet_control_message_parse(request, 12u, &message),
+                      "a request with a flipped bit is refused");
+    kernel_test_check(test, !kernel_internet_control_message_parse(zeros, 7u, &message),
+                      "and so is a message of 7 bytes");
 }
 
 /**
- * @brief A packet on the subnet goes to its destination's station, one off it to the gateway's.
- *
- * @details The card is made up: the lookup reads only the interface's addresses and its cache.
+ * @brief A datagram is taken from a source a host may send from, and refused from one RFC 1122 (3.2.1.3) rules out.
  */
-KERNEL_TEST(a_packet_goes_to_its_own_station_on_the_subnet_and_to_the_gateway_off_it)
+KERNEL_TEST(a_source_no_host_sends_from_is_refused)
 {
-    static KernelNetworkQueue_t queue;
-    static KernelNetworkDevice_t device = {.queue_count = 1u, .queues = &queue};
-    static KernelNetworkInterface_t interface;
-    static const uint8_t gateway_station[6] = {0x02u, 0u, 0u, 0u, 0u, 0x01u};
-    static const uint8_t neighbour_station[6] = {0x02u, 0u, 0u, 0u, 0u, 0x02u};
-    uint8_t found[6] = {0u};
+    static const uint32_t refused[] = {0u,          0x00010203u, 0x7F000001u, 0xE0000001u, 0xF0000001u,
+                                       0xFFFFFFFFu, 0x0A0000FFu, 0x0A000000u, 0x0A000002u};
+    bool every_one_refused = true;
 
-    kernel_test_check(
-        test, kernel_network_interface_initialize(&interface, &device, 0x0A000002u, 0xFFFFFF00u, 0x0A000001u, 100u),
-        "an interface 10.0.0.2/24 through 10.0.0.1 sets up");
-    kernel_address_resolution_cache_learn(&interface.cache, 0x0A000001u, gateway_station, 0u);
-    kernel_address_resolution_cache_learn(&interface.cache, 0x0A000007u, neighbour_station, 0u);
-    kernel_test_check(test, kernel_network_interface_find_station(&interface, 0x0A000007u, 1u, found) && found[5] == 2u,
-                      "10.0.0.7 goes to its own station");
-    kernel_test_check(test, kernel_network_interface_find_station(&interface, 0x08080808u, 1u, found) && found[5] == 1u,
-                      "8.8.8.8 goes to the gateway's");
-    kernel_test_check(test, !kernel_network_interface_find_station(&interface, 0x0A000009u, 1u, found),
-                      "and 10.0.0.9, never learned, is not found");
-    kernel_test_check(test, !kernel_network_interface_initialize(&interface, NULL, 0u, 0u, 0u, 1u),
-                      "an interface on no card does not set up");
+    for (uint32_t source = 0u; source < sizeof(refused) / sizeof(refused[0]); ++source)
+        every_one_refused = every_one_refused &&
+                            !kernel_internet_protocol_source_is_acceptable(refused[source], 0x0A000002u, 0xFFFFFF00u);
+    kernel_test_check(test,
+                      kernel_internet_protocol_source_is_acceptable(0x0A000001u, 0x0A000002u, 0xFFFFFF00u) &&
+                          kernel_internet_protocol_source_is_acceptable(0x08080808u, 0x0A000002u, 0xFFFFFF00u) &&
+                          kernel_internet_protocol_source_is_acceptable(0x0A0001FFu, 0x0A000002u, 0xFFFFFF00u),
+                      "10.0.0.1, 8.8.8.8 and 10.0.1.255, another subnet's, may send to 10.0.0.2/24");
+    kernel_test_check(test, every_one_refused,
+                      "0.0.0.0, 0.1.2.3, 127.0.0.1, 224.0.0.1, 240.0.0.1, 255.255.255.255, 10.0.0.255, 10.0.0.0 and "
+                      "10.0.0.2 may not");
+    kernel_test_check(test, kernel_internet_protocol_source_is_acceptable(0x0A000000u, 0x0A000001u, 0xFFFFFFFEu),
+                      "on a /31, which has no broadcast, 10.0.0.0 may send to 10.0.0.1");
 }

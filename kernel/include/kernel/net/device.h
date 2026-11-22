@@ -26,8 +26,9 @@
  * Per frame, the stack touches nothing but generic fields: a buffer at a base plus the slot times a stride,
  * a length at a stride in the card's own receive descriptors, and one word at a stride in its transmit
  * descriptors, written as a length or'ed with the card's command template. Per batch, the card's own
- * operations harvest the frames it received, kick the frames published, and read its link: one indirect
- * call a batch, never one a frame.
+ * operations harvest the frames it received and kick the frames published: one indirect call a batch, never
+ * one a frame. Its link is read on a caller's demand, never per batch: on most cards it is a register read,
+ * which costs a VM exit under virtualisation.
  *
  * @author @MasterLaplace
  * @version 0.0.0
@@ -71,7 +72,7 @@ struct KernelNetworkDevice;
 typedef struct KernelNetworkDeviceOperations {
     uint32_t (*harvest)(struct KernelNetworkDevice *device, uint32_t queue); /**< Publishes the frames received. */
     uint32_t (*kick)(struct KernelNetworkDevice *device, uint32_t queue);    /**< Hands the frames published over. */
-    bool (*link_up)(struct KernelNetworkDevice *device);                     /**< Reads whether the link is up. */
+    bool (*link_up)(struct KernelNetworkDevice *device);                     /**< Reads whether its link is up. */
 } KernelNetworkDeviceOperations_t;
 
 /**

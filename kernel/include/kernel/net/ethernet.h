@@ -15,8 +15,6 @@
  * @file ethernet.h
  * @brief Ethernet II frames: their header read where the card wrote it, and written in front of a payload.
  *
- *
- *
  * @author @MasterLaplace
  * @version 0.0.0
  * @date 2026-11-22
@@ -38,9 +36,10 @@ extern "C" {
  * @name Ethernet II
  * @{
  */
-#define KERNEL_ETHERNET_HEADER_BYTES 14u     /**< Destination, source and EtherType. */
-#define KERNEL_ETHERNET_TYPE_IPV4    0x0800u /**< EtherType of IPv4. */
-#define KERNEL_ETHERNET_TYPE_ARP     0x0806u /**< EtherType of ARP. */
+#define KERNEL_ETHERNET_HEADER_BYTES                     14u     /**< Destination, source and EtherType. */
+#define KERNEL_ETHERNET_FRAME_LEAST_BYTES                60u     /**< Shortest frame on the wire, its CRC aside. */
+#define KERNEL_ETHERNET_TYPE_INTERNET_PROTOCOL_VERSION_4 0x0800u /**< EtherType of IPv4. */
+#define KERNEL_ETHERNET_TYPE_ADDRESS_RESOLUTION          0x0806u /**< EtherType of ARP. */
 /** @} */
 
 /**
@@ -74,6 +73,14 @@ extern bool kernel_ethernet_parse(const uint8_t *bytes, uint32_t length, KernelE
 extern bool kernel_ethernet_is_for(const KernelEthernetFrame_t *frame, const uint8_t *address);
 
 /**
+ * @brief Whether @p station is a group address, multicast or broadcast: the low bit of its first byte (IEEE 802).
+ *
+ * @param station A station address.
+ * @return true for a group address, which never sends a frame.
+ */
+static inline bool kernel_ethernet_is_group(const uint8_t *station);
+
+/**
  * @brief Writes a header in front of a payload.
  *
  * @param bytes       The frame's first byte.
@@ -83,6 +90,8 @@ extern bool kernel_ethernet_is_for(const KernelEthernetFrame_t *frame, const uin
  */
 extern void kernel_ethernet_write_header(uint8_t *bytes, const uint8_t *destination, const uint8_t *source,
                                          uint16_t type);
+
+#include <kernel/net/ethernet.inl>
 
 #ifdef __cplusplus
 }

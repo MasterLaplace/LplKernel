@@ -21,7 +21,9 @@ KernelInternetProtocolStatus_t kernel_internet_protocol_parse(const uint8_t *byt
 
     if (header_bytes < KERNEL_INTERNET_PROTOCOL_HEADER_BYTES)
         return KERNEL_INTERNET_PROTOCOL_BAD_HEADER_LENGTH;
-    if (header_bytes > length || total_bytes < header_bytes || total_bytes > length)
+    if (total_bytes < header_bytes)
+        return KERNEL_INTERNET_PROTOCOL_BAD_TOTAL_LENGTH;
+    if (total_bytes > length)
         return KERNEL_INTERNET_PROTOCOL_TRUNCATED;
     if (kernel_internet_checksum_finish(kernel_internet_checksum_add(0u, bytes, header_bytes)) != 0u)
         return KERNEL_INTERNET_PROTOCOL_BAD_CHECKSUM;
@@ -33,6 +35,19 @@ KernelInternetProtocolStatus_t kernel_internet_protocol_parse(const uint8_t *byt
     out->payload = bytes + header_bytes;
     out->payload_bytes = total_bytes - header_bytes;
     return KERNEL_INTERNET_PROTOCOL_TAKEN;
+}
+
+bool kernel_internet_protocol_source_is_acceptable(uint32_t source, uint32_t address, uint32_t netmask)
+{
+    const uint32_t first_byte = source >> 24;
+    const bool has_broadcast = (~netmask & 0xFFFFFFFEu) != 0u;
+    const bool on_subnet = ((source ^ address) & netmask) == 0u;
+    const uint32_t host = source & ~netmask;
+
+    if (first_byte == 0u || first_byte == KERNEL_INTERNET_PROTOCOL_LOOPBACK_NETWORK ||
+        first_byte >= KERNEL_INTERNET_PROTOCOL_FIRST_MULTICAST_NETWORK || source == address)
+        return false;
+    return !(has_broadcast && on_subnet && (host == 0u || host == ~netmask));
 }
 
 void kernel_internet_protocol_write_header(uint8_t *bytes, uint32_t source, uint32_t destination, uint8_t protocol,
