@@ -525,15 +525,15 @@
 
     #if __has_include(<lpl/infer/Inference.hpp>)
         #if !__has_include(<lplassistant/config.h>)
-            #error "LplKernel needs LplAssistant 0.6.0 or later, and the LplAssistant found has no lplassistant/config.h: update ../LplAssistant"
+            #error "LplKernel needs LplAssistant 0.6.2 or later, and the LplAssistant found has no lplassistant/config.h: update ../LplAssistant"
         #endif
         #include <lplassistant/config.h>
-        #if !LPLASSISTANT_COMPATIBLE_WITH(0, 6, 0)
+        #if !LPLASSISTANT_COMPATIBLE_WITH(0, 6, 2)
             #pragma message("found LplAssistant " LPLASSISTANT_VERSION_STRING)
             #if LPLASSISTANT_VERSION_MAJOR != 0
                 #error "LplKernel was written for LplAssistant 0.x: read what broke in its CHANGELOG, then adapt"
             #else
-                #error "LplKernel needs LplAssistant 0.6.0 or later: update ../LplAssistant"
+                #error "LplKernel needs LplAssistant 0.6.2 or later: update ../LplAssistant"
             #endif
         #endif
     #endif

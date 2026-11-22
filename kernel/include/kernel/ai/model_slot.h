@@ -67,6 +67,9 @@ extern "C" {
 /** First four bytes of a weights image, little-endian "LPLM". */
 #define KERNEL_MODEL_SLOT_MAGIC 0x4D4C504Cu
 
+/** A count of the model record that nothing counted, written "none" there: outside any count one boot reaches. */
+#define KERNEL_MODEL_SLOT_NOT_COUNTED UINT32_MAX
+
 /**
  * @enum ModelSlotState_t
  * @brief What the slot holds.
@@ -133,18 +136,33 @@ bool kernel_model_slot_is_mapped_at_boot(uint32_t virtual_start, uint32_t size);
 uint32_t kernel_model_slot_protect(const ModelSlot_t *slot);
 
 /**
+ * @brief The fallbacks the index sort of the mind's vocabulary took during one boot, from its counter read before the
+ *        boot and after it: each one is a run the sort had no room to keep, finished by comparing.
+ *
+ * @param before The counter before the boot.
+ * @param after  The counter after it; one that wrapped in between still counts what it gained.
+ * @param booted Whether the mind came up, which it does only once its vocabulary is indexed.
+ * @return What the counter gained; KERNEL_MODEL_SLOT_NOT_COUNTED when it gained nothing and the mind did not come up,
+ *         since no vocabulary was then surely indexed.
+ */
+uint32_t kernel_model_slot_index_fallbacks(uint32_t before, uint32_t after, bool booted);
+
+/**
  * @brief Writes one `[LPLTLM] model` record: the slot's state, whether the mind came up, where its weights came from,
- *        what the table's check and the reading found, the image's bytes and the pages turned read-only.
+ *        what the table's check and the reading found, the image's bytes, the pages turned read-only and the fallbacks
+ *        the index of its vocabulary took.
  *
  * @param slot            The slot the mind booted from.
  * @param origin          "seed", "module_in_place" or "module_copied"; "none" when no weights were taken.
  * @param table           "accepted", the table's refusal by its name, or "none" when the slot held no image.
  * @param reading         What the reading found, by its name, or "none".
  * @param protected_pages Pages kernel_model_slot_protect turned read-only.
+ * @param index_fallbacks What kernel_model_slot_index_fallbacks found, written "none" for
+ * KERNEL_MODEL_SLOT_NOT_COUNTED.
  * @param booted          Whether the mind came up.
  */
 void kernel_model_slot_report(const ModelSlot_t *slot, const char *origin, const char *table, const char *reading,
-                              uint32_t protected_pages, bool booted);
+                              uint32_t protected_pages, uint32_t index_fallbacks, bool booted);
 
 #ifdef __cplusplus
 }
