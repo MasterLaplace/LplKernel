@@ -5,6 +5,7 @@
 #include <kernel/net/icmp.h>
 #include <kernel/net/interface.h>
 #include <kernel/net/ipv4.h>
+#include <kernel/net/udp.h>
 #include <kernel/testing/test.h>
 
 #include <stddef.h>
@@ -353,4 +354,106 @@ KERNEL_TEST(a_source_no_host_sends_from_is_refused)
                       "10.0.0.2 may not");
     kernel_test_check(test, kernel_internet_protocol_source_is_acceptable(0x0A000000u, 0x0A000001u, 0xFFFFFFFEu),
                       "on a /31, which has no broadcast, 10.0.0.0 may send to 10.0.0.1");
+}
+
+/**
+ * @brief The checksum of a UDP datagram of @p datagram_bytes from @p source to @p destination, summed the slow way
+ *        over a pseudo-header the test lays out itself, with the datagram's checksum field as it stands.
+ */
+static uint16_t network_stack_test_naive_datagram_checksum(uint32_t source, uint32_t destination,
+                                                           const uint8_t *datagram, uint32_t datagram_bytes)
+{
+    static uint8_t whole[12u + 64u];
+
+    kernel_network_write_32(whole, source);
+    kernel_network_write_32(whole + 4u, destination);
+    whole[8] = 0u;
+    whole[9] = KERNEL_INTERNET_PROTOCOL_USER_DATAGRAM;
+    kernel_network_write_16(whole + 10u, (uint16_t) datagram_bytes);
+    memcpy(whole + 12u, datagram, datagram_bytes);
+    return network_stack_test_naive_checksum(whole, 12u + datagram_bytes);
+}
+
+/**
+ * @brief A datagram's checksum covers its pseudo-header, header and payload, the payload summed once by the caller;
+ *        one that folds to zero is sent as FFFFh (RFC 768).
+ */
+KERNEL_TEST(a_datagram_checksum_holds_by_the_tests_own_sum)
+{
+    uint8_t datagram[8u + 5u] = {0u};
+    const uint8_t payload[5] = {'h', 'e', 'l', 'l', 'o'};
+    const uint32_t source = 0x0A000001u;
+    const uint32_t destination = 0x0A000002u;
+    const uint32_t payload_sum = kernel_internet_checksum_add(0u, payload, 5u);
+
+    memcpy(datagram + 8u, payload, 5u);
+    kernel_user_datagram_write_header(
+        datagram, 7777u, 9000u, 5u,
+        kernel_user_datagram_checksum(kernel_user_datagram_pseudo_header_sum(source, destination, 13u), 7777u, 9000u,
+                                      5u, payload_sum));
+    kernel_test_check(test, kernel_network_read_16(datagram + 4u) == 13u, "its length counts its header");
+    kernel_test_check(test, network_stack_test_naive_datagram_checksum(source, destination, datagram, 13u) == 0u,
+                      "and its checksum, from the payload's sum, holds by the test's own sum of the whole");
+
+    uint8_t zero[8u + 2u] = {0u};
+    uint32_t sum = 0u;
+
+    kernel_user_datagram_write_header(zero, 1u, 2u, 2u, 0u);
+    sum =
+        (source >> 16) + (source & 0xFFFFu) + (destination >> 16) + (destination & 0xFFFFu) + 17u + 10u + 1u + 2u + 10u;
+    while (sum > 0xFFFFu)
+        sum = (sum & 0xFFFFu) + (sum >> 16);
+    kernel_network_write_16(zero + 8u, (uint16_t) (0xFFFFu - sum));
+    kernel_test_check(test,
+                      kernel_user_datagram_checksum(kernel_user_datagram_pseudo_header_sum(source, destination, 10u),
+                                                    1u, 2u, 2u,
+                                                    kernel_internet_checksum_add(0u, zero + 8u, 2u)) == 0xFFFFu,
+                      "a datagram whose sum folds to FFFFh, a checksum of zero, carries FFFFh");
+}
+
+/**
+ * @brief A datagram is read where it lies, its padding left out, and refused by its cause: too short, a length
+ *        past its packet or under its header, a checksum that fails; a zero checksum is said apart.
+ */
+KERNEL_TEST(a_datagram_is_taken_or_refused_by_its_cause)
+{
+    uint8_t datagram[8u + 6u + 4u];
+    const uint8_t payload[6] = {1u, 2u, 3u, 4u, 5u, 6u};
+    KernelInternetProtocolPacket_t packet = {.source = 0x0A000001u,
+                                             .destination = 0x0A000002u,
+                                             .protocol = KERNEL_INTERNET_PROTOCOL_USER_DATAGRAM,
+                                             .payload = datagram,
+                                             .payload_bytes = sizeof(datagram)};
+    KernelUserDatagram_t read;
+
+    memset(datagram, 0xEE, sizeof(datagram));
+    memcpy(datagram + 8u, payload, 6u);
+    kernel_user_datagram_write_header(datagram, 7777u, 9000u, 6u, 0u);
+    kernel_network_write_16(
+        datagram + 6u, network_stack_test_naive_datagram_checksum(packet.source, packet.destination, datagram, 14u));
+    kernel_test_check(test,
+                      kernel_user_datagram_parse(&packet, &read) == KERNEL_USER_DATAGRAM_TAKEN &&
+                          read.source_port == 7777u && read.destination_port == 9000u && read.payload == datagram + 8 &&
+                          read.payload_bytes == 6u,
+                      "a datagram of 14 bytes in a payload of 18 is taken, its 4 bytes of padding left out");
+    kernel_test_check(test, read.payload_sum == 0x0102u + 0x0304u + 0x0506u, "its payload's sum is kept whole");
+    packet.payload_bytes = 7u;
+    kernel_test_check(test, kernel_user_datagram_parse(&packet, &read) == KERNEL_USER_DATAGRAM_TRUNCATED,
+                      "7 bytes are too short for a header");
+    packet.payload_bytes = 13u;
+    kernel_test_check(test, kernel_user_datagram_parse(&packet, &read) == KERNEL_USER_DATAGRAM_BAD_LENGTH,
+                      "a length of 14 in 13 bytes is refused");
+    packet.payload_bytes = sizeof(datagram);
+    kernel_network_write_16(datagram + 4u, 7u);
+    kernel_test_check(test, kernel_user_datagram_parse(&packet, &read) == KERNEL_USER_DATAGRAM_BAD_LENGTH,
+                      "and so is a length of 7");
+    kernel_network_write_16(datagram + 4u, 14u);
+    datagram[13] ^= 0x01u;
+    kernel_test_check(test, kernel_user_datagram_parse(&packet, &read) == KERNEL_USER_DATAGRAM_BAD_CHECKSUM,
+                      "a flipped payload bit fails the checksum");
+    kernel_network_write_16(datagram + 6u, 0u);
+    kernel_test_check(test,
+                      kernel_user_datagram_parse(&packet, &read) == KERNEL_USER_DATAGRAM_NO_CHECKSUM &&
+                          read.payload_bytes == 6u,
+                      "a zero checksum is said apart, the datagram read but unchecked");
 }
