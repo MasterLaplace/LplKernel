@@ -54,6 +54,11 @@ typedef struct KernelEthernetFrame {
 } KernelEthernetFrame_t;
 
 /**
+ * @brief The broadcast station address, every bit set.
+ */
+extern const uint8_t kernel_ethernet_broadcast_station[KERNEL_NETWORK_ADDRESS_BYTES];
+
+/**
  * @brief Reads the header of the frame of @p length bytes at @p bytes.
  *
  * @param bytes  The frame.

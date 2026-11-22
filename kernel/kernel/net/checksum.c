@@ -51,18 +51,10 @@ uint16_t kernel_internet_checksum_fold_bytes(const uint8_t *bytes, uint32_t leng
     uint32_t folded = 0u;
 
     for (; length >= 4u; length -= 4u, bytes += 4u)
-    {
-        uint32_t words = 0u;
-
-        __builtin_memcpy(&words, bytes, sizeof(words));
-        sum += words;
-    }
+        sum += kernel_network_load_32(bytes);
     if (length >= 2u)
     {
-        uint16_t word = 0u;
-
-        __builtin_memcpy(&word, bytes, sizeof(word));
-        sum += word;
+        sum += kernel_network_load_16(bytes);
         bytes += 2u;
         length -= 2u;
     }

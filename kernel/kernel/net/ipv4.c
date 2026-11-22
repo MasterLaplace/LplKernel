@@ -37,13 +37,7 @@ KernelInternetProtocolStatus_t kernel_internet_protocol_parse(const uint8_t *byt
 
 bool kernel_internet_protocol_source_is_acceptable(uint32_t source, uint32_t address, uint32_t netmask)
 {
-    const uint32_t first_byte = source >> 24;
-    const bool has_broadcast = (~netmask & 0xFFFFFFFEu) != 0u;
-    const bool on_subnet = ((source ^ address) & netmask) == 0u;
-    const uint32_t host = source & ~netmask;
+    const KernelInternetProtocolSubnet_t subnet = kernel_internet_protocol_subnet(address, netmask);
 
-    if (first_byte == 0u || first_byte == KERNEL_INTERNET_PROTOCOL_LOOPBACK_NETWORK ||
-        first_byte >= KERNEL_INTERNET_PROTOCOL_FIRST_MULTICAST_NETWORK || source == address)
-        return false;
-    return !(has_broadcast && on_subnet && (host == 0u || host == ~netmask));
+    return kernel_internet_protocol_source_is_acceptable_in(source, address, &subnet);
 }

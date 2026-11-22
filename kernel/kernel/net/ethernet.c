@@ -1,11 +1,8 @@
 #include <kernel/net/byte_order.h>
 #include <kernel/net/ethernet.h>
 
-/**
- * @brief The broadcast station address, every bit set.
- */
-static const uint8_t kernel_ethernet_broadcast[KERNEL_NETWORK_ADDRESS_BYTES] = {0xFFu, 0xFFu, 0xFFu,
-                                                                                0xFFu, 0xFFu, 0xFFu};
+const uint8_t kernel_ethernet_broadcast_station[KERNEL_NETWORK_ADDRESS_BYTES] = {0xFFu, 0xFFu, 0xFFu,
+                                                                                 0xFFu, 0xFFu, 0xFFu};
 
 bool kernel_ethernet_parse(const uint8_t *bytes, uint32_t length, KernelEthernetFrame_t *out)
 {
@@ -22,5 +19,5 @@ bool kernel_ethernet_parse(const uint8_t *bytes, uint32_t length, KernelEthernet
 bool kernel_ethernet_is_for(const KernelEthernetFrame_t *frame, const uint8_t *address)
 {
     return kernel_network_station_equals(frame->destination, address) ||
-           kernel_network_station_equals(frame->destination, kernel_ethernet_broadcast);
+           kernel_network_station_equals(frame->destination, kernel_ethernet_broadcast_station);
 }

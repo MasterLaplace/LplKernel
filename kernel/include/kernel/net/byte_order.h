@@ -64,6 +64,24 @@ static inline void kernel_network_write_16(uint8_t *bytes, uint16_t value);
  */
 static inline void kernel_network_write_32(uint8_t *bytes, uint32_t value);
 
+/**
+ * @brief The 2 bytes at @p bytes as the host holds them, whatever their alignment: a field compared or summed
+ *        without a byte swap.
+ *
+ * @param bytes Its first byte.
+ * @return Its bytes, in the host's order.
+ */
+static inline uint16_t kernel_network_load_16(const uint8_t *bytes);
+
+/**
+ * @brief The 4 bytes at @p bytes as the host holds them, whatever their alignment: a field compared or summed
+ *        without a byte swap.
+ *
+ * @param bytes Its first byte.
+ * @return Its bytes, in the host's order.
+ */
+static inline uint32_t kernel_network_load_32(const uint8_t *bytes);
+
 #include <kernel/net/byte_order.inl>
 
 #ifdef __cplusplus

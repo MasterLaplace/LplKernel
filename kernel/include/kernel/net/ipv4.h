@@ -43,6 +43,7 @@ extern "C" {
 #define KERNEL_INTERNET_PROTOCOL_CONTROL_MESSAGE         1u      /**< Protocol number of ICMP. */
 #define KERNEL_INTERNET_PROTOCOL_USER_DATAGRAM           17u     /**< Protocol number of UDP. */
 #define KERNEL_INTERNET_PROTOCOL_TIME_TO_LIVE            64u     /**< TTL of a packet sent. */
+#define KERNEL_INTERNET_PROTOCOL_MULTICAST_TIME_TO_LIVE  1u      /**< TTL of one to a group: RFC 1112, 6.1. */
 #define KERNEL_INTERNET_PROTOCOL_LOOPBACK_NETWORK        127u    /**< First byte of the loopback addresses. */
 #define KERNEL_INTERNET_PROTOCOL_FIRST_MULTICAST_NETWORK 224u    /**< First byte of 224/4, 240/4 above it. */
 #define KERNEL_INTERNET_PROTOCOL_LIMITED_BROADCAST       0xFFFFFFFFu /**< 255.255.255.255. */
@@ -74,6 +75,15 @@ typedef struct KernelInternetProtocolPacket {
 } KernelInternetProtocolPacket_t;
 
 /**
+ * @brief An interface's subnet, as a source check reads it, computed once from its address and netmask.
+ */
+typedef struct KernelInternetProtocolSubnet {
+    uint32_t network;   /**< Its network address, host order. */
+    uint32_t broadcast; /**< Its directed broadcast, host order. */
+    bool has_broadcast; /**< Whether it has both, a /30 or wider. */
+} KernelInternetProtocolSubnet_t;
+
+/**
  * @brief Checks and reads the packet of @p length bytes at @p bytes.
  *
  * @param bytes  The packet, after its Ethernet header.
@@ -100,6 +110,26 @@ extern KernelInternetProtocolStatus_t kernel_internet_protocol_parse(const uint8
 extern bool kernel_internet_protocol_source_is_acceptable(uint32_t source, uint32_t address, uint32_t netmask);
 
 /**
+ * @brief The subnet of an interface at @p address with @p netmask.
+ *
+ * @param address The interface's address, host order.
+ * @param netmask Its netmask.
+ * @return Its network address, its directed broadcast, and whether it has them.
+ */
+static inline KernelInternetProtocolSubnet_t kernel_internet_protocol_subnet(uint32_t address, uint32_t netmask);
+
+/**
+ * @brief What kernel_internet_protocol_source_is_acceptable decides, on a subnet computed once.
+ *
+ * @param source  The packet's source address, host order.
+ * @param address The interface's address.
+ * @param subnet  Its subnet, from kernel_internet_protocol_subnet.
+ * @return true for a source a datagram may come from.
+ */
+static inline bool kernel_internet_protocol_source_is_acceptable_in(uint32_t source, uint32_t address,
+                                                                    const KernelInternetProtocolSubnet_t *subnet);
+
+/**
  * @brief Writes a header without options, its checksum computed, in front of a payload of @p payload_bytes.
  *
  * @param bytes          The header's first byte; KERNEL_INTERNET_PROTOCOL_HEADER_BYTES follow.
@@ -108,10 +138,11 @@ extern bool kernel_internet_protocol_source_is_acceptable(uint32_t source, uint3
  * @param protocol       What the payload is.
  * @param payload_bytes  Bytes of the payload.
  * @param identification The packet's identification.
+ * @param time_to_live   Its TTL: KERNEL_INTERNET_PROTOCOL_TIME_TO_LIVE, or the multicast one to a group.
  */
 static inline void kernel_internet_protocol_write_header(uint8_t *bytes, uint32_t source, uint32_t destination,
                                                          uint8_t protocol, uint32_t payload_bytes,
-                                                         uint16_t identification);
+                                                         uint16_t identification, uint8_t time_to_live);
 
 #include <kernel/net/ipv4.inl>
 

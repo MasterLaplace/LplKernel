@@ -359,7 +359,7 @@ KERNEL_TEST(an_ipv4_header_is_taken_or_refused_by_its_cause)
     uint8_t written[20 + 8] = {0u};
 
     kernel_internet_protocol_write_header(written, 0x0A00020Fu, 0x0A000202u, KERNEL_INTERNET_PROTOCOL_CONTROL_MESSAGE,
-                                          8u, 7u);
+                                          8u, 7u, KERNEL_INTERNET_PROTOCOL_TIME_TO_LIVE);
     kernel_test_check(test,
                       network_stack_test_naive_checksum(written, 20u) == 0u && written[0] == 0x45u && written[9] == 1u,
                       "a header written has a checksum that holds by the test's sum");
@@ -517,7 +517,8 @@ KERNEL_TEST(a_datagram_is_taken_or_refused_by_its_cause)
                           read.source_port == 7777u && read.destination_port == 9000u && read.payload == datagram + 8 &&
                           read.payload_bytes == 6u,
                       "a datagram of 14 bytes in a payload of 18 is taken, its 4 bytes of padding left out");
-    kernel_test_check(test, read.payload_sum == 0x0102u + 0x0304u + 0x0506u, "its payload's sum is kept whole");
+    kernel_test_check(test, read.payload_sum == 0x0102u + 0x0304u + 0x0506u,
+                      "its payload's sum, folded to 16 bits, carries none here");
     packet.payload_bytes = 7u;
     kernel_test_check(test, kernel_user_datagram_parse(&packet, &read) == KERNEL_USER_DATAGRAM_TRUNCATED,
                       "7 bytes are too short for a header");

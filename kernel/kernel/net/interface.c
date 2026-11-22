@@ -13,12 +13,6 @@
 #define KERNEL_NETWORK_INTERFACE_GROUP_LOW_BITS  0x007FFFFFu /**< The group bits a multicast station carries. */
 
 /**
- * @brief The broadcast station address, every bit set.
- */
-static const uint8_t kernel_network_interface_broadcast[KERNEL_NETWORK_ADDRESS_BYTES] = {0xFFu, 0xFFu, 0xFFu,
-                                                                                         0xFFu, 0xFFu, 0xFFu};
-
-/**
  * @brief The prefix RFC 1112 (6.4) puts in front of a multicast group's low 23 bits.
  */
 static const uint8_t kernel_network_interface_multicast_prefix[3] = {0x01u, 0x00u, 0x5Eu};
@@ -36,11 +30,10 @@ static KernelNetworkQueue_t *kernel_network_interface_queue(const KernelNetworkI
  */
 static bool kernel_network_interface_is_broadcast(const KernelNetworkInterface_t *interface, uint32_t address)
 {
-    const bool has_broadcast = (~interface->netmask & 0xFFFFFFFEu) != 0u;
-    const bool on_subnet = ((address ^ interface->address) & interface->netmask) == 0u;
+    const KernelInternetProtocolSubnet_t *const subnet = &interface->wire.subnet;
 
     return address == KERNEL_INTERNET_PROTOCOL_LIMITED_BROADCAST ||
-           (has_broadcast && on_subnet && (address | interface->netmask) == KERNEL_INTERNET_PROTOCOL_LIMITED_BROADCAST);
+           (subnet->has_broadcast && address == subnet->broadcast);
 }
 
 /**
@@ -49,6 +42,16 @@ static bool kernel_network_interface_is_broadcast(const KernelNetworkInterface_t
 static bool kernel_network_interface_is_multicast(uint32_t address)
 {
     return (address & KERNEL_NETWORK_INTERFACE_CLASS_MASK) == KERNEL_NETWORK_INTERFACE_MULTICAST_CLASS;
+}
+
+/**
+ * @brief The time to live of a packet to @p destination: 1 to a multicast group, as RFC 1112 (6.1) has a sender
+ *        default, so that only an explicit choice leaves the subnet, and 64 to any other.
+ */
+static uint8_t kernel_network_interface_time_to_live(uint32_t destination)
+{
+    return kernel_network_interface_is_multicast(destination) ? KERNEL_INTERNET_PROTOCOL_MULTICAST_TIME_TO_LIVE :
+                                                                KERNEL_INTERNET_PROTOCOL_TIME_TO_LIVE;
 }
 
 /**
@@ -79,7 +82,7 @@ static uint32_t kernel_network_interface_next_hop(const KernelNetworkInterface_t
 static bool kernel_network_interface_may_learn(const KernelNetworkInterface_t *interface, uint32_t sender)
 {
     return ((sender ^ interface->address) & interface->netmask) == 0u &&
-           kernel_internet_protocol_source_is_acceptable(sender, interface->address, interface->netmask);
+           kernel_internet_protocol_source_is_acceptable_in(sender, interface->address, &interface->wire.subnet);
 }
 
 /**
@@ -242,7 +245,7 @@ static KernelNetworkInterfaceFate_t kernel_network_interface_answer_echo(KernelN
                                  KERNEL_ETHERNET_TYPE_INTERNET_PROTOCOL_VERSION_4);
     kernel_internet_protocol_write_header(reply + KERNEL_ETHERNET_HEADER_BYTES, interface->address, packet->source,
                                           KERNEL_INTERNET_PROTOCOL_CONTROL_MESSAGE, packet->payload_bytes,
-                                          interface->next_identification++);
+                                          interface->next_identification++, KERNEL_INTERNET_PROTOCOL_TIME_TO_LIVE);
     kernel_internet_control_message_write_echo_reply(
         reply + KERNEL_ETHERNET_HEADER_BYTES + KERNEL_INTERNET_PROTOCOL_HEADER_BYTES, request);
     if (!kernel_network_interface_publish_frame(interface, slot, reply, length))
@@ -269,28 +272,6 @@ kernel_network_interface_take_control_message(KernelNetworkInterface_t *interfac
 }
 
 /**
- * @brief The 4 bytes at @p bytes, loaded in the host's order, whatever their alignment.
- */
-static uint32_t kernel_network_interface_load_32(const uint8_t *bytes)
-{
-    uint32_t value = 0u;
-
-    __builtin_memcpy(&value, bytes, sizeof(value));
-    return value;
-}
-
-/**
- * @brief The 2 bytes at @p bytes, loaded in the host's order, whatever their alignment.
- */
-static uint16_t kernel_network_interface_load_16(const uint8_t *bytes)
-{
-    uint16_t value = 0u;
-
-    __builtin_memcpy(&value, bytes, sizeof(value));
-    return value;
-}
-
-/**
  * @brief @p value, a 4-byte field in host order, as a load of it from a frame reads it.
  */
 static uint32_t kernel_network_interface_as_loaded_32(uint32_t value)
@@ -298,7 +279,7 @@ static uint32_t kernel_network_interface_as_loaded_32(uint32_t value)
     uint8_t bytes[4];
 
     kernel_network_write_32(bytes, value);
-    return kernel_network_interface_load_32(bytes);
+    return kernel_network_load_32(bytes);
 }
 
 /**
@@ -309,7 +290,7 @@ static uint16_t kernel_network_interface_as_loaded_16(uint16_t value)
     uint8_t bytes[2];
 
     kernel_network_write_16(bytes, value);
-    return kernel_network_interface_load_16(bytes);
+    return kernel_network_load_16(bytes);
 }
 
 /**
@@ -431,21 +412,6 @@ static bool kernel_network_interface_header_holds(uint32_t first, uint32_t secon
 }
 
 /**
- * @brief Whether @p source, host order, may send to the interface: what kernel_internet_protocol_source_is_acceptable
- *        decides, on the subnet's values the interface computed once.
- */
-static bool kernel_network_interface_accepts_source(const KernelNetworkInterface_t *interface, uint32_t source)
-{
-    const uint32_t first_byte = source >> 24;
-    const KernelNetworkInterfaceWire_t *const wire = &interface->wire;
-
-    if (first_byte - 1u >= KERNEL_INTERNET_PROTOCOL_FIRST_MULTICAST_NETWORK - 1u ||
-        first_byte == KERNEL_INTERNET_PROTOCOL_LOOPBACK_NETWORK || source == interface->address)
-        return false;
-    return !(wire->has_broadcast && (source == wire->subnet_network || source == wire->subnet_broadcast));
-}
-
-/**
  * @brief Lends the frame of @p length bytes at @p frame when it is the common datagram, every check passed.
  *
  * @return true when lent; false for any other frame, which the general path then takes and counts by its cause.
@@ -458,18 +424,18 @@ static bool kernel_network_interface_lend_common(KernelNetworkInterface_t *inter
     const uint8_t *const datagram = header + KERNEL_INTERNET_PROTOCOL_HEADER_BYTES;
 
     if (length < KERNEL_NETWORK_INTERFACE_HEADERS_BYTES || length > buffer_bytes ||
-        kernel_network_interface_load_32(frame) != wire->station_head ||
-        kernel_network_interface_load_16(frame + 4u) != wire->station_tail ||
+        kernel_network_load_32(frame) != wire->station_head ||
+        kernel_network_load_16(frame + 4u) != wire->station_tail ||
         kernel_ethernet_is_group(frame + KERNEL_NETWORK_ADDRESS_BYTES) ||
-        (kernel_network_interface_load_32(frame + 12u) & kernel_network_interface_as_loaded_32(0xFFFFFF00u)) !=
+        (kernel_network_load_32(frame + 12u) & kernel_network_interface_as_loaded_32(0xFFFFFF00u)) !=
             kernel_network_interface_as_loaded_32(0x08004500u))
         return false;
 
-    const uint32_t first = kernel_network_interface_load_32(header);
-    const uint32_t second = kernel_network_interface_load_32(header + 4u);
-    const uint32_t third = kernel_network_interface_load_32(header + 8u);
-    const uint32_t source_loaded = kernel_network_interface_load_32(header + 12u);
-    const uint32_t destination_loaded = kernel_network_interface_load_32(header + 16u);
+    const uint32_t first = kernel_network_load_32(header);
+    const uint32_t second = kernel_network_load_32(header + 4u);
+    const uint32_t third = kernel_network_load_32(header + 8u);
+    const uint32_t source_loaded = kernel_network_load_32(header + 12u);
+    const uint32_t destination_loaded = kernel_network_load_32(header + 16u);
     const uint32_t total_bytes = kernel_network_read_16(header + 2u);
 
     if (destination_loaded != wire->address || (second & kernel_network_interface_as_loaded_32(0x00003FFFu)) != 0u ||
@@ -482,9 +448,9 @@ static bool kernel_network_interface_lend_common(KernelNetworkInterface_t *inter
 
     const uint32_t source = kernel_network_read_32(header + 12u);
     const uint32_t datagram_bytes = kernel_network_read_16(datagram + 4u);
-    const uint32_t place = kernel_network_interface_lent_place(wire, kernel_network_interface_load_16(datagram + 2u));
+    const uint32_t place = kernel_network_interface_lent_place(wire, kernel_network_load_16(datagram + 2u));
 
-    if (!kernel_network_interface_accepts_source(interface, source) ||
+    if (!kernel_internet_protocol_source_is_acceptable_in(source, interface->address, &wire->subnet) ||
         datagram_bytes < KERNEL_USER_DATAGRAM_HEADER_BYTES ||
         datagram_bytes > total_bytes - KERNEL_INTERNET_PROTOCOL_HEADER_BYTES || place == KERNEL_NETWORK_INTERFACE_PORTS)
         return false;
@@ -518,7 +484,8 @@ static bool kernel_network_interface_lend_common(KernelNetworkInterface_t *inter
 }
 
 /**
- * @brief The fate of an IPv4 packet: what is the interface's handed to its protocol.
+ * @brief The fate of an IPv4 packet: what is the interface's handed to its protocol, a datagram to a broadcast
+ *        address too, as RFC 1122 (3.3.6) has a host recognize the limited broadcast and its subnet's.
  *
  * @return Its fate, or KERNEL_NETWORK_INTERFACE_FATES when its parse refused it, then counted by status.
  */
@@ -534,16 +501,21 @@ static KernelNetworkInterfaceFate_t kernel_network_interface_take_internet_proto
         ++interface->counters.internet_protocol_refused[status];
         return KERNEL_NETWORK_INTERFACE_FATES;
     }
-    if (packet.destination != interface->address)
+
+    const bool to_interface = packet.destination == interface->address;
+
+    if (!to_interface && !kernel_network_interface_is_broadcast(interface, packet.destination))
         return KERNEL_NETWORK_INTERFACE_INTERNET_PROTOCOL_FOR_OTHERS;
-    if (kernel_ethernet_is_group(frame->destination))
+    if (to_interface && kernel_ethernet_is_group(frame->destination))
         return KERNEL_NETWORK_INTERFACE_INTERNET_PROTOCOL_LINK_BROADCAST;
-    if (!kernel_internet_protocol_source_is_acceptable(packet.source, interface->address, interface->netmask))
+    if (!kernel_internet_protocol_source_is_acceptable_in(packet.source, interface->address, &interface->wire.subnet))
         return KERNEL_NETWORK_INTERFACE_INTERNET_PROTOCOL_SOURCE_REFUSED;
     if (packet.protocol == KERNEL_INTERNET_PROTOCOL_USER_DATAGRAM)
         return kernel_network_interface_take_user_datagram(interface, &packet);
     if (packet.protocol != KERNEL_INTERNET_PROTOCOL_CONTROL_MESSAGE)
         return KERNEL_NETWORK_INTERFACE_INTERNET_PROTOCOL_UNHANDLED;
+    if (!to_interface)
+        return KERNEL_NETWORK_INTERFACE_CONTROL_MESSAGE_TO_BROADCAST;
     return kernel_network_interface_take_control_message(interface, frame, &packet);
 }
 
@@ -646,6 +618,8 @@ static KernelNetworkInterfaceSend_t kernel_network_interface_station_of(KernelNe
 {
     if (kernel_network_interface_is_unreachable(destination))
         return KERNEL_NETWORK_INTERFACE_SEND_UNREACHABLE;
+    if (destination == interface->address)
+        return KERNEL_NETWORK_INTERFACE_SEND_SELF;
     if (kernel_network_interface_is_broadcast(interface, destination) ||
         kernel_network_interface_is_multicast(destination))
     {
@@ -684,6 +658,8 @@ static KernelNetworkInterfaceSetup_t kernel_network_interface_check_device(const
     if (device->frame_least_bytes > device->frame_most_bytes || device->frame_most_bytes > device->buffer_bytes ||
         device->frame_most_bytes < KERNEL_ETHERNET_FRAME_LEAST_BYTES)
         return KERNEL_NETWORK_INTERFACE_BAD_FRAME_BOUNDS;
+    if (kernel_ethernet_is_group(device->address))
+        return KERNEL_NETWORK_INTERFACE_GROUP_STATION;
     return KERNEL_NETWORK_INTERFACE_READY;
 }
 
@@ -701,14 +677,12 @@ KernelNetworkInterfaceSetup_t kernel_network_interface_initialize(KernelNetworkI
     interface->netmask = config->netmask;
     interface->gateway = config->gateway;
     interface->request_interval = config->request_interval;
-    interface->wire.station_head = kernel_network_interface_load_32(device->address);
-    interface->wire.station_tail = kernel_network_interface_load_16(device->address + 4u);
+    interface->wire.station_head = kernel_network_load_32(device->address);
+    interface->wire.station_tail = kernel_network_load_16(device->address + 4u);
     interface->wire.address = kernel_network_interface_as_loaded_32(config->address);
     interface->wire.pseudo_header_sum =
         (config->address >> 16) + (config->address & 0xFFFFu) + KERNEL_INTERNET_PROTOCOL_USER_DATAGRAM;
-    interface->wire.subnet_network = config->address & config->netmask;
-    interface->wire.subnet_broadcast = config->address | ~config->netmask;
-    interface->wire.has_broadcast = (~config->netmask & 0xFFFFFFFEu) != 0u;
+    interface->wire.subnet = kernel_internet_protocol_subnet(config->address, config->netmask);
     kernel_address_resolution_cache_initialize(&interface->cache, config->cache_lifetime);
     (void) kernel_spsc_ring_initialize(&interface->lent_ring, KERNEL_NETWORK_INTERFACE_LENT_DATAGRAMS);
     return KERNEL_NETWORK_INTERFACE_READY;
@@ -752,6 +726,8 @@ uint32_t kernel_network_interface_poll(KernelNetworkInterface_t *interface, uint
     interface->counters.datagrams_common += common;
     interface->receive_taken = ready;
     kernel_network_interface_give_back(interface);
+    if (interface->receive_taken == kernel_spsc_ring_capacity(queue.receive))
+        ++interface->counters.receive_held_full;
     (void) card.operations->kick(device, 0u);
     return ready - first;
 }
@@ -773,7 +749,7 @@ KernelNetworkInterfaceRequest_t kernel_network_interface_request_address(KernelN
 
     kernel_address_resolution_cache_ask(&interface->cache, next_hop, now);
     kernel_network_station_copy(request.sender_station, interface->device->address);
-    if (!kernel_network_interface_send_address_resolution(interface, kernel_network_interface_broadcast, &request,
+    if (!kernel_network_interface_send_address_resolution(interface, kernel_ethernet_broadcast_station, &request,
                                                           &failure))
     {
         ++interface->counters.address_resolution_requests_unsent;
@@ -791,7 +767,7 @@ bool kernel_network_interface_find_station(const KernelNetworkInterface_t *inter
         return false;
     if (kernel_network_interface_is_broadcast(interface, destination))
     {
-        kernel_network_station_copy(out_station, kernel_network_interface_broadcast);
+        kernel_network_station_copy(out_station, kernel_ethernet_broadcast_station);
         return true;
     }
     if (kernel_network_interface_is_multicast(destination))
@@ -872,7 +848,7 @@ KernelNetworkInterfaceSend_t kernel_network_interface_send_datagram(KernelNetwor
 
     interface->datagram_reserved = false;
     if (reserved)
-        result = length > device->frame_most_bytes ?
+        result = datagram->payload_bytes > device->frame_most_bytes - KERNEL_NETWORK_INTERFACE_HEADERS_BYTES ?
                      KERNEL_NETWORK_INTERFACE_SEND_TOO_LONG :
                      kernel_network_interface_station_of(interface, datagram->destination_address, now, station);
     if (result == KERNEL_NETWORK_INTERFACE_SEND_SENT)
@@ -886,10 +862,10 @@ KernelNetworkInterfaceSend_t kernel_network_interface_send_datagram(KernelNetwor
         {
             kernel_ethernet_write_header(frame, station, device->address,
                                          KERNEL_ETHERNET_TYPE_INTERNET_PROTOCOL_VERSION_4);
-            kernel_internet_protocol_write_header(frame + KERNEL_ETHERNET_HEADER_BYTES, interface->address,
-                                                  datagram->destination_address, KERNEL_INTERNET_PROTOCOL_USER_DATAGRAM,
-                                                  KERNEL_USER_DATAGRAM_HEADER_BYTES + datagram->payload_bytes,
-                                                  interface->next_identification++);
+            kernel_internet_protocol_write_header(
+                frame + KERNEL_ETHERNET_HEADER_BYTES, interface->address, datagram->destination_address,
+                KERNEL_INTERNET_PROTOCOL_USER_DATAGRAM, KERNEL_USER_DATAGRAM_HEADER_BYTES + datagram->payload_bytes,
+                interface->next_identification++, kernel_network_interface_time_to_live(datagram->destination_address));
             kernel_user_datagram_write_header(
                 frame + KERNEL_ETHERNET_HEADER_BYTES + KERNEL_INTERNET_PROTOCOL_HEADER_BYTES, datagram->source_port,
                 datagram->destination_port, datagram->payload_bytes, checksum);

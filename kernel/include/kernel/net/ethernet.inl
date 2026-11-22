@@ -1,3 +1,5 @@
+#include <kernel/net/byte_order.h>
+
 #include <stdbool.h>
 #include <stdint.h>
 

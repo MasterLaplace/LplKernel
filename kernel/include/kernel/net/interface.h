@@ -34,10 +34,14 @@
  * source it accepts, UDP to a lent port, has a path of its own: each field is read once, as the card wrote it,
  * against values the interface computed in the same byte order at set-up and binding, and the IPv4 header is
  * summed as five loads. Any other frame, or any field that does not match, takes the general path, which refuses
- * it by its cause. A destination whose station is
- * not known is refused by name and asked for by ARP, at most once a request interval: no hidden queue. Every frame read
- *lands in exactly one fate, so that the fates and the IPv4 refusals sum to the frames received. Time is the caller's,
- *so that a replay of the same frames at the same times answers the same way.
+ * it by its cause. A datagram to the limited broadcast or to the subnet's is delivered there, and an ICMP message to
+ * either is counted, never answered.
+ *
+ * A destination whose station is not known is refused by name and asked for by ARP, at most once a request
+ * interval: no hidden queue. A lent datagram not released holds its frame and every frame after it; once they fill
+ * the receive ring, the card has nowhere to receive, and every poll that ends so is counted. Every frame read lands
+ * in exactly one fate, so that the fates and the IPv4 refusals sum to the frames received. Time is the caller's, so
+ * that a replay of the same frames at the same times answers the same way.
  *
  * The card's limits and lengths are checked as an untrusted neighbour's: the interface refuses to set up on
  * bounds out of order, and refuses a received length longer than a buffer. The link is not read per batch: a
@@ -102,6 +106,7 @@ typedef enum KernelNetworkInterfaceFate {
     KERNEL_NETWORK_INTERFACE_ECHO_ANSWERED,                        /**< Echo requests answered. */
     KERNEL_NETWORK_INTERFACE_ECHO_TOO_LONG,                        /**< Echo requests whose reply fits no frame. */
     KERNEL_NETWORK_INTERFACE_ECHO_REPLY_RECEIVED,                  /**< Echo replies. */
+    KERNEL_NETWORK_INTERFACE_CONTROL_MESSAGE_TO_BROADCAST,         /**< ICMP to a broadcast address: none answered. */
     KERNEL_NETWORK_INTERFACE_USER_DATAGRAM_MALFORMED,              /**< UDP too short, or its length past it. */
     KERNEL_NETWORK_INTERFACE_USER_DATAGRAM_BAD_CHECKSUM,           /**< UDP whose checksum does not hold. */
     KERNEL_NETWORK_INTERFACE_USER_DATAGRAM_CHECKSUM_ABSENT,        /**< UDP without one, to a port that wants it. */
@@ -123,6 +128,7 @@ typedef enum KernelNetworkInterfaceSend {
     KERNEL_NETWORK_INTERFACE_SEND_SENT = 0,              /**< Published, for the next kick to send. */
     KERNEL_NETWORK_INTERFACE_SEND_NO_STATION,            /**< Its next hop's station unknown: asked by ARP. */
     KERNEL_NETWORK_INTERFACE_SEND_UNREACHABLE,           /**< An address no packet leaves for. */
+    KERNEL_NETWORK_INTERFACE_SEND_SELF,                  /**< The interface's own address: nothing loops back. */
     KERNEL_NETWORK_INTERFACE_SEND_TOO_LONG,              /**< A payload past the card's longest frame. */
     KERNEL_NETWORK_INTERFACE_SEND_ZERO_CHECKSUM_REFUSED, /**< No checksum, from a port not bound to send none. */
     KERNEL_NETWORK_INTERFACE_SEND_STALE_SLOT,            /**< Not the slot reserved, or taken since by an answer. */
@@ -142,6 +148,7 @@ typedef struct KernelNetworkInterfaceCounters {
     uint32_t sends[KERNEL_NETWORK_INTERFACE_SEND_RESULTS];                 /**< Datagrams sent or refused, by result. */
     uint32_t checksums_computed; /**< Payloads the interface summed, given no sum. */
     uint32_t datagrams_common;   /**< Datagrams lent by the common datagram's path, of all those lent. */
+    uint32_t receive_held_full;  /**< Polls that ended with lent datagrams holding every receive slot. */
 } KernelNetworkInterfaceCounters_t;
 
 /**
@@ -150,7 +157,7 @@ typedef struct KernelNetworkInterfaceCounters {
 typedef struct KernelNetworkDatagram {
     const uint8_t *payload;    /**< Its payload, valid until it is released. */
     uint32_t payload_bytes;    /**< Bytes of it. */
-    uint32_t payload_sum;      /**< Its 16-bit words summed, carries not folded: an echo sends it back unsummed. */
+    uint32_t payload_sum;      /**< Its words summed, folded to 16 bits: an echo sends it back unsummed. */
     uint32_t source_address;   /**< Its sender's IPv4 address, host order. */
     uint16_t source_port;      /**< Its sender's port. */
     uint16_t destination_port; /**< The port it was sent to. */
@@ -225,9 +232,7 @@ typedef struct KernelNetworkInterfaceWire {
     uint32_t address;                                    /**< The interface's IPv4 address. */
     uint16_t lent_ports[KERNEL_NETWORK_INTERFACE_PORTS]; /**< Each place's port when bound lent, else 0. */
     uint32_t pseudo_header_sum; /**< The interface's address and UDP's protocol, as a pseudo-header sums them. */
-    uint32_t subnet_network;    /**< The subnet's network address, host order. */
-    uint32_t subnet_broadcast;  /**< Its directed broadcast, host order. */
-    bool has_broadcast;         /**< Whether the subnet has both, a /30 or wider. */
+    KernelInternetProtocolSubnet_t subnet; /**< The subnet's network and broadcast, host order. */
 } KernelNetworkInterfaceWire_t;
 
 /**
@@ -275,6 +280,7 @@ typedef enum KernelNetworkInterfaceSetup {
     KERNEL_NETWORK_INTERFACE_NO_QUEUE,         /**< No queue pair, or one missing a ring or an array. */
     KERNEL_NETWORK_INTERFACE_NO_OPERATIONS,    /**< One of the card's operations missing. */
     KERNEL_NETWORK_INTERFACE_BAD_FRAME_BOUNDS, /**< Not frame_least <= frame_most <= buffer_bytes, 60 <= frame_most. */
+    KERNEL_NETWORK_INTERFACE_GROUP_STATION,    /**< A card whose station is a group's, which no frame comes from. */
 } KernelNetworkInterfaceSetup_t;
 
 /**
@@ -369,8 +375,9 @@ extern KernelNetworkInterfaceSend_t kernel_network_interface_send_datagram(Kerne
 /**
  * @brief Reads every frame the card received, answers what is the interface's to answer, and kicks the card.
  *
- * @details It also frees the cache's expired entries, so the caller's time must not advance by 2^32 or more
- *          between two polls.
+ * @details It also frees the cache's expired entries, one entry a poll, each once in
+ *          KERNEL_ADDRESS_RESOLUTION_CACHE_ENTRIES polls: the caller's time must not advance by 2^32 less the cache's
+ *          lifetime or more over that many polls.
  *
  * @param interface The interface.
  * @param now       The caller's time.

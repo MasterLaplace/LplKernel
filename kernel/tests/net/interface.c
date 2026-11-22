@@ -236,7 +236,8 @@ static uint32_t network_fake_write_control_message(uint8_t *frame, const uint8_t
     kernel_ethernet_write_header(frame, station, network_fake_peer_station,
                                  KERNEL_ETHERNET_TYPE_INTERNET_PROTOCOL_VERSION_4);
     kernel_internet_protocol_write_header(frame + KERNEL_ETHERNET_HEADER_BYTES, source, destination,
-                                          KERNEL_INTERNET_PROTOCOL_CONTROL_MESSAGE, message_bytes, 3u);
+                                          KERNEL_INTERNET_PROTOCOL_CONTROL_MESSAGE, message_bytes, 3u,
+                                          KERNEL_INTERNET_PROTOCOL_TIME_TO_LIVE);
     memset(message, 0x77, message_bytes);
     message[0] = type;
     message[1] = 0u;
@@ -325,7 +326,8 @@ static uint32_t network_fake_write_datagram(uint8_t *frame, uint16_t destination
     kernel_ethernet_write_header(frame, network_fake_own_station, network_fake_peer_station,
                                  KERNEL_ETHERNET_TYPE_INTERNET_PROTOCOL_VERSION_4);
     kernel_internet_protocol_write_header(frame + KERNEL_ETHERNET_HEADER_BYTES, NETWORK_FAKE_PEER, NETWORK_FAKE_ADDRESS,
-                                          KERNEL_INTERNET_PROTOCOL_USER_DATAGRAM, datagram_bytes, 5u);
+                                          KERNEL_INTERNET_PROTOCOL_USER_DATAGRAM, datagram_bytes, 5u,
+                                          KERNEL_INTERNET_PROTOCOL_TIME_TO_LIVE);
     for (uint32_t byte = 0u; byte < payload_bytes; ++byte)
         payload[byte] = (uint8_t) (byte + seed);
     sum = kernel_user_datagram_checksum(
@@ -829,7 +831,8 @@ KERNEL_TEST(control_messages_are_counted_by_what_they_are)
     network_fake_receive(frame, length);
     (void) network_fake_write_to_interface(frame, KERNEL_INTERNET_CONTROL_MESSAGE_ECHO_REPLY, 0u);
     kernel_internet_protocol_write_header(frame + KERNEL_ETHERNET_HEADER_BYTES, NETWORK_FAKE_PEER, NETWORK_FAKE_ADDRESS,
-                                          KERNEL_INTERNET_PROTOCOL_CONTROL_MESSAGE, 4u, 3u);
+                                          KERNEL_INTERNET_PROTOCOL_CONTROL_MESSAGE, 4u, 3u,
+                                          KERNEL_INTERNET_PROTOCOL_TIME_TO_LIVE);
     network_fake_seal_control_message(frame + NETWORK_FAKE_MESSAGE, 4u);
     network_fake_receive(frame, NETWORK_FAKE_MESSAGE + 4u);
     network_fake_receive(frame, network_fake_write_to_interface(frame, 13u, NETWORK_FAKE_ECHO_DATA));
@@ -946,8 +949,8 @@ KERNEL_TEST(frames_the_interface_does_not_take_are_counted_by_their_cause)
 }
 
 /**
- * @brief An interface refuses to set up on no card, on a card without a queue or an operation, and on frame bounds
- *        out of order, each refusal by its cause.
+ * @brief An interface refuses to set up on no card, on a card without a queue or an operation, on frame bounds out of
+ *        order, and on a card whose station is a group's, each refusal by its cause.
  */
 KERNEL_TEST(an_interface_refuses_a_card_by_its_cause)
 {
@@ -989,10 +992,21 @@ KERNEL_TEST(an_interface_refuses_a_card_by_its_cause)
                           KERNEL_NETWORK_INTERFACE_BAD_FRAME_BOUNDS,
                       "a shortest frame past its longest");
     network_fake_device.frame_least_bytes = KERNEL_ETHERNET_HEADER_BYTES;
+    memset(network_fake_device.address, 0xFF, sizeof(network_fake_device.address));
+    kernel_test_check(test,
+                      kernel_network_interface_initialize(&interface, &network_fake_device, &config) ==
+                          KERNEL_NETWORK_INTERFACE_GROUP_STATION,
+                      "a card whose station is the broadcast, as a blank EEPROM gives it");
+    memcpy(network_fake_device.address, (const uint8_t[6]){0x01u, 0x00u, 0x5Eu, 0x00u, 0x00u, 0x01u}, 6u);
+    kernel_test_check(test,
+                      kernel_network_interface_initialize(&interface, &network_fake_device, &config) ==
+                          KERNEL_NETWORK_INTERFACE_GROUP_STATION,
+                      "or a multicast group's");
+    memcpy(network_fake_device.address, network_fake_own_station, 6u);
     kernel_test_check(test,
                       kernel_network_interface_initialize(&interface, &network_fake_device, &config) ==
                           KERNEL_NETWORK_INTERFACE_READY,
-                      "and the same card, its bounds in order, is taken");
+                      "and the same card, its bounds in order and its station its own, is taken");
 }
 
 /**
@@ -1217,6 +1231,8 @@ typedef enum NetworkFakeSpoil {
     NETWORK_FAKE_SPOIL_SHORT_LENGTH,     /**< A UDP length of 7. */
     NETWORK_FAKE_SPOIL_LONG_LENGTH,      /**< A UDP length a byte past its packet, its UDP checksum sound. */
     NETWORK_FAKE_SPOIL_HEADER_CHECKSUM,  /**< An IPv4 checksum with a flipped bit. */
+    NETWORK_FAKE_SPOIL_SHORT_TOTAL,      /**< A total length of 19, under an IPv4 header. */
+    NETWORK_FAKE_SPOIL_TOTAL_UNDER_UDP,  /**< A total length of 27, under a UDP header after its 20. */
     NETWORK_FAKE_SPOILS                  /**< How many spoils there are. */
 } NetworkFakeSpoil_t;
 
@@ -1292,6 +1308,11 @@ static uint32_t network_fake_write_spoiled_datagram(uint8_t *frame, NetworkFakeS
         kernel_network_write_16(datagram + 4u, 7u);
     if (spoil == NETWORK_FAKE_SPOIL_LONG_LENGTH)
         kernel_network_write_16(datagram + 4u, (uint16_t) (kernel_network_read_16(datagram + 4u) + 1u));
+    if (spoil == NETWORK_FAKE_SPOIL_SHORT_TOTAL)
+        kernel_network_write_16(header + 2u, KERNEL_INTERNET_PROTOCOL_HEADER_BYTES - 1u);
+    if (spoil == NETWORK_FAKE_SPOIL_TOTAL_UNDER_UDP)
+        kernel_network_write_16(header + 2u,
+                                KERNEL_INTERNET_PROTOCOL_HEADER_BYTES + KERNEL_USER_DATAGRAM_HEADER_BYTES - 1u);
     if (spoil != NETWORK_FAKE_SPOIL_SHORT_LENGTH && spoil != NETWORK_FAKE_SPOIL_DESTINATION)
         network_fake_seal_datagram(frame);
     network_fake_seal_header(frame);
@@ -1344,18 +1365,19 @@ KERNEL_TEST(a_datagram_to_a_lent_port_failing_one_check_is_refused_by_its_cause)
     kernel_test_check(
         test,
         refused[KERNEL_INTERNET_PROTOCOL_NOT_VERSION_4] == 1u && refused[KERNEL_INTERNET_PROTOCOL_BAD_CHECKSUM] == 2u &&
-            refused[KERNEL_INTERNET_PROTOCOL_FRAGMENT] == 1u && refused[KERNEL_INTERNET_PROTOCOL_TRUNCATED] == 1u,
-        "version 6, an IHL of 6 and a flipped checksum, a fragment, a total past the frame");
+            refused[KERNEL_INTERNET_PROTOCOL_FRAGMENT] == 1u && refused[KERNEL_INTERNET_PROTOCOL_TRUNCATED] == 1u &&
+            refused[KERNEL_INTERNET_PROTOCOL_BAD_TOTAL_LENGTH] == 1u,
+        "version 6, an IHL of 6 and a flipped checksum, a fragment, a total past the frame, a total of 19");
     kernel_test_check(test,
                       fates[KERNEL_NETWORK_INTERFACE_INTERNET_PROTOCOL_FOR_OTHERS] == 1u &&
                           fates[KERNEL_NETWORK_INTERFACE_INTERNET_PROTOCOL_UNHANDLED] == 1u &&
                           fates[KERNEL_NETWORK_INTERFACE_INTERNET_PROTOCOL_SOURCE_REFUSED] == 2u,
                       "to 10.0.0.9, TCP, and from 127.0.0.1 and 10.0.0.255");
     kernel_test_check(test,
-                      fates[KERNEL_NETWORK_INTERFACE_USER_DATAGRAM_MALFORMED] == 2u &&
+                      fates[KERNEL_NETWORK_INTERFACE_USER_DATAGRAM_MALFORMED] == 3u &&
                           fates[KERNEL_NETWORK_INTERFACE_FRAME_OVERSIZED] == 1u &&
                           fates[KERNEL_NETWORK_INTERFACE_FRAME_TRUNCATED] == 1u,
-                      "UDP lengths of 7 and a byte past, a slot past its buffer, and one of 13 bytes");
+                      "UDP lengths of 7 and a byte past, a total of 27, a slot past its buffer, and one of 13 bytes");
     kernel_test_check(test,
                       fates[KERNEL_NETWORK_INTERFACE_DATAGRAM_LENT] == 0u &&
                           network_fake_interface.counters.datagrams_common == 0u,
@@ -1595,8 +1617,8 @@ KERNEL_TEST(a_send_whose_slot_an_answer_took_is_refused_as_stale)
 }
 
 /**
- * @brief A datagram past the card's longest frame, to an address no packet leaves for, or without checksum from a
- *        port not bound so, is refused by name.
+ * @brief A datagram past the card's longest frame, its length wrapping past 2^32 included, to an address no packet
+ *        leaves for, to the interface itself, or without checksum from a port not bound so, is refused by name.
  */
 KERNEL_TEST(a_datagram_too_long_or_to_nowhere_is_refused_by_name)
 {
@@ -1613,10 +1635,27 @@ KERNEL_TEST(a_datagram_too_long_or_to_nowhere_is_refused_by_name)
                       network_fake_send(NETWORK_FAKE_PEER, room + 1u, 0u, KERNEL_NETWORK_CHECKSUM_FROM_SUM, 2u) ==
                           KERNEL_NETWORK_INTERFACE_SEND_TOO_LONG,
                       "1473 are refused as too long");
+    (void) kernel_network_interface_reserve_datagram(&network_fake_interface, &slot, &room);
+
+    const KernelNetworkDatagramOut_t wrapping = {.destination_address = NETWORK_FAKE_PEER,
+                                                 .destination_port = NETWORK_FAKE_PEER_PORT,
+                                                 .source_port = NETWORK_FAKE_GAME_PORT,
+                                                 .payload_bytes =
+                                                     UINT32_MAX - KERNEL_NETWORK_INTERFACE_HEADERS_BYTES + 1u,
+                                                 .checksum = KERNEL_NETWORK_CHECKSUM_FROM_SUM};
+
+    kernel_test_check(test,
+                      kernel_network_interface_send_datagram(&network_fake_interface, slot, &wrapping, 2u) ==
+                          KERNEL_NETWORK_INTERFACE_SEND_TOO_LONG,
+                      "and so is a payload whose frame wraps past 2^32 to 0 bytes");
     kernel_test_check(test,
                       network_fake_send(0x7F000001u, 4u, 0u, KERNEL_NETWORK_CHECKSUM_FROM_SUM, 2u) ==
                           KERNEL_NETWORK_INTERFACE_SEND_UNREACHABLE,
                       "127.0.0.1 is unreachable");
+    kernel_test_check(test,
+                      network_fake_send(NETWORK_FAKE_ADDRESS, 4u, 0u, KERNEL_NETWORK_CHECKSUM_FROM_SUM, 2u) ==
+                          KERNEL_NETWORK_INTERFACE_SEND_SELF,
+                      "10.0.0.2 is the interface itself, which no ARP request is sent for");
     kernel_test_check(test,
                       network_fake_send(NETWORK_FAKE_PEER, 4u, 0u, KERNEL_NETWORK_CHECKSUM_NONE, 2u) ==
                           KERNEL_NETWORK_INTERFACE_SEND_ZERO_CHECKSUM_REFUSED,
@@ -1739,4 +1778,122 @@ KERNEL_TEST(a_datagram_past_the_lent_places_is_dropped_and_counted)
                           kernel_spsc_ring_size(&network_fake_big_receive) == 0u,
                       "the 64th lent is the 64th sent, and releasing all gives every slot back");
     network_fake_check_counted(test, datagrams);
+}
+
+/**
+ * @brief Writes the datagram of network_fake_write_datagram, 6 bytes to @p destination_port, to @p destination in a
+ *        frame to @p station, its checksums sealed again.
+ *
+ * @return Its length.
+ */
+static uint32_t network_fake_write_datagram_to(uint8_t *frame, const uint8_t *station, uint32_t destination,
+                                               uint16_t destination_port)
+{
+    const uint32_t length = network_fake_write_datagram(frame, destination_port, 6u, 0u, NETWORK_FAKE_CHECKSUM_SOUND);
+
+    memcpy(frame, station, 6u);
+    kernel_network_write_32(frame + KERNEL_ETHERNET_HEADER_BYTES + 16u, destination);
+    network_fake_seal_datagram(frame);
+    network_fake_seal_header(frame);
+    return length;
+}
+
+/**
+ * @brief A datagram to the limited broadcast or to the subnet's is delivered to its port, as RFC 1122 (3.3.6) has a
+ *        host recognize both, in a frame to every station or to the interface's; an echo request to either is
+ *        dropped unanswered and counted, as 3.2.2.6 allows.
+ */
+KERNEL_TEST(a_datagram_to_a_broadcast_address_is_delivered_and_an_echo_to_one_dropped)
+{
+    static uint8_t frame[128];
+    const KernelNetworkDatagram_t *lent = NULL;
+
+    network_fake_set_up();
+    (void) network_fake_bind_lent(NETWORK_FAKE_GAME_PORT, false);
+    (void) network_fake_bind_copied();
+    network_fake_receive(frame, network_fake_write_datagram_to(frame, network_fake_broadcast,
+                                                               KERNEL_INTERNET_PROTOCOL_LIMITED_BROADCAST,
+                                                               NETWORK_FAKE_NAME_PORT));
+    network_fake_receive(
+        frame, network_fake_write_datagram_to(frame, network_fake_broadcast, 0x0A0000FFu, NETWORK_FAKE_GAME_PORT));
+    network_fake_receive(
+        frame, network_fake_write_datagram_to(frame, network_fake_own_station, 0x0A0000FFu, NETWORK_FAKE_GAME_PORT));
+    network_fake_receive(frame, network_fake_write_control_message(frame, network_fake_broadcast, NETWORK_FAKE_PEER,
+                                                                   KERNEL_INTERNET_PROTOCOL_LIMITED_BROADCAST,
+                                                                   KERNEL_INTERNET_CONTROL_MESSAGE_ECHO_REQUEST,
+                                                                   NETWORK_FAKE_ECHO_DATA));
+    network_fake_receive(frame, network_fake_write_control_message(
+                                    frame, network_fake_own_station, NETWORK_FAKE_PEER, 0x0A0000FFu,
+                                    KERNEL_INTERNET_CONTROL_MESSAGE_ECHO_REQUEST, NETWORK_FAKE_ECHO_DATA));
+    (void) kernel_network_interface_poll(&network_fake_interface, 2u);
+    lent = kernel_network_interface_lent_at(&network_fake_interface, 1u);
+    kernel_test_check(test,
+                      network_fake_fate(KERNEL_NETWORK_INTERFACE_DATAGRAM_COPIED) == 1u &&
+                          network_fake_fate(KERNEL_NETWORK_INTERFACE_DATAGRAM_LENT) == 2u &&
+                          network_fake_interface.counters.datagrams_common == 0u,
+                      "one to 255.255.255.255 copied, two to 10.0.0.255 lent, none by the common path");
+    kernel_test_check(test,
+                      lent->source_address == NETWORK_FAKE_PEER && lent->source_port == NETWORK_FAKE_PEER_PORT &&
+                          lent->payload_bytes == 6u,
+                      "each from the peer's port, its payload whole");
+    kernel_test_check(test,
+                      network_fake_fate(KERNEL_NETWORK_INTERFACE_CONTROL_MESSAGE_TO_BROADCAST) == 2u &&
+                          network_fake_card.sent_count == 0u,
+                      "the two echo requests are counted, and none is answered");
+    network_fake_check_counted(test, 5u);
+}
+
+/**
+ * @brief A datagram to a multicast group leaves with a time to live of 1, as RFC 1112 (6.1) has a sender default,
+ *        and any other with 64.
+ */
+KERNEL_TEST(a_datagram_to_a_multicast_group_leaves_with_a_time_to_live_of_1)
+{
+    KernelInternetProtocolPacket_t packet;
+    KernelUserDatagram_t datagram;
+
+    network_fake_set_up();
+    (void) network_fake_bind_lent(NETWORK_FAKE_GAME_PORT, false);
+    network_fake_learn_peer();
+    kernel_test_check(test,
+                      network_fake_send(0xE00000FBu, 4u, 1u, KERNEL_NETWORK_CHECKSUM_FROM_SUM, 2u) ==
+                              KERNEL_NETWORK_INTERFACE_SEND_SENT &&
+                          network_fake_send(NETWORK_FAKE_PEER, 4u, 1u, KERNEL_NETWORK_CHECKSUM_FROM_SUM, 2u) ==
+                              KERNEL_NETWORK_INTERFACE_SEND_SENT,
+                      "a datagram to 224.0.0.251 and one to the peer are sent");
+    (void) kernel_network_interface_poll(&network_fake_interface, 3u);
+    kernel_test_check(test,
+                      network_fake_read_sent_datagram(0u, &packet, &datagram) == KERNEL_USER_DATAGRAM_TAKEN &&
+                          network_fake_card.sent[0][KERNEL_ETHERNET_HEADER_BYTES + 8u] == 1u,
+                      "the group's leaves with a time to live of 1, its header's checksum holding");
+    kernel_test_check(test,
+                      network_fake_read_sent_datagram(1u, &packet, &datagram) == KERNEL_USER_DATAGRAM_TAKEN &&
+                          network_fake_card.sent[1][KERNEL_ETHERNET_HEADER_BYTES + 8u] == 64u,
+                      "the peer's with 64");
+}
+
+/**
+ * @brief A lent datagram not released holds its frame and every frame after it: each poll that ends with them
+ *        filling the receive ring, the card left nowhere to receive, is counted, until a release gives a frame back.
+ */
+KERNEL_TEST(a_receive_ring_held_full_by_lent_datagrams_is_counted_a_poll)
+{
+    static uint8_t frame[64];
+
+    network_fake_set_up();
+    (void) network_fake_bind_lent(NETWORK_FAKE_GAME_PORT, false);
+    for (uint32_t datagram = 0u; datagram < NETWORK_FAKE_SLOTS; ++datagram)
+        network_fake_receive(frame, network_fake_write_datagram(frame, NETWORK_FAKE_GAME_PORT, 6u, (uint8_t) datagram,
+                                                                NETWORK_FAKE_CHECKSUM_SOUND));
+    (void) kernel_network_interface_poll(&network_fake_interface, 2u);
+    (void) kernel_network_interface_poll(&network_fake_interface, 3u);
+    kernel_test_check(test, network_fake_interface.counters.receive_held_full == 2u,
+                      "8 datagrams lent in the 8 slots: both polls end with the ring held full");
+    (void) kernel_network_interface_release_lent(&network_fake_interface, 1u);
+    (void) kernel_network_interface_poll(&network_fake_interface, 4u);
+    kernel_test_check(test,
+                      network_fake_interface.counters.receive_held_full == 2u &&
+                          kernel_spsc_ring_size(&network_fake_card.receive) == NETWORK_FAKE_SLOTS - 1u,
+                      "one released gives its slot back, and the next poll is not counted");
+    network_fake_check_counted(test, NETWORK_FAKE_SLOTS);
 }

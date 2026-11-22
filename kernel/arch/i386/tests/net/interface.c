@@ -134,7 +134,7 @@ static uint32_t network_interface_test_write_echo(uint8_t *frame)
     kernel_ethernet_write_header(frame, station, station, KERNEL_ETHERNET_TYPE_INTERNET_PROTOCOL_VERSION_4);
     kernel_internet_protocol_write_header(frame + KERNEL_ETHERNET_HEADER_BYTES, NETWORK_INTERFACE_TEST_NEIGHBOUR,
                                           network_interface_test.address, KERNEL_INTERNET_PROTOCOL_CONTROL_MESSAGE,
-                                          NETWORK_INTERFACE_TEST_ECHO_BYTES, 1u);
+                                          NETWORK_INTERFACE_TEST_ECHO_BYTES, 1u, KERNEL_INTERNET_PROTOCOL_TIME_TO_LIVE);
     memset(echo, 0x5A, NETWORK_INTERFACE_TEST_ECHO_BYTES);
     echo[0] = KERNEL_INTERNET_CONTROL_MESSAGE_ECHO_REQUEST;
     echo[1] = 0u;
@@ -315,7 +315,7 @@ static uint32_t network_interface_test_write_datagram(uint8_t *frame, uint32_t p
     kernel_ethernet_write_header(frame, station, station, KERNEL_ETHERNET_TYPE_INTERNET_PROTOCOL_VERSION_4);
     kernel_internet_protocol_write_header(frame + KERNEL_ETHERNET_HEADER_BYTES, NETWORK_INTERFACE_TEST_NEIGHBOUR,
                                           network_interface_test.address, KERNEL_INTERNET_PROTOCOL_USER_DATAGRAM,
-                                          datagram_bytes, 2u);
+                                          datagram_bytes, 2u, KERNEL_INTERNET_PROTOCOL_TIME_TO_LIVE);
     for (uint32_t byte = 0u; byte < payload_bytes; ++byte)
         payload[byte] = (uint8_t) (byte + seed);
     kernel_user_datagram_write_header(
@@ -773,11 +773,14 @@ KERNEL_TEST(datagrams_bounce_out_of_the_interface)
 }
 
 /**
- * @brief A Linux peer, on the other side of a tap device, resolves the kernel's address by ARP and pings it.
+ * @brief A Linux peer, on the other side of a tap device, resolves the kernel's address by ARP, pings it, and sends
+ *        datagrams to port 9000, which the kernel echoes.
  *
  * @details tools/net/linux-peer.sh runs it: QEMU's e1000 on a tap device of an unprivileged network namespace,
  *          whose own Linux stack is the peer, at 10.0.0.1, the kernel at 10.0.0.2. The test answers for
- *          NETWORK_INTERFACE_TEST_PEER_SECONDS, or until it answered the peer's five echo requests and one more second.
+ *          NETWORK_INTERFACE_TEST_PEER_SECONDS, or until it answered the peer's five echo requests and echoed its
+ *          five datagrams, and one more second. It measures the FNV-1a of the payloads it received, which the script
+ *          compares with the one of the payloads the peer sent.
  */
 KERNEL_TEST_MANUAL(answers_a_linux_peer, "needs a peer on the network, as tools/net/linux-peer.sh gives it")
 {

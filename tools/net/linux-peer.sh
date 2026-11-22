@@ -16,8 +16,8 @@ without it the log is a temporary file, removed on exit. BOOT_TIMEOUT is the sec
 
 Exit status: 0 when the peer got its five echo replies and its five datagrams back byte for byte, the FNV-1a
 of the payloads the kernel received is the one of the payloads the peer sent, the peer resolved the address to
-the kernel's e1000, and the kernel's test passed; 1 when one of these failed; 2 for a wrong use, a missing kernel, or a namespace that
-could not make its tap device.
+the kernel's e1000, and the kernel's test passed; 1 when one of these failed; 2 for a wrong use, a missing
+kernel, or a namespace that could not make its tap device.
 USAGE
 }
 
@@ -94,7 +94,8 @@ echo "$udp_report" | grep -q "udp: 5 of 5 echoed" \
     || { echo "linux-peer: the peer did not get its five datagrams back byte for byte" >&2; status=1; }
 peer_fold=$(echo "$udp_report" | grep -oE "payloads_fnv=0x[0-9A-F]{8}")
 grep -qE "answers_a_linux_peer: ${peer_fold:-payloads_fnv=none}\$" "$log" \
-    || { echo "linux-peer: the kernel's FNV-1a of the payloads it received is not the peer's ${peer_fold:-}" >&2; status=1; }
+    || { echo "linux-peer: the kernel's FNV-1a of the payloads it received is not the peer's ${peer_fold:-}" >&2
+         status=1; }
 echo "$ping_report" | grep -q "5 packets transmitted, 5 received" \
     || { echo "linux-peer: the peer did not get its five echo replies" >&2; status=1; }
 echo "$neighbour" | grep -q "lladdr 52:54:00:12:34:56" \

@@ -15,9 +15,9 @@
  * @file udp.h
  * @brief UDP (RFC 768): a datagram checked and read where it arrived, and its header written in front of a payload.
  *
- * A datagram's payload is summed once, as it is checked, and the sum is kept whole, its carries not folded: a
- * caller that sends the same payload back, or to many destinations, adds each one's pseudo-header and header
- * to it and folds once, without summing the payload again.
+ * A datagram's payload is summed once, as it is checked, and the sum is kept, folded to 16 bits: a caller that
+ * sends the same payload back, or to many destinations, adds each one's pseudo-header and header to it and folds
+ * once, without summing the payload again.
  *
  * @author @MasterLaplace
  * @version 0.0.0
@@ -57,7 +57,7 @@ typedef struct KernelUserDatagram {
     uint16_t destination_port; /**< Its destination port. */
     const uint8_t *payload;    /**< Its payload, where it arrived. */
     uint32_t payload_bytes;    /**< Bytes of it, as its length says. */
-    uint32_t payload_sum;      /**< The payload's 16-bit words summed, carries not folded. */
+    uint32_t payload_sum;      /**< The payload's 16-bit words summed, folded to 16 bits. */
 } KernelUserDatagram_t;
 
 /**
@@ -102,7 +102,7 @@ extern KernelUserDatagramStatus_t kernel_user_datagram_parse(const KernelInterne
  * @param source_port       Its source port.
  * @param destination_port  Its destination port.
  * @param payload_bytes     Bytes of its payload.
- * @param payload_sum       Its payload's 16-bit words summed, carries not folded.
+ * @param payload_sum       Its payload's 16-bit words summed, folded or not, under 2^32 with the rest.
  * @return The checksum, FFFFh where the sum folds to zero, since zero says that none was computed (RFC 768).
  */
 static inline uint16_t kernel_user_datagram_checksum(uint32_t pseudo_header_sum, uint16_t source_port,
