@@ -61,6 +61,17 @@ typedef struct KernelUserDatagram {
 } KernelUserDatagram_t;
 
 /**
+ * @brief The sum of a datagram's header words but its checksum: its ports and its length.
+ *
+ * @param source_port      Its source port.
+ * @param destination_port Its destination port.
+ * @param datagram_bytes   Its length, its header included.
+ * @return The sum.
+ */
+static inline uint32_t kernel_user_datagram_header_sum(uint16_t source_port, uint16_t destination_port,
+                                                       uint32_t datagram_bytes);
+
+/**
  * @brief The sum of the pseudo-header RFC 768 puts in front of a datagram, carries not folded.
  *
  * @param source         The IPv4 source address, host order.
@@ -68,7 +79,8 @@ typedef struct KernelUserDatagram {
  * @param datagram_bytes The datagram's length, its header included.
  * @return The sum.
  */
-extern uint32_t kernel_user_datagram_pseudo_header_sum(uint32_t source, uint32_t destination, uint32_t datagram_bytes);
+static inline uint32_t kernel_user_datagram_pseudo_header_sum(uint32_t source, uint32_t destination,
+                                                              uint32_t datagram_bytes);
 
 /**
  * @brief Checks and reads the datagram that @p packet carries.
@@ -93,8 +105,9 @@ extern KernelUserDatagramStatus_t kernel_user_datagram_parse(const KernelInterne
  * @param payload_sum       Its payload's 16-bit words summed, carries not folded.
  * @return The checksum, FFFFh where the sum folds to zero, since zero says that none was computed (RFC 768).
  */
-extern uint16_t kernel_user_datagram_checksum(uint32_t pseudo_header_sum, uint16_t source_port,
-                                              uint16_t destination_port, uint32_t payload_bytes, uint32_t payload_sum);
+static inline uint16_t kernel_user_datagram_checksum(uint32_t pseudo_header_sum, uint16_t source_port,
+                                                     uint16_t destination_port, uint32_t payload_bytes,
+                                                     uint32_t payload_sum);
 
 /**
  * @brief Writes a datagram's header in front of a payload of @p payload_bytes.
@@ -105,8 +118,10 @@ extern uint16_t kernel_user_datagram_checksum(uint32_t pseudo_header_sum, uint16
  * @param payload_bytes    Bytes of its payload.
  * @param checksum         Its checksum, or zero for none.
  */
-extern void kernel_user_datagram_write_header(uint8_t *bytes, uint16_t source_port, uint16_t destination_port,
-                                              uint32_t payload_bytes, uint16_t checksum);
+static inline void kernel_user_datagram_write_header(uint8_t *bytes, uint16_t source_port, uint16_t destination_port,
+                                                     uint32_t payload_bytes, uint16_t checksum);
+
+#include <kernel/net/udp.inl>
 
 #ifdef __cplusplus
 }

@@ -28,7 +28,13 @@
  *
  * A datagram is sent in place: the caller reserves a transmit buffer, writes its payload where the headers end,
  * and gives the payload's sum, which its serializer adds up as it writes; the interface adds the pseudo-header and
- * the header and folds once. A payload sent to many destinations is summed once. A destination whose station is
+ * the header and folds once. A payload sent to many destinations is summed once.
+ *
+ * The common datagram, unicast to the interface's station and address, IPv4 without options or fragments from a
+ * source it accepts, UDP to a lent port, has a path of its own: each field is read once, as the card wrote it,
+ * against values the interface computed in the same byte order at set-up and binding, and the IPv4 header is
+ * summed as five loads. Any other frame, or any field that does not match, takes the general path, which refuses
+ * it by its cause. A destination whose station is
  * not known is refused by name and asked for by ARP, at most once a request interval: no hidden queue. Every frame read
  *lands in exactly one fate, so that the fates and the IPv4 refusals sum to the frames received. Time is the caller's,
  *so that a replay of the same frames at the same times answers the same way.
@@ -66,6 +72,8 @@ extern "C" {
 #define KERNEL_NETWORK_INTERFACE_PORTS          8u  /**< UDP ports an interface binds. */
 #define KERNEL_NETWORK_INTERFACE_LENT_DATAGRAMS 64u /**< Datagrams an interface lends at once: a receive ring's. */
 #define KERNEL_NETWORK_INTERFACE_HEADERS_BYTES  42u /**< Ethernet, IPv4 and UDP headers, before a payload sent. */
+#define KERNEL_NETWORK_INTERFACE_STATION_HINTS  8u  /**< Hints of a next hop's cache entry, by its address's low bits. \
+                                                     */
 /** @} */
 
 /**
@@ -134,6 +142,7 @@ typedef struct KernelNetworkInterfaceCounters {
     uint32_t address_resolution_requests_unsent;                           /**< Requests it could not publish. */
     uint32_t sends[KERNEL_NETWORK_INTERFACE_SEND_RESULTS];                 /**< Datagrams sent or refused, by result. */
     uint32_t checksums_computed; /**< Payloads the interface summed, given no sum. */
+    uint32_t datagrams_common;   /**< Datagrams lent by the common datagram's path, of all those lent. */
 } KernelNetworkInterfaceCounters_t;
 
 /**
@@ -209,6 +218,20 @@ typedef struct KernelNetworkDatagramOut {
 } KernelNetworkDatagramOut_t;
 
 /**
+ * @brief What the path of the common datagram compares a frame against, each value as a load from a frame reads it.
+ */
+typedef struct KernelNetworkInterfaceWire {
+    uint32_t station_head;                               /**< The card's station address, its first 4 bytes. */
+    uint16_t station_tail;                               /**< Its last 2. */
+    uint32_t address;                                    /**< The interface's IPv4 address. */
+    uint16_t lent_ports[KERNEL_NETWORK_INTERFACE_PORTS]; /**< Each place's port when bound lent, else 0. */
+    uint32_t pseudo_header_sum; /**< The interface's address and UDP's protocol, as a pseudo-header sums them. */
+    uint32_t subnet_network;    /**< The subnet's network address, host order. */
+    uint32_t subnet_broadcast;  /**< Its directed broadcast, host order. */
+    bool has_broadcast;         /**< Whether the subnet has both, a /30 or wider. */
+} KernelNetworkInterfaceWire_t;
+
+/**
  * @brief An interface's addresses and times.
  */
 typedef struct KernelNetworkInterfaceConfig {
@@ -236,8 +259,10 @@ typedef struct KernelNetworkInterface {
     uint32_t receive_released;            /**< Frames given back to the card: the oldest held's arrival. */
     uint32_t arrival;                     /**< The arrival number of the frame being taken. */
     KernelAddressResolutionCache_t cache; /**< The station addresses learned. */
-    KernelNetworkPortBinding_t ports[KERNEL_NETWORK_INTERFACE_PORTS];      /**< The ports bound. */
-    KernelSpscRing_t lent_ring;                                            /**< Lent datagrams, oldest first. */
+    uint32_t station_hints[KERNEL_NETWORK_INTERFACE_STATION_HINTS];   /**< The cache entry a send last found, by hop. */
+    KernelNetworkPortBinding_t ports[KERNEL_NETWORK_INTERFACE_PORTS]; /**< The ports bound. */
+    KernelNetworkInterfaceWire_t wire;                                /**< The common datagram's values. */
+    KernelSpscRing_t lent_ring;                                       /**< Lent datagrams, oldest first. */
     KernelNetworkDatagram_t lent[KERNEL_NETWORK_INTERFACE_LENT_DATAGRAMS]; /**< One per slot of lent_ring. */
     KernelNetworkInterfaceCounters_t counters;                             /**< What went through. */
 } KernelNetworkInterface_t;

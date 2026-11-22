@@ -78,6 +78,7 @@ typedef struct KernelAddressResolutionEntry {
 typedef struct KernelAddressResolutionCache {
     KernelAddressResolutionEntry_t entries[KERNEL_ADDRESS_RESOLUTION_CACHE_ENTRIES]; /**< Its entries. */
     uint32_t lifetime;                                                               /**< How long an entry lasts. */
+    uint32_t next_to_expire; /**< The entry kernel_address_resolution_cache_expire_next looks at next. */
 } KernelAddressResolutionCache_t;
 
 /**
@@ -157,6 +158,20 @@ extern bool kernel_address_resolution_cache_find(const KernelAddressResolutionCa
                                                  uint32_t now, uint8_t *out_station);
 
 /**
+ * @brief Finds the station address of @p address as kernel_address_resolution_cache_find does, looking first at the
+ *        entry @p hint names, and leaving in @p hint the entry it found.
+ *
+ * @param cache       The cache.
+ * @param address     The IPv4 address.
+ * @param now         The caller's time.
+ * @param out_station Receives the station address.
+ * @param hint        The entry to look at first, any value; receives the entry found.
+ * @return false, @p out_station untouched, when @p address is unknown, unresolved or its entry expired.
+ */
+extern bool kernel_address_resolution_cache_find_hinted(const KernelAddressResolutionCache_t *cache, uint32_t address,
+                                                        uint32_t now, uint8_t *out_station, uint32_t *hint);
+
+/**
  * @brief Whether @p address was asked for less than @p interval ago and is still unresolved: a reply is on its way,
  *        or soon to be given up on.
  *
@@ -170,15 +185,17 @@ extern bool kernel_address_resolution_cache_is_pending(const KernelAddressResolu
                                                        uint32_t now, uint32_t interval);
 
 /**
- * @brief Frees every entry learned, or asked for, a lifetime ago or more.
+ * @brief Frees the next entry in turn if it was learned, or asked for, a lifetime ago or more.
  *
- * @details Called once a batch, it keeps an entry nobody looks at from coming back to life when the caller's
- *          time wraps: an age is a difference of 32-bit times, so it must be read before it passes 2^32.
+ * @details Called once a batch, it looks at every entry once in KERNEL_ADDRESS_RESOLUTION_CACHE_ENTRIES calls, and
+ *          so keeps an entry nobody looks at from coming back to life when the caller's time wraps: an age is a
+ *          difference of 32-bit times, so it must be read before it passes 2^32. One entry a batch, not all of
+ *          them: a poll of one frame would otherwise pay for sixteen.
  *
  * @param cache The cache.
  * @param now   The caller's time.
  */
-extern void kernel_address_resolution_cache_expire(KernelAddressResolutionCache_t *cache, uint32_t now);
+extern void kernel_address_resolution_cache_expire_next(KernelAddressResolutionCache_t *cache, uint32_t now);
 
 #ifdef __cplusplus
 }

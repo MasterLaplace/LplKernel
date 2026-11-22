@@ -88,8 +88,8 @@ static inline bool kernel_ethernet_is_group(const uint8_t *station);
  * @param source      Its source address.
  * @param type        Its EtherType.
  */
-extern void kernel_ethernet_write_header(uint8_t *bytes, const uint8_t *destination, const uint8_t *source,
-                                         uint16_t type);
+static inline void kernel_ethernet_write_header(uint8_t *bytes, const uint8_t *destination, const uint8_t *source,
+                                                uint16_t type);
 
 #include <kernel/net/ethernet.inl>
 

@@ -37,12 +37,14 @@ extern "C" {
  * @name IPv4
  * @{
  */
-#define KERNEL_INTERNET_PROTOCOL_HEADER_BYTES            20u         /**< A header without options. */
-#define KERNEL_INTERNET_PROTOCOL_CONTROL_MESSAGE         1u          /**< Protocol number of ICMP. */
-#define KERNEL_INTERNET_PROTOCOL_USER_DATAGRAM           17u         /**< Protocol number of UDP. */
-#define KERNEL_INTERNET_PROTOCOL_TIME_TO_LIVE            64u         /**< TTL of a packet sent. */
-#define KERNEL_INTERNET_PROTOCOL_LOOPBACK_NETWORK        127u        /**< First byte of the loopback addresses. */
-#define KERNEL_INTERNET_PROTOCOL_FIRST_MULTICAST_NETWORK 224u        /**< First byte of 224/4, 240/4 above it. */
+#define KERNEL_INTERNET_PROTOCOL_VERSION_4               4u      /**< Version, in the high nibble of the first byte. */
+#define KERNEL_INTERNET_PROTOCOL_DONT_FRAGMENT           0x4000u /**< DF, set on every packet sent. */
+#define KERNEL_INTERNET_PROTOCOL_HEADER_BYTES            20u     /**< A header without options. */
+#define KERNEL_INTERNET_PROTOCOL_CONTROL_MESSAGE         1u      /**< Protocol number of ICMP. */
+#define KERNEL_INTERNET_PROTOCOL_USER_DATAGRAM           17u     /**< Protocol number of UDP. */
+#define KERNEL_INTERNET_PROTOCOL_TIME_TO_LIVE            64u     /**< TTL of a packet sent. */
+#define KERNEL_INTERNET_PROTOCOL_LOOPBACK_NETWORK        127u    /**< First byte of the loopback addresses. */
+#define KERNEL_INTERNET_PROTOCOL_FIRST_MULTICAST_NETWORK 224u    /**< First byte of 224/4, 240/4 above it. */
 #define KERNEL_INTERNET_PROTOCOL_LIMITED_BROADCAST       0xFFFFFFFFu /**< 255.255.255.255. */
 /** @} */
 
@@ -107,8 +109,11 @@ extern bool kernel_internet_protocol_source_is_acceptable(uint32_t source, uint3
  * @param payload_bytes  Bytes of the payload.
  * @param identification The packet's identification.
  */
-extern void kernel_internet_protocol_write_header(uint8_t *bytes, uint32_t source, uint32_t destination,
-                                                  uint8_t protocol, uint32_t payload_bytes, uint16_t identification);
+static inline void kernel_internet_protocol_write_header(uint8_t *bytes, uint32_t source, uint32_t destination,
+                                                         uint8_t protocol, uint32_t payload_bytes,
+                                                         uint16_t identification);
+
+#include <kernel/net/ipv4.inl>
 
 #ifdef __cplusplus
 }

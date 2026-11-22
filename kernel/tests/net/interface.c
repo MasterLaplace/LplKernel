@@ -341,6 +341,30 @@ static uint32_t network_fake_write_datagram(uint8_t *frame, uint16_t destination
 }
 
 /**
+ * @brief Writes the datagram of network_fake_write_datagram behind an IPv4 header of 24 bytes, its 4 bytes of options
+ *        four no-operations: a datagram only the general path takes.
+ *
+ * @return Its length.
+ */
+static uint32_t network_fake_write_datagram_with_options(uint8_t *frame, uint32_t payload_bytes, uint8_t seed)
+{
+    static uint8_t plain[128];
+    uint8_t *const header = frame + KERNEL_ETHERNET_HEADER_BYTES;
+    const uint32_t length =
+        network_fake_write_datagram(plain, NETWORK_FAKE_GAME_PORT, payload_bytes, seed, NETWORK_FAKE_CHECKSUM_SOUND);
+
+    memcpy(frame, plain, KERNEL_ETHERNET_HEADER_BYTES + 20u);
+    memset(header + 20u, 0x01, 4u);
+    memcpy(header + 24u, plain + KERNEL_ETHERNET_HEADER_BYTES + 20u, length - KERNEL_ETHERNET_HEADER_BYTES - 20u);
+    header[0] = 0x46u;
+    kernel_network_write_16(header + 2u, (uint16_t) (length - KERNEL_ETHERNET_HEADER_BYTES + 4u));
+    kernel_network_write_16(header + 10u, 0u);
+    kernel_network_write_16(header + 10u,
+                            kernel_internet_checksum_finish(kernel_internet_checksum_add(0u, header, 24u)));
+    return length + 4u;
+}
+
+/**
  * @brief Binds @p port lent on the made-up interface, taking datagrams without checksum when @p without_checksum.
  */
 static KernelNetworkInterfaceBind_t network_fake_bind_lent(uint16_t port, bool without_checksum)
@@ -1027,7 +1051,8 @@ KERNEL_TEST(a_packet_goes_to_the_station_its_destination_names)
 }
 
 /**
- * @brief The poll frees entries a lifetime old, so that one nobody looks at stays gone when the time wraps.
+ * @brief The polls free entries a lifetime old, one entry a poll, so that one nobody looks at stays gone when the
+ *        time wraps.
  */
 KERNEL_TEST(the_poll_forgets_expired_stations_before_the_time_wraps)
 {
@@ -1040,10 +1065,11 @@ KERNEL_TEST(the_poll_forgets_expired_stations_before_the_time_wraps)
     kernel_test_check(test,
                       kernel_network_interface_find_station(&network_fake_interface, NETWORK_FAKE_PEER, 2u, station),
                       "the peer is learned at 1");
-    (void) kernel_network_interface_poll(&network_fake_interface, 1u + NETWORK_FAKE_LIFETIME);
+    for (uint32_t poll = 0u; poll < KERNEL_ADDRESS_RESOLUTION_CACHE_ENTRIES; ++poll)
+        (void) kernel_network_interface_poll(&network_fake_interface, 1u + NETWORK_FAKE_LIFETIME + poll);
     kernel_test_check(test,
                       !kernel_network_interface_find_station(&network_fake_interface, NETWORK_FAKE_PEER, 1u, station),
-                      "a poll a lifetime later frees it: 2^32 later, at 1 again, it is still gone");
+                      "16 polls a lifetime later, one entry a poll, free it: 2^32 later, at 1 again, it is still gone");
     network_fake_check_counted(test, 1u);
 }
 
@@ -1060,8 +1086,7 @@ KERNEL_TEST(a_datagram_to_a_lent_port_is_lent_where_it_arrived_and_released_in_o
     kernel_test_check(test,
                       network_fake_bind_lent(NETWORK_FAKE_GAME_PORT, false) == KERNEL_NETWORK_INTERFACE_BIND_BOUND,
                       "port 9000 binds lent");
-    network_fake_receive(
-        frame, network_fake_write_datagram(frame, NETWORK_FAKE_GAME_PORT, 6u, 10u, NETWORK_FAKE_CHECKSUM_SOUND));
+    network_fake_receive(frame, network_fake_write_datagram_with_options(frame, 6u, 10u));
     network_fake_receive(frame, network_fake_write_request(frame, NETWORK_FAKE_ADDRESS));
     network_fake_receive(
         frame, network_fake_write_datagram(frame, NETWORK_FAKE_GAME_PORT, 3u, 20u, NETWORK_FAKE_CHECKSUM_SOUND));
@@ -1073,11 +1098,14 @@ KERNEL_TEST(a_datagram_to_a_lent_port_is_lent_where_it_arrived_and_released_in_o
                       "lends both datagrams and answers the ARP request between them");
     lent = kernel_network_interface_lent_at(&network_fake_interface, 0u);
     kernel_test_check(test,
-                      lent->payload == network_fake_card.receive_buffers[0] + NETWORK_FAKE_MESSAGE + 8 &&
+                      lent->payload == network_fake_card.receive_buffers[0] + NETWORK_FAKE_MESSAGE + 4 + 8 &&
                           lent->payload_bytes == 6u && lent->payload[0] == 10u && lent->payload[5] == 15u &&
                           lent->source_address == NETWORK_FAKE_PEER && lent->source_port == NETWORK_FAKE_PEER_PORT &&
                           lent->destination_port == NETWORK_FAKE_GAME_PORT,
-                      "the first is lent where the card wrote it, from 10.0.0.1:7777 to port 9000");
+                      "the first, behind 4 bytes of options, is lent where the card wrote it, from 10.0.0.1:7777 to "
+                      "port 9000");
+    kernel_test_check(test, network_fake_interface.counters.datagrams_common == 1u,
+                      "by the general path, the second by the common one");
     kernel_test_check(test, kernel_network_interface_lent_at(&network_fake_interface, 1u)->payload[0] == 20u,
                       "the second after it");
     kernel_test_check(test, kernel_spsc_ring_size(&network_fake_card.receive) == 3u,
@@ -1168,6 +1196,202 @@ KERNEL_TEST(datagrams_the_interface_does_not_deliver_are_counted_by_their_cause)
                           kernel_spsc_ring_size(&network_fake_card.receive) == 0u,
                       "nothing is lent, and every frame went back");
     network_fake_check_counted(test, 5u);
+}
+
+/**
+ * @brief How a datagram to port 9000 is spoiled, each way failing one check of the common path.
+ */
+typedef enum NetworkFakeSpoil {
+    NETWORK_FAKE_SPOIL_STATION_HEAD = 0, /**< To another station, its first 4 bytes not the interface's. */
+    NETWORK_FAKE_SPOIL_STATION_TAIL,     /**< To another station, its last 2 bytes not the interface's. */
+    NETWORK_FAKE_SPOIL_GROUP_SOURCE,     /**< From a group station. */
+    NETWORK_FAKE_SPOIL_ETHER_TYPE,       /**< EtherType 86DDh. */
+    NETWORK_FAKE_SPOIL_VERSION,          /**< IP version 6. */
+    NETWORK_FAKE_SPOIL_HEADER_LENGTH,    /**< An IHL of 6, its checksum over 20 bytes only. */
+    NETWORK_FAKE_SPOIL_DESTINATION,      /**< To 10.0.0.9, its UDP checksum still the one for 10.0.0.2. */
+    NETWORK_FAKE_SPOIL_FRAGMENT,         /**< A first fragment. */
+    NETWORK_FAKE_SPOIL_PROTOCOL,         /**< Protocol 6, TCP. */
+    NETWORK_FAKE_SPOIL_TOTAL,            /**< A total length a byte past the frame. */
+    NETWORK_FAKE_SPOIL_LOOPBACK_SOURCE,  /**< From 127.0.0.1, its UDP checksum sound. */
+    NETWORK_FAKE_SPOIL_BROADCAST_SOURCE, /**< From 10.0.0.255, its UDP checksum sound. */
+    NETWORK_FAKE_SPOIL_SHORT_LENGTH,     /**< A UDP length of 7. */
+    NETWORK_FAKE_SPOIL_LONG_LENGTH,      /**< A UDP length a byte past its packet, its UDP checksum sound. */
+    NETWORK_FAKE_SPOIL_HEADER_CHECKSUM,  /**< An IPv4 checksum with a flipped bit. */
+    NETWORK_FAKE_SPOILS                  /**< How many spoils there are. */
+} NetworkFakeSpoil_t;
+
+/**
+ * @brief Writes the UDP checksum of the datagram at @p frame again, from the addresses and length it now carries.
+ */
+static void network_fake_seal_datagram(uint8_t *frame)
+{
+    uint8_t *const header = frame + KERNEL_ETHERNET_HEADER_BYTES;
+    uint8_t *const datagram = header + KERNEL_INTERNET_PROTOCOL_HEADER_BYTES;
+    const uint32_t datagram_bytes = kernel_network_read_16(datagram + 4u);
+    const uint32_t payload_bytes = datagram_bytes - KERNEL_USER_DATAGRAM_HEADER_BYTES;
+    const uint32_t pseudo_header_sum = kernel_user_datagram_pseudo_header_sum(
+        kernel_network_read_32(header + 12u), kernel_network_read_32(header + 16u), datagram_bytes);
+
+    kernel_network_write_16(
+        datagram + 6u,
+        kernel_user_datagram_checksum(
+            pseudo_header_sum, kernel_network_read_16(datagram), kernel_network_read_16(datagram + 2u), payload_bytes,
+            kernel_internet_checksum_add(0u, datagram + KERNEL_USER_DATAGRAM_HEADER_BYTES, payload_bytes)));
+}
+
+/**
+ * @brief Writes the IPv4 checksum of the 20 bytes of header at @p frame again.
+ */
+static void network_fake_seal_header(uint8_t *frame)
+{
+    uint8_t *const header = frame + KERNEL_ETHERNET_HEADER_BYTES;
+
+    kernel_network_write_16(header + 10u, 0u);
+    kernel_network_write_16(header + 10u,
+                            kernel_internet_checksum_finish(kernel_internet_checksum_add(0u, header, 20u)));
+}
+
+/**
+ * @brief Writes a datagram of 6 bytes to port 9000 at @p frame, zeros after it, and spoils it by @p spoil.
+ *
+ * @return Its length.
+ */
+static uint32_t network_fake_write_spoiled_datagram(uint8_t *frame, NetworkFakeSpoil_t spoil)
+{
+    uint8_t *const header = frame + KERNEL_ETHERNET_HEADER_BYTES;
+    uint8_t *const datagram = header + KERNEL_INTERNET_PROTOCOL_HEADER_BYTES;
+    uint32_t length = 0u;
+
+    memset(frame, 0, 64u);
+    length = network_fake_write_datagram(frame, NETWORK_FAKE_GAME_PORT, 6u, 0u, NETWORK_FAKE_CHECKSUM_SOUND);
+    if (spoil == NETWORK_FAKE_SPOIL_STATION_HEAD)
+        frame[2] = 0x77u;
+    if (spoil == NETWORK_FAKE_SPOIL_STATION_TAIL)
+        frame[5] = 0x55u;
+    if (spoil == NETWORK_FAKE_SPOIL_GROUP_SOURCE)
+        frame[6] |= 0x01u;
+    if (spoil == NETWORK_FAKE_SPOIL_ETHER_TYPE)
+        kernel_network_write_16(frame + 12u, 0x86DDu);
+    if (spoil == NETWORK_FAKE_SPOIL_VERSION)
+        header[0] = 0x65u;
+    if (spoil == NETWORK_FAKE_SPOIL_HEADER_LENGTH)
+        header[0] = 0x46u;
+    if (spoil == NETWORK_FAKE_SPOIL_DESTINATION)
+        kernel_network_write_32(header + 16u, NETWORK_FAKE_OTHER);
+    if (spoil == NETWORK_FAKE_SPOIL_FRAGMENT)
+        kernel_network_write_16(header + 6u, 0x2000u);
+    if (spoil == NETWORK_FAKE_SPOIL_PROTOCOL)
+        header[9] = 6u;
+    if (spoil == NETWORK_FAKE_SPOIL_TOTAL)
+        kernel_network_write_16(header + 2u, (uint16_t) (length - KERNEL_ETHERNET_HEADER_BYTES + 1u));
+    if (spoil == NETWORK_FAKE_SPOIL_LOOPBACK_SOURCE)
+        kernel_network_write_32(header + 12u, 0x7F000001u);
+    if (spoil == NETWORK_FAKE_SPOIL_BROADCAST_SOURCE)
+        kernel_network_write_32(header + 12u, 0x0A0000FFu);
+    if (spoil == NETWORK_FAKE_SPOIL_SHORT_LENGTH)
+        kernel_network_write_16(datagram + 4u, 7u);
+    if (spoil == NETWORK_FAKE_SPOIL_LONG_LENGTH)
+        kernel_network_write_16(datagram + 4u, (uint16_t) (kernel_network_read_16(datagram + 4u) + 1u));
+    if (spoil != NETWORK_FAKE_SPOIL_SHORT_LENGTH && spoil != NETWORK_FAKE_SPOIL_DESTINATION)
+        network_fake_seal_datagram(frame);
+    network_fake_seal_header(frame);
+    if (spoil == NETWORK_FAKE_SPOIL_HEADER_CHECKSUM)
+        header[10] ^= 0x01u;
+    return length;
+}
+
+/**
+ * @brief Publishes on the made-up card a receive slot of @p length bytes whose buffer holds a sound datagram to port
+ *        9000, whatever @p length says.
+ */
+static void network_fake_receive_over_datagram(uint32_t length)
+{
+    uint32_t slot = 0u;
+
+    (void) kernel_spsc_ring_reserve(&network_fake_card.receive, 1u, &slot);
+    (void) network_fake_write_datagram(network_fake_card.receive_buffers[slot], NETWORK_FAKE_GAME_PORT, 6u, 0u,
+                                       NETWORK_FAKE_CHECKSUM_SOUND);
+    network_fake_card.receive_lengths[slot] = (uint16_t) length;
+    kernel_spsc_ring_publish(&network_fake_card.receive, 1u);
+}
+
+/**
+ * @brief A datagram to the lent port that fails one check of the common path is refused by its cause, as any other
+ *        frame: none is lent. So is a slot whose length is past its buffer, or short of the datagram the buffer
+ *        still holds.
+ */
+KERNEL_TEST(a_datagram_to_a_lent_port_failing_one_check_is_refused_by_its_cause)
+{
+    const uint32_t *const fates = network_fake_interface.counters.fates;
+    const uint32_t *const refused = network_fake_interface.counters.internet_protocol_refused;
+    uint8_t frame[64];
+
+    network_fake_set_up();
+    (void) network_fake_bind_lent(NETWORK_FAKE_GAME_PORT, false);
+    for (uint32_t spoil = 0u; spoil < NETWORK_FAKE_SPOILS; ++spoil)
+    {
+        network_fake_receive(frame, network_fake_write_spoiled_datagram(frame, (NetworkFakeSpoil_t) spoil));
+        (void) kernel_network_interface_poll(&network_fake_interface, 1u + spoil);
+    }
+    network_fake_receive_over_datagram(NETWORK_FAKE_BUFFER_BYTES + 1u);
+    network_fake_receive_over_datagram(13u);
+    (void) kernel_network_interface_poll(&network_fake_interface, 20u);
+    kernel_test_check(test,
+                      fates[KERNEL_NETWORK_INTERFACE_FRAME_FOR_OTHERS] == 2u &&
+                          fates[KERNEL_NETWORK_INTERFACE_FRAME_FROM_GROUP] == 1u &&
+                          fates[KERNEL_NETWORK_INTERFACE_FRAME_OF_UNKNOWN_TYPE] == 1u,
+                      "two other stations, a group source and EtherType 86DDh");
+    kernel_test_check(
+        test,
+        refused[KERNEL_INTERNET_PROTOCOL_NOT_VERSION_4] == 1u && refused[KERNEL_INTERNET_PROTOCOL_BAD_CHECKSUM] == 2u &&
+            refused[KERNEL_INTERNET_PROTOCOL_FRAGMENT] == 1u && refused[KERNEL_INTERNET_PROTOCOL_TRUNCATED] == 1u,
+        "version 6, an IHL of 6 and a flipped checksum, a fragment, a total past the frame");
+    kernel_test_check(test,
+                      fates[KERNEL_NETWORK_INTERFACE_INTERNET_PROTOCOL_FOR_OTHERS] == 1u &&
+                          fates[KERNEL_NETWORK_INTERFACE_INTERNET_PROTOCOL_UNHANDLED] == 1u &&
+                          fates[KERNEL_NETWORK_INTERFACE_INTERNET_PROTOCOL_SOURCE_REFUSED] == 2u,
+                      "to 10.0.0.9, TCP, and from 127.0.0.1 and 10.0.0.255");
+    kernel_test_check(test,
+                      fates[KERNEL_NETWORK_INTERFACE_USER_DATAGRAM_MALFORMED] == 2u &&
+                          fates[KERNEL_NETWORK_INTERFACE_FRAME_OVERSIZED] == 1u &&
+                          fates[KERNEL_NETWORK_INTERFACE_FRAME_TRUNCATED] == 1u,
+                      "UDP lengths of 7 and a byte past, a slot past its buffer, and one of 13 bytes");
+    kernel_test_check(test,
+                      fates[KERNEL_NETWORK_INTERFACE_DATAGRAM_LENT] == 0u &&
+                          network_fake_interface.counters.datagrams_common == 0u,
+                      "and none is lent");
+    network_fake_check_counted(test, NETWORK_FAKE_SPOILS + 2u);
+}
+
+/**
+ * @brief A sound datagram to a lent port takes the common path, one whose IPv4 header's words carry past 32 bits
+ *        included.
+ */
+KERNEL_TEST(a_sound_datagram_to_a_lent_port_takes_the_common_path)
+{
+    uint8_t frame[64];
+
+    network_fake_set_up();
+    (void) network_fake_bind_lent(NETWORK_FAKE_GAME_PORT, false);
+    memset(frame, 0, sizeof(frame));
+    network_fake_receive(
+        frame, network_fake_write_datagram(frame, NETWORK_FAKE_GAME_PORT, 6u, 0u, NETWORK_FAKE_CHECKSUM_SOUND));
+    kernel_network_write_32(frame + KERNEL_ETHERNET_HEADER_BYTES + 12u, 0xDFFEFEFEu);
+    kernel_network_write_16(frame + KERNEL_ETHERNET_HEADER_BYTES + 4u, 0xFFFFu);
+    frame[KERNEL_ETHERNET_HEADER_BYTES + 1u] = 0xFFu;
+    network_fake_seal_datagram(frame);
+    network_fake_seal_header(frame);
+    network_fake_receive(frame, KERNEL_NETWORK_INTERFACE_HEADERS_BYTES + 6u);
+    (void) kernel_network_interface_poll(&network_fake_interface, 1u);
+    kernel_test_check(test,
+                      network_fake_fate(KERNEL_NETWORK_INTERFACE_DATAGRAM_LENT) == 2u &&
+                          network_fake_interface.counters.datagrams_common == 2u,
+                      "both datagrams are lent by the common path, the second from 223.254.254.254, its header's "
+                      "words carrying past 32 bits");
+    kernel_test_check(test,
+                      kernel_network_interface_lent_at(&network_fake_interface, 1u)->source_address == 0xDFFEFEFEu,
+                      "its source read as it arrived");
+    network_fake_check_counted(test, 2u);
 }
 
 /**

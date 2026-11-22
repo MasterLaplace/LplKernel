@@ -97,6 +97,23 @@ typedef struct KernelNetworkDevice {
 } KernelNetworkDevice_t;
 
 /**
+ * @brief Copies the station address at @p source to @p destination, as one load and store of 4 bytes and one of 2.
+ *
+ * @param destination Where it goes; KERNEL_NETWORK_ADDRESS_BYTES follow.
+ * @param source      The address.
+ */
+static inline void kernel_network_station_copy(uint8_t *destination, const uint8_t *source);
+
+/**
+ * @brief Whether the station addresses at @p first and @p second are the same, read as 4 bytes and 2.
+ *
+ * @param first  One address.
+ * @param second The other.
+ * @return true when all 6 bytes match.
+ */
+static inline bool kernel_network_station_equals(const uint8_t *first, const uint8_t *second);
+
+/**
  * @brief The first byte of the frame in receive slot @p slot of @p queue, where the card wrote it.
  *
  * @param device The card.

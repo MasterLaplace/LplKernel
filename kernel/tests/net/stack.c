@@ -53,6 +53,39 @@ KERNEL_TEST(the_checksum_of_the_rfc_example_is_its_published_value)
 }
 
 /**
+ * @brief The folded sum, four bytes a load in the host's order, gives the checksum the exact sum gives, at every
+ *        length from 0 to 40 and every alignment from 0 to 3, and folds bytes all zero to zero.
+ */
+KERNEL_TEST(the_folded_sum_gives_the_checksum_the_exact_sum_gives)
+{
+    static uint8_t bytes[48];
+    static const uint8_t zeros[9] = {0u};
+    static const uint8_t carries[12] = {0xFFu, 0xFFu, 0xFFu, 0xFFu, 0xFFu, 0xFFu, 0xFFu, 0xFFu, 0x01u, 0u, 0u, 0u};
+    uint32_t disagreements = 0u;
+
+    for (uint32_t byte = 0u; byte < sizeof(bytes); ++byte)
+        bytes[byte] = (uint8_t) (byte * 37u + 11u);
+    bytes[17] = 0xFFu;
+    bytes[18] = 0xFFu;
+    for (uint32_t offset = 0u; offset < 4u; ++offset)
+        for (uint32_t length = 0u; length <= 40u; ++length)
+            disagreements +=
+                kernel_internet_checksum_finish(kernel_internet_checksum_fold_bytes(bytes + offset, length)) !=
+                        network_stack_test_naive_checksum(bytes + offset, length) ?
+                    1u :
+                    0u;
+    kernel_test_check(test, disagreements == 0u, "164 lengths and alignments, each checksum the test's own");
+    kernel_test_check(test,
+                      kernel_internet_checksum_finish(kernel_internet_checksum_fold_bytes(carries, sizeof(carries))) ==
+                          network_stack_test_naive_checksum(carries, sizeof(carries)),
+                      "two words of FFFFFFFFh and a 1, whose 64-bit sum carries twice, fold as the test's sum does");
+    kernel_test_check(test,
+                      kernel_internet_checksum_fold_bytes(zeros, 9u) == 0u &&
+                          kernel_internet_checksum_fold_bytes(bytes, 0u) == 0u,
+                      "bytes all zero, or none, fold to zero");
+}
+
+/**
  * @brief An Ethernet header reads in place and writes back, and a frame is for the station or for all.
  */
 KERNEL_TEST(an_ethernet_header_reads_where_it_lies_and_writes_back)
@@ -141,9 +174,11 @@ KERNEL_TEST(the_arp_cache_forgets_by_the_time_it_is_given)
     kernel_test_check(test, !kernel_address_resolution_cache_merge(&cache, 0x0A000002u, station, 150u),
                       "an address the cache does not hold is not merged");
     kernel_test_check(test, !kernel_address_resolution_cache_find(&cache, 0u, 180u, found), "address 0 is never found");
-    kernel_address_resolution_cache_expire(&cache, 250u);
-    kernel_test_check(test, !kernel_address_resolution_cache_find(&cache, 0x0A000001u, 150u, found),
-                      "expired at 250, it is gone at 150 too, as the time comes back around");
+    for (uint32_t entry = 0u; entry < KERNEL_ADDRESS_RESOLUTION_CACHE_ENTRIES; ++entry)
+        kernel_address_resolution_cache_expire_next(&cache, 250u);
+    kernel_test_check(
+        test, !kernel_address_resolution_cache_find(&cache, 0x0A000001u, 150u, found),
+        "16 expiries at 250, one an entry, free it: at 150 it is gone too, as the time comes back around");
 }
 
 /**
@@ -190,6 +225,51 @@ KERNEL_TEST(the_arp_cache_keeps_the_addresses_asked_for)
 }
 
 /**
+ * @brief A hinted lookup finds what a plain one finds, from a hint right or wrong, and leaves the entry found in its
+ *        hint.
+ */
+KERNEL_TEST(a_hinted_lookup_finds_what_a_plain_one_finds)
+{
+    static KernelAddressResolutionCache_t cache;
+    uint8_t station[6] = {2u, 0u, 0u, 0u, 0u, 9u};
+    uint8_t found[6] = {0u};
+    uint32_t hint = 0u;
+
+    kernel_address_resolution_cache_initialize(&cache, 100u);
+    for (uint32_t entry = 0u; entry < 5u; ++entry)
+        (void) kernel_address_resolution_cache_add(&cache, 0x0A000010u + entry, station, entry);
+    station[5] = 4u;
+    (void) kernel_address_resolution_cache_merge(&cache, 0x0A000014u, station, 5u);
+    kernel_test_check(test,
+                      kernel_address_resolution_cache_find_hinted(&cache, 0x0A000014u, 6u, found, &hint) &&
+                          found[5] == 4u && hint == 4u,
+                      "from a wrong hint, 10.0.0.20 is found in entry 4, which the hint then names");
+    found[5] = 0u;
+    kernel_test_check(
+        test, kernel_address_resolution_cache_find_hinted(&cache, 0x0A000014u, 6u, found, &hint) && found[5] == 4u,
+        "and is found again from it");
+    hint = 77u;
+    kernel_test_check(test,
+                      !kernel_address_resolution_cache_find_hinted(&cache, 0x0A000099u, 6u, found, &hint) &&
+                          hint == 77u && !kernel_address_resolution_cache_find_hinted(&cache, 0u, 6u, found, &hint),
+                      "an address not held, or 0, is not found, the hint left as it was");
+    kernel_address_resolution_cache_ask(&cache, 0x0A000030u, 7u);
+    hint = 5u;
+    kernel_test_check(test,
+                      !kernel_address_resolution_cache_find_hinted(&cache, 0x0A000030u, 8u, found, &hint) &&
+                          !kernel_address_resolution_cache_find_hinted(&cache, 0x0A000014u, 105u, found, &hint),
+                      "nor is an address asked for and unresolved, nor one a lifetime old");
+    for (uint32_t entry = 0u; entry < KERNEL_ADDRESS_RESOLUTION_CACHE_ENTRIES; ++entry)
+        kernel_address_resolution_cache_expire_next(&cache, 200u);
+    hint = 4u;
+    kernel_test_check(test,
+                      !kernel_address_resolution_cache_find(&cache, 0x0A000014u, 5u, found) &&
+                          !kernel_address_resolution_cache_find_hinted(&cache, 0u, 201u, found, &hint),
+                      "16 expiries free every entry, the fifth one too: at 5 again, 10.0.0.20 is gone, and address 0 "
+                      "is not found where it was");
+}
+
+/**
  * @brief Asking again for an expired address starts it over unresolved, so that the expiry of a batch does not
  *        free it before its reply.
  */
@@ -207,11 +287,12 @@ KERNEL_TEST(asking_again_for_an_expired_address_starts_it_over)
     kernel_address_resolution_cache_ask(&cache, 0x0A000001u, 200u);
     kernel_test_check(test, !kernel_address_resolution_cache_find(&cache, 0x0A000001u, 200u, found),
                       "asked for again once expired, it is unresolved");
-    kernel_address_resolution_cache_expire(&cache, 250u);
+    for (uint32_t entry = 0u; entry < KERNEL_ADDRESS_RESOLUTION_CACHE_ENTRIES; ++entry)
+        kernel_address_resolution_cache_expire_next(&cache, 250u);
     kernel_test_check(test,
                       kernel_address_resolution_cache_merge(&cache, 0x0A000001u, station, 260u) &&
                           kernel_address_resolution_cache_find(&cache, 0x0A000001u, 261u, found),
-                      "and survives the expiry of 250 to take its reply at 260");
+                      "and survives 16 expiries at 250 to take its reply at 260");
 }
 
 /**
