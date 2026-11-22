@@ -39,5 +39,5 @@ bool kernel_internet_protocol_source_is_acceptable(uint32_t source, uint32_t add
 {
     const KernelInternetProtocolSubnet_t subnet = kernel_internet_protocol_subnet(address, netmask);
 
-    return kernel_internet_protocol_source_is_acceptable_in(source, address, &subnet);
+    return kernel_internet_protocol_source_is_acceptable_in((uint8_t) (source >> 24), source, &subnet);
 }

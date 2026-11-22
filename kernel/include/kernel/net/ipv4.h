@@ -75,12 +75,13 @@ typedef struct KernelInternetProtocolPacket {
 } KernelInternetProtocolPacket_t;
 
 /**
- * @brief An interface's subnet, as a source check reads it, computed once from its address and netmask.
+ * @brief The three addresses a source check refuses on an interface's subnet, computed once, all three in the byte
+ *        order of the source compared with them.
  */
 typedef struct KernelInternetProtocolSubnet {
-    uint32_t network;   /**< Its network address, host order. */
-    uint32_t broadcast; /**< Its directed broadcast, host order. */
-    bool has_broadcast; /**< Whether it has both, a /30 or wider. */
+    uint32_t address;   /**< The interface's own address. */
+    uint32_t network;   /**< Its subnet's network address, or its own address where the subnet has none. */
+    uint32_t broadcast; /**< Its subnet's directed broadcast, or its own address where the subnet has none. */
 } KernelInternetProtocolSubnet_t;
 
 /**
@@ -110,23 +111,27 @@ extern KernelInternetProtocolStatus_t kernel_internet_protocol_parse(const uint8
 extern bool kernel_internet_protocol_source_is_acceptable(uint32_t source, uint32_t address, uint32_t netmask);
 
 /**
- * @brief The subnet of an interface at @p address with @p netmask.
+ * @brief The subnet of an interface at @p address with @p netmask, host order.
+ *
+ * @details A /31 or /32 has no network address and no broadcast to refuse: both are the interface's own address,
+ *          which is refused anyway.
  *
  * @param address The interface's address, host order.
  * @param netmask Its netmask.
- * @return Its network address, its directed broadcast, and whether it has them.
+ * @return Its address, its subnet's network address and its directed broadcast.
  */
 static inline KernelInternetProtocolSubnet_t kernel_internet_protocol_subnet(uint32_t address, uint32_t netmask);
 
 /**
- * @brief What kernel_internet_protocol_source_is_acceptable decides, on a subnet computed once.
+ * @brief What kernel_internet_protocol_source_is_acceptable decides, on a subnet computed once, in either byte
+ *        order: @p source and @p subnet in the same one.
  *
- * @param source  The packet's source address, host order.
- * @param address The interface's address.
- * @param subnet  Its subnet, from kernel_internet_protocol_subnet.
+ * @param first_byte The source's first byte on the wire.
+ * @param source     The source address, in the byte order of @p subnet.
+ * @param subnet     The interface's subnet, from kernel_internet_protocol_subnet or the same in another order.
  * @return true for a source a datagram may come from.
  */
-static inline bool kernel_internet_protocol_source_is_acceptable_in(uint32_t source, uint32_t address,
+static inline bool kernel_internet_protocol_source_is_acceptable_in(uint8_t first_byte, uint32_t source,
                                                                     const KernelInternetProtocolSubnet_t *subnet);
 
 /**
@@ -138,11 +143,19 @@ static inline bool kernel_internet_protocol_source_is_acceptable_in(uint32_t sou
  * @param protocol       What the payload is.
  * @param payload_bytes  Bytes of the payload.
  * @param identification The packet's identification.
- * @param time_to_live   Its TTL: KERNEL_INTERNET_PROTOCOL_TIME_TO_LIVE, or the multicast one to a group.
  */
 static inline void kernel_internet_protocol_write_header(uint8_t *bytes, uint32_t source, uint32_t destination,
                                                          uint8_t protocol, uint32_t payload_bytes,
-                                                         uint16_t identification, uint8_t time_to_live);
+                                                         uint16_t identification);
+
+/**
+ * @brief Sets the time to live of the header at @p bytes, its checksum updated in constant time from the word that
+ *        changed (RFC 1624, equation 3), as a router does when it lowers one.
+ *
+ * @param bytes        The header's first byte.
+ * @param time_to_live The new time to live.
+ */
+static inline void kernel_internet_protocol_set_time_to_live(uint8_t *bytes, uint8_t time_to_live);
 
 #include <kernel/net/ipv4.inl>
 

@@ -359,7 +359,7 @@ KERNEL_TEST(an_ipv4_header_is_taken_or_refused_by_its_cause)
     uint8_t written[20 + 8] = {0u};
 
     kernel_internet_protocol_write_header(written, 0x0A00020Fu, 0x0A000202u, KERNEL_INTERNET_PROTOCOL_CONTROL_MESSAGE,
-                                          8u, 7u, KERNEL_INTERNET_PROTOCOL_TIME_TO_LIVE);
+                                          8u, 7u);
     kernel_test_check(test,
                       network_stack_test_naive_checksum(written, 20u) == 0u && written[0] == 0x45u && written[9] == 1u,
                       "a header written has a checksum that holds by the test's sum");

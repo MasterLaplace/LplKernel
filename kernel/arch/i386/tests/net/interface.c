@@ -134,7 +134,7 @@ static uint32_t network_interface_test_write_echo(uint8_t *frame)
     kernel_ethernet_write_header(frame, station, station, KERNEL_ETHERNET_TYPE_INTERNET_PROTOCOL_VERSION_4);
     kernel_internet_protocol_write_header(frame + KERNEL_ETHERNET_HEADER_BYTES, NETWORK_INTERFACE_TEST_NEIGHBOUR,
                                           network_interface_test.address, KERNEL_INTERNET_PROTOCOL_CONTROL_MESSAGE,
-                                          NETWORK_INTERFACE_TEST_ECHO_BYTES, 1u, KERNEL_INTERNET_PROTOCOL_TIME_TO_LIVE);
+                                          NETWORK_INTERFACE_TEST_ECHO_BYTES, 1u);
     memset(echo, 0x5A, NETWORK_INTERFACE_TEST_ECHO_BYTES);
     echo[0] = KERNEL_INTERNET_CONTROL_MESSAGE_ECHO_REQUEST;
     echo[1] = 0u;
@@ -315,7 +315,7 @@ static uint32_t network_interface_test_write_datagram(uint8_t *frame, uint32_t p
     kernel_ethernet_write_header(frame, station, station, KERNEL_ETHERNET_TYPE_INTERNET_PROTOCOL_VERSION_4);
     kernel_internet_protocol_write_header(frame + KERNEL_ETHERNET_HEADER_BYTES, NETWORK_INTERFACE_TEST_NEIGHBOUR,
                                           network_interface_test.address, KERNEL_INTERNET_PROTOCOL_USER_DATAGRAM,
-                                          datagram_bytes, 2u, KERNEL_INTERNET_PROTOCOL_TIME_TO_LIVE);
+                                          datagram_bytes, 2u);
     for (uint32_t byte = 0u; byte < payload_bytes; ++byte)
         payload[byte] = (uint8_t) (byte + seed);
     kernel_user_datagram_write_header(

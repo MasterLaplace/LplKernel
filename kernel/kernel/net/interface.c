@@ -30,10 +30,8 @@ static KernelNetworkQueue_t *kernel_network_interface_queue(const KernelNetworkI
  */
 static bool kernel_network_interface_is_broadcast(const KernelNetworkInterface_t *interface, uint32_t address)
 {
-    const KernelInternetProtocolSubnet_t *const subnet = &interface->wire.subnet;
-
     return address == KERNEL_INTERNET_PROTOCOL_LIMITED_BROADCAST ||
-           (subnet->has_broadcast && address == subnet->broadcast);
+           (address == interface->subnet.broadcast && address != interface->address);
 }
 
 /**
@@ -42,16 +40,6 @@ static bool kernel_network_interface_is_broadcast(const KernelNetworkInterface_t
 static bool kernel_network_interface_is_multicast(uint32_t address)
 {
     return (address & KERNEL_NETWORK_INTERFACE_CLASS_MASK) == KERNEL_NETWORK_INTERFACE_MULTICAST_CLASS;
-}
-
-/**
- * @brief The time to live of a packet to @p destination: 1 to a multicast group, as RFC 1112 (6.1) has a sender
- *        default, so that only an explicit choice leaves the subnet, and 64 to any other.
- */
-static uint8_t kernel_network_interface_time_to_live(uint32_t destination)
-{
-    return kernel_network_interface_is_multicast(destination) ? KERNEL_INTERNET_PROTOCOL_MULTICAST_TIME_TO_LIVE :
-                                                                KERNEL_INTERNET_PROTOCOL_TIME_TO_LIVE;
 }
 
 /**
@@ -82,7 +70,7 @@ static uint32_t kernel_network_interface_next_hop(const KernelNetworkInterface_t
 static bool kernel_network_interface_may_learn(const KernelNetworkInterface_t *interface, uint32_t sender)
 {
     return ((sender ^ interface->address) & interface->netmask) == 0u &&
-           kernel_internet_protocol_source_is_acceptable_in(sender, interface->address, &interface->wire.subnet);
+           kernel_internet_protocol_source_is_acceptable_in((uint8_t) (sender >> 24), sender, &interface->subnet);
 }
 
 /**
@@ -245,7 +233,7 @@ static KernelNetworkInterfaceFate_t kernel_network_interface_answer_echo(KernelN
                                  KERNEL_ETHERNET_TYPE_INTERNET_PROTOCOL_VERSION_4);
     kernel_internet_protocol_write_header(reply + KERNEL_ETHERNET_HEADER_BYTES, interface->address, packet->source,
                                           KERNEL_INTERNET_PROTOCOL_CONTROL_MESSAGE, packet->payload_bytes,
-                                          interface->next_identification++, KERNEL_INTERNET_PROTOCOL_TIME_TO_LIVE);
+                                          interface->next_identification++);
     kernel_internet_control_message_write_echo_reply(
         reply + KERNEL_ETHERNET_HEADER_BYTES + KERNEL_INTERNET_PROTOCOL_HEADER_BYTES, request);
     if (!kernel_network_interface_publish_frame(interface, slot, reply, length))
@@ -450,7 +438,7 @@ static bool kernel_network_interface_lend_common(KernelNetworkInterface_t *inter
     const uint32_t datagram_bytes = kernel_network_read_16(datagram + 4u);
     const uint32_t place = kernel_network_interface_lent_place(wire, kernel_network_load_16(datagram + 2u));
 
-    if (!kernel_internet_protocol_source_is_acceptable_in(source, interface->address, &wire->subnet) ||
+    if (!kernel_internet_protocol_source_is_acceptable_in(header[12], source_loaded, &wire->subnet) ||
         datagram_bytes < KERNEL_USER_DATAGRAM_HEADER_BYTES ||
         datagram_bytes > total_bytes - KERNEL_INTERNET_PROTOCOL_HEADER_BYTES || place == KERNEL_NETWORK_INTERFACE_PORTS)
         return false;
@@ -508,7 +496,8 @@ static KernelNetworkInterfaceFate_t kernel_network_interface_take_internet_proto
         return KERNEL_NETWORK_INTERFACE_INTERNET_PROTOCOL_FOR_OTHERS;
     if (to_interface && kernel_ethernet_is_group(frame->destination))
         return KERNEL_NETWORK_INTERFACE_INTERNET_PROTOCOL_LINK_BROADCAST;
-    if (!kernel_internet_protocol_source_is_acceptable_in(packet.source, interface->address, &interface->wire.subnet))
+    if (!kernel_internet_protocol_source_is_acceptable_in((uint8_t) (packet.source >> 24), packet.source,
+                                                          &interface->subnet))
         return KERNEL_NETWORK_INTERFACE_INTERNET_PROTOCOL_SOURCE_REFUSED;
     if (packet.protocol == KERNEL_INTERNET_PROTOCOL_USER_DATAGRAM)
         return kernel_network_interface_take_user_datagram(interface, &packet);
@@ -610,7 +599,8 @@ static bool kernel_network_interface_datagram_checksum(KernelNetworkInterface_t 
  * @brief The station a datagram to @p destination goes to, its next hop's looked up from the entry a send last found
  *        for that hop: KERNEL_NETWORK_INTERFACE_SEND_SENT with @p out_station written, or why none.
  *
- * @details A next hop not learned is asked for by ARP, unless a request for it is already pending.
+ * @details A next hop not learned is asked for by ARP, unless a request for it is already pending. The interface's
+ *          own address, which no entry may hold, is refused there, off the path of a station found.
  */
 static KernelNetworkInterfaceSend_t kernel_network_interface_station_of(KernelNetworkInterface_t *interface,
                                                                         uint32_t destination, uint32_t now,
@@ -618,8 +608,6 @@ static KernelNetworkInterfaceSend_t kernel_network_interface_station_of(KernelNe
 {
     if (kernel_network_interface_is_unreachable(destination))
         return KERNEL_NETWORK_INTERFACE_SEND_UNREACHABLE;
-    if (destination == interface->address)
-        return KERNEL_NETWORK_INTERFACE_SEND_SELF;
     if (kernel_network_interface_is_broadcast(interface, destination) ||
         kernel_network_interface_is_multicast(destination))
     {
@@ -633,6 +621,8 @@ static KernelNetworkInterfaceSend_t kernel_network_interface_station_of(KernelNe
             &interface->cache, next_hop, now, out_station,
             &interface->station_hints[next_hop % KERNEL_NETWORK_INTERFACE_STATION_HINTS]))
         return KERNEL_NETWORK_INTERFACE_SEND_SENT;
+    if (destination == interface->address)
+        return KERNEL_NETWORK_INTERFACE_SEND_SELF;
     if (!kernel_address_resolution_cache_is_pending(&interface->cache, next_hop, now, interface->request_interval))
         (void) kernel_network_interface_request_address(interface, destination, now);
     return KERNEL_NETWORK_INTERFACE_SEND_NO_STATION;
@@ -682,7 +672,11 @@ KernelNetworkInterfaceSetup_t kernel_network_interface_initialize(KernelNetworkI
     interface->wire.address = kernel_network_interface_as_loaded_32(config->address);
     interface->wire.pseudo_header_sum =
         (config->address >> 16) + (config->address & 0xFFFFu) + KERNEL_INTERNET_PROTOCOL_USER_DATAGRAM;
-    interface->wire.subnet = kernel_internet_protocol_subnet(config->address, config->netmask);
+    interface->subnet = kernel_internet_protocol_subnet(config->address, config->netmask);
+    interface->payload_most_bytes = device->frame_most_bytes - KERNEL_NETWORK_INTERFACE_HEADERS_BYTES;
+    interface->wire.subnet.address = kernel_network_interface_as_loaded_32(interface->subnet.address);
+    interface->wire.subnet.network = kernel_network_interface_as_loaded_32(interface->subnet.network);
+    interface->wire.subnet.broadcast = kernel_network_interface_as_loaded_32(interface->subnet.broadcast);
     kernel_address_resolution_cache_initialize(&interface->cache, config->cache_lifetime);
     (void) kernel_spsc_ring_initialize(&interface->lent_ring, KERNEL_NETWORK_INTERFACE_LENT_DATAGRAMS);
     return KERNEL_NETWORK_INTERFACE_READY;
@@ -831,7 +825,7 @@ uint8_t *kernel_network_interface_reserve_datagram(KernelNetworkInterface_t *int
         return NULL;
     interface->datagram_reserved = true;
     interface->reserved_slot = *out_slot;
-    *out_room = interface->device->frame_most_bytes - KERNEL_NETWORK_INTERFACE_HEADERS_BYTES;
+    *out_room = interface->payload_most_bytes;
     return frame + KERNEL_NETWORK_INTERFACE_HEADERS_BYTES;
 }
 
@@ -848,7 +842,7 @@ KernelNetworkInterfaceSend_t kernel_network_interface_send_datagram(KernelNetwor
 
     interface->datagram_reserved = false;
     if (reserved)
-        result = datagram->payload_bytes > device->frame_most_bytes - KERNEL_NETWORK_INTERFACE_HEADERS_BYTES ?
+        result = datagram->payload_bytes > interface->payload_most_bytes ?
                      KERNEL_NETWORK_INTERFACE_SEND_TOO_LONG :
                      kernel_network_interface_station_of(interface, datagram->destination_address, now, station);
     if (result == KERNEL_NETWORK_INTERFACE_SEND_SENT)
@@ -862,10 +856,13 @@ KernelNetworkInterfaceSend_t kernel_network_interface_send_datagram(KernelNetwor
         {
             kernel_ethernet_write_header(frame, station, device->address,
                                          KERNEL_ETHERNET_TYPE_INTERNET_PROTOCOL_VERSION_4);
-            kernel_internet_protocol_write_header(
-                frame + KERNEL_ETHERNET_HEADER_BYTES, interface->address, datagram->destination_address,
-                KERNEL_INTERNET_PROTOCOL_USER_DATAGRAM, KERNEL_USER_DATAGRAM_HEADER_BYTES + datagram->payload_bytes,
-                interface->next_identification++, kernel_network_interface_time_to_live(datagram->destination_address));
+            kernel_internet_protocol_write_header(frame + KERNEL_ETHERNET_HEADER_BYTES, interface->address,
+                                                  datagram->destination_address, KERNEL_INTERNET_PROTOCOL_USER_DATAGRAM,
+                                                  KERNEL_USER_DATAGRAM_HEADER_BYTES + datagram->payload_bytes,
+                                                  interface->next_identification++);
+            if (kernel_network_interface_is_multicast(datagram->destination_address))
+                kernel_internet_protocol_set_time_to_live(frame + KERNEL_ETHERNET_HEADER_BYTES,
+                                                          KERNEL_INTERNET_PROTOCOL_MULTICAST_TIME_TO_LIVE);
             kernel_user_datagram_write_header(
                 frame + KERNEL_ETHERNET_HEADER_BYTES + KERNEL_INTERNET_PROTOCOL_HEADER_BYTES, datagram->source_port,
                 datagram->destination_port, datagram->payload_bytes, checksum);

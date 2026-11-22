@@ -236,8 +236,7 @@ static uint32_t network_fake_write_control_message(uint8_t *frame, const uint8_t
     kernel_ethernet_write_header(frame, station, network_fake_peer_station,
                                  KERNEL_ETHERNET_TYPE_INTERNET_PROTOCOL_VERSION_4);
     kernel_internet_protocol_write_header(frame + KERNEL_ETHERNET_HEADER_BYTES, source, destination,
-                                          KERNEL_INTERNET_PROTOCOL_CONTROL_MESSAGE, message_bytes, 3u,
-                                          KERNEL_INTERNET_PROTOCOL_TIME_TO_LIVE);
+                                          KERNEL_INTERNET_PROTOCOL_CONTROL_MESSAGE, message_bytes, 3u);
     memset(message, 0x77, message_bytes);
     message[0] = type;
     message[1] = 0u;
@@ -326,8 +325,7 @@ static uint32_t network_fake_write_datagram(uint8_t *frame, uint16_t destination
     kernel_ethernet_write_header(frame, network_fake_own_station, network_fake_peer_station,
                                  KERNEL_ETHERNET_TYPE_INTERNET_PROTOCOL_VERSION_4);
     kernel_internet_protocol_write_header(frame + KERNEL_ETHERNET_HEADER_BYTES, NETWORK_FAKE_PEER, NETWORK_FAKE_ADDRESS,
-                                          KERNEL_INTERNET_PROTOCOL_USER_DATAGRAM, datagram_bytes, 5u,
-                                          KERNEL_INTERNET_PROTOCOL_TIME_TO_LIVE);
+                                          KERNEL_INTERNET_PROTOCOL_USER_DATAGRAM, datagram_bytes, 5u);
     for (uint32_t byte = 0u; byte < payload_bytes; ++byte)
         payload[byte] = (uint8_t) (byte + seed);
     sum = kernel_user_datagram_checksum(
@@ -831,8 +829,7 @@ KERNEL_TEST(control_messages_are_counted_by_what_they_are)
     network_fake_receive(frame, length);
     (void) network_fake_write_to_interface(frame, KERNEL_INTERNET_CONTROL_MESSAGE_ECHO_REPLY, 0u);
     kernel_internet_protocol_write_header(frame + KERNEL_ETHERNET_HEADER_BYTES, NETWORK_FAKE_PEER, NETWORK_FAKE_ADDRESS,
-                                          KERNEL_INTERNET_PROTOCOL_CONTROL_MESSAGE, 4u, 3u,
-                                          KERNEL_INTERNET_PROTOCOL_TIME_TO_LIVE);
+                                          KERNEL_INTERNET_PROTOCOL_CONTROL_MESSAGE, 4u, 3u);
     network_fake_seal_control_message(frame + NETWORK_FAKE_MESSAGE, 4u);
     network_fake_receive(frame, NETWORK_FAKE_MESSAGE + 4u);
     network_fake_receive(frame, network_fake_write_to_interface(frame, 13u, NETWORK_FAKE_ECHO_DATA));
@@ -1662,6 +1659,17 @@ KERNEL_TEST(a_datagram_too_long_or_to_nowhere_is_refused_by_name)
                       "and port 9000, bound with checksums, sends none without one");
     (void) kernel_network_interface_poll(&network_fake_interface, 3u);
     kernel_test_check(test, network_fake_card.sent_count == 0u, "nothing goes out");
+
+    KernelNetworkInterfaceConfig_t alone = network_fake_config(0u);
+
+    alone.netmask = 0xFFFFFFFFu;
+    network_fake_set_up_card(KERNEL_ETHERNET_HEADER_BYTES);
+    (void) kernel_network_interface_initialize(&network_fake_interface, &network_fake_device, &alone);
+    (void) network_fake_bind_lent(NETWORK_FAKE_GAME_PORT, false);
+    kernel_test_check(test,
+                      network_fake_send(NETWORK_FAKE_ADDRESS, 4u, 0u, KERNEL_NETWORK_CHECKSUM_FROM_SUM, 2u) ==
+                          KERNEL_NETWORK_INTERFACE_SEND_SELF,
+                      "and so is 10.0.0.2 on a /32, whose subnet has no broadcast to take it for");
 }
 
 /**

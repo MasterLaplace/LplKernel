@@ -232,7 +232,7 @@ typedef struct KernelNetworkInterfaceWire {
     uint32_t address;                                    /**< The interface's IPv4 address. */
     uint16_t lent_ports[KERNEL_NETWORK_INTERFACE_PORTS]; /**< Each place's port when bound lent, else 0. */
     uint32_t pseudo_header_sum; /**< The interface's address and UDP's protocol, as a pseudo-header sums them. */
-    KernelInternetProtocolSubnet_t subnet; /**< The subnet's network and broadcast, host order. */
+    KernelInternetProtocolSubnet_t subnet; /**< The addresses a source may not be, as loads from a frame read them. */
 } KernelNetworkInterfaceWire_t;
 
 /**
@@ -250,19 +250,21 @@ typedef struct KernelNetworkInterfaceConfig {
  * @brief An IPv4 interface on one network card.
  */
 typedef struct KernelNetworkInterface {
-    KernelNetworkDevice_t *device;        /**< The card. */
-    uint32_t address;                     /**< The interface's IPv4 address, host order. */
-    uint32_t netmask;                     /**< Its netmask, host order. */
-    uint32_t gateway;                     /**< The next hop off the subnet, 0 for none. */
-    uint32_t request_interval;            /**< Least time between two ARP requests a send makes for a hop. */
-    uint16_t next_identification;         /**< The identification of the next IPv4 packet sent. */
-    bool transmit_exhausted;              /**< Whether a kick this batch freed no slot: it sends no more. */
-    bool datagram_reserved;               /**< Whether a transmit slot is reserved for a datagram. */
-    uint32_t reserved_slot;               /**< That slot. */
-    uint32_t receive_taken;               /**< Frames past the card's oldest held that the poll took. */
-    uint32_t receive_released;            /**< Frames given back to the card: the oldest held's arrival. */
-    uint32_t arrival;                     /**< The arrival number of the frame being taken. */
-    KernelAddressResolutionCache_t cache; /**< The station addresses learned. */
+    KernelNetworkDevice_t *device;         /**< The card. */
+    uint32_t address;                      /**< The interface's IPv4 address, host order. */
+    uint32_t netmask;                      /**< Its netmask, host order. */
+    uint32_t gateway;                      /**< The next hop off the subnet, 0 for none. */
+    KernelInternetProtocolSubnet_t subnet; /**< The addresses a source may not be, host order. */
+    uint32_t payload_most_bytes;           /**< The longest payload a datagram sent carries: the longest frame's. */
+    uint32_t request_interval;             /**< Least time between two ARP requests a send makes for a hop. */
+    uint16_t next_identification;          /**< The identification of the next IPv4 packet sent. */
+    bool transmit_exhausted;               /**< Whether a kick this batch freed no slot: it sends no more. */
+    bool datagram_reserved;                /**< Whether a transmit slot is reserved for a datagram. */
+    uint32_t reserved_slot;                /**< That slot. */
+    uint32_t receive_taken;                /**< Frames past the card's oldest held that the poll took. */
+    uint32_t receive_released;             /**< Frames given back to the card: the oldest held's arrival. */
+    uint32_t arrival;                      /**< The arrival number of the frame being taken. */
+    KernelAddressResolutionCache_t cache;  /**< The station addresses learned. */
     uint32_t station_hints[KERNEL_NETWORK_INTERFACE_STATION_HINTS];   /**< The cache entry a send last found, by hop. */
     KernelNetworkPortBinding_t ports[KERNEL_NETWORK_INTERFACE_PORTS]; /**< The ports bound. */
     KernelNetworkInterfaceWire_t wire;                                /**< The common datagram's values. */
