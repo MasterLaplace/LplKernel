@@ -23,7 +23,8 @@ CXXFLAGS:=$(CXXFLAGS) -std=gnu++23 -ffreestanding -fno-exceptions -fno-rtti \
           -fno-threadsafe-statics -Wall -Wextra \
           $(if $(KERNEL_FRAME_LIMIT_BYTES),-Werror=frame-larger-than=$(KERNEL_FRAME_LIMIT_BYTES))
 # The LplPlugin modules the kernel compiles against: their headers, and their engine tests.
-# net/ is here for the header-only lpl/net/Endpoint.hpp alone, which EventQueue.hpp needs.
+# net/ is here for its header-only part: lpl/net/Endpoint.hpp, which EventQueue.hpp needs, and the
+# bit writer and reader of lpl/net/protocol, which tests/net/ checks against the host.
 ENGINE_MODULES=core testing math memory container ecs concurrency physics platform input net gpu image \
     scene render engine procgen codec rosetta history ai ecology pack samples
 CPPFLAGS:=$(CPPFLAGS) -DLPL_TARGET_KERNEL=1 -Iinclude $(foreach module,$(ENGINE_MODULES),-I$(LPLPLUGIN_ROOT)/$(module)/include)
