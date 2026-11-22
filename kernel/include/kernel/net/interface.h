@@ -72,8 +72,7 @@ extern "C" {
 #define KERNEL_NETWORK_INTERFACE_PORTS          8u  /**< UDP ports an interface binds. */
 #define KERNEL_NETWORK_INTERFACE_LENT_DATAGRAMS 64u /**< Datagrams an interface lends at once: a receive ring's. */
 #define KERNEL_NETWORK_INTERFACE_HEADERS_BYTES  42u /**< Ethernet, IPv4 and UDP headers, before a payload sent. */
-#define KERNEL_NETWORK_INTERFACE_STATION_HINTS  8u  /**< Hints of a next hop's cache entry, by its address's low bits. \
-                                                     */
+#define KERNEL_NETWORK_INTERFACE_STATION_HINTS  8u  /**< A next hop's last cache entry, hinted by its low bits. */
 /** @} */
 
 /**
