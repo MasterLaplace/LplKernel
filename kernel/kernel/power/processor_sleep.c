@@ -65,6 +65,7 @@ static uint32_t processor_sleep_depth = PROCESSOR_SLEEP_DEPTH_C1;
 static uint32_t processor_sleep_clamped = 0u;
 static uint32_t processor_sleep_refused = 0u;
 static uint32_t processor_sleep_port_sleeps = 0u;
+static uint32_t processor_sleep_timed_port_reads = 0u;
 static bool processor_sleep_interrupt_break = false;
 static volatile uint32_t processor_sleep_published_duty = KERNEL_PROCESSOR_SLEEP_DUTY_UNMEASURED;
 static uint32_t processor_sleep_bus_master_reload = PROCESSOR_SLEEP_BUS_MASTER_RELOAD_UNNEEDED;
@@ -444,7 +445,10 @@ processor_sleep_enter(uint32_t entered, const volatile void *line, bool armed, P
     {
         ++processor_sleep_port_sleeps;
         if (read != NULL)
+        {
+            ++processor_sleep_timed_port_reads;
             read->returned = asmutils_timed_input_byte_then_enable_interrupts(depth->port, &read->began);
+        }
         else
             asmutils_input_byte_then_enable_interrupts(depth->port);
         outcome.mode = PROCESSOR_SLEEP_PORT;
@@ -619,6 +623,7 @@ void kernel_processor_sleep_begin_accounting(void)
     processor_sleep_skipped = 0u;
     processor_sleep_halts = 0u;
     processor_sleep_port_sleeps = 0u;
+    processor_sleep_timed_port_reads = 0u;
     processor_sleep_bus_master_demotions = 0u;
     processor_sleep_unarmed_waits = 0u;
     processor_sleep_asleep = 0u;
@@ -831,6 +836,8 @@ void kernel_processor_sleep_end_probe(bool stops)
 }
 
 uint32_t kernel_processor_sleep_port_sleep_count(void) { return processor_sleep_port_sleeps; }
+
+uint32_t kernel_processor_sleep_timed_port_read_count(void) { return processor_sleep_timed_port_reads; }
 
 uint32_t kernel_processor_sleep_depth_after_the_bus_master_check(const ProcessorSleepLadder_t *ladder, uint32_t allowed,
                                                                  uint32_t depth, uint32_t status)

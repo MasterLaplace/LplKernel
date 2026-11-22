@@ -1002,6 +1002,62 @@ KERNEL_TEST(a_sleep_asked_at_a_depth_enters_it_only_where_a_grant_and_a_probe_al
 }
 
 /**
+ * @brief The timed sleep at a port depth says when its read began and returned, both within the call, the read first,
+ *        and counts the read timed; at C1, which reads no port, it says zeros and counts nothing. Under a hypervisor,
+ *        whose made-up ports read back at once.
+ */
+KERNEL_TEST(a_timed_port_sleep_says_when_its_read_began_and_returned)
+{
+    static ProcessorSleepLadder_t ladder;
+    CpuIdentity_t identity;
+    uint8_t vector = 0u;
+    uint64_t quarter_tick = 0u;
+    ProcessorSleepRead_t port_read = {0u, 0u};
+    ProcessorSleepRead_t halt_read = {1u, 1u};
+
+    cpu_identity_read(&identity);
+    if (!identity.hypervisor)
+    {
+        kernel_test_skip(test, "a real processor: the made-up port may well stop it");
+        return;
+    }
+    if (!processor_sleep_test_take_a_vector(test, &vector, &quarter_tick))
+        return;
+
+    ladder = *kernel_processor_sleep_ladder();
+    ladder.available |= 1u << 1u;
+    ladder.depths[1] = (ProcessorSleepDepth_t){.entry = PROCESSOR_SLEEP_ENTRY_PORT,
+                                               .port = (uint16_t) (PROCESSOR_SLEEP_TEST_UNDECODED_PORT + 1u),
+                                               .latency_published = true,
+                                               .latency = 18u};
+    kernel_processor_sleep_debug_adopt_ladder(&ladder);
+    (void) kernel_processor_sleep_request_depth(1u);
+    kernel_processor_sleep_begin_probe();
+    kernel_processor_sleep_end_probe(true);
+    const uint32_t timed_before = kernel_processor_sleep_timed_port_read_count();
+    const uint32_t flags = asmutils_save_flags_and_disable_interrupts();
+    const uint64_t before = asmutils_read_timestamp_counter();
+    const ProcessorSleepOutcome_t port = processor_sleep_until_interrupt_at_timing_its_read(1u, &port_read);
+    const uint64_t after = asmutils_read_timestamp_counter();
+    const uint32_t timed_port = kernel_processor_sleep_timed_port_read_count() - timed_before;
+    (void) advanced_pic_ipi_send_fixed(0u, vector, ADVANCED_PIC_IPI_SHORT_SELF);
+    const ProcessorSleepOutcome_t halt = processor_sleep_until_interrupt_at_timing_its_read(0u, &halt_read);
+    asmutils_restore_flags(flags);
+    const uint32_t timed_halt = kernel_processor_sleep_timed_port_read_count() - timed_before - timed_port;
+    device_interrupt_release(vector);
+    kernel_processor_sleep_initialize();
+
+    kernel_test_check(test,
+                      port.mode == PROCESSOR_SLEEP_PORT && before <= port_read.began &&
+                          port_read.began <= port_read.returned && port_read.returned <= after && timed_port == 1u,
+                      "the port read is timed within the call, it began before it returned, and it is counted");
+    kernel_test_check(test,
+                      halt.mode != PROCESSOR_SLEEP_PORT && halt_read.began == 0u && halt_read.returned == 0u &&
+                          timed_halt == 0u,
+                      "a halt reads no port, says zeros, and counts nothing");
+}
+
+/**
  * @brief Under a hypervisor, an unprobed port depth is never read, whatever stops the tick or not; once validated, a
  *        sleep until an interrupt reads its port, interrupts masked, and handles the pending interrupt before it
  *        returns; a watched sleep and a conditional one never read a port, whatever the active depth. Skipped on a

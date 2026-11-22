@@ -493,6 +493,13 @@ void kernel_processor_sleep_port_verdicts(uint32_t out_verdicts[PROCESSOR_SLEEP_
 uint32_t kernel_processor_sleep_port_sleep_count(void);
 
 /**
+ * @brief Port reads timed since the accounting began (@ref processor_sleep_until_interrupt_at_timing_its_read): a
+ *        probe's, so that a test sees its reads were timed rather than judged on zeros.
+ * @return The count.
+ */
+uint32_t kernel_processor_sleep_timed_port_read_count(void);
+
+/**
  * @brief The depth a sleep enters once the bus-master check read PM1 status @p status before depth @p depth.
  *
  * @details A depth with the check is entered while BM_STS is clear; while it is set, a bus master was active since

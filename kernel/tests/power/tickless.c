@@ -1407,6 +1407,7 @@ KERNEL_TEST(a_port_depth_whose_read_does_not_stop_is_refused_at_the_first_stop_o
     kernel_tickless_debug_exchange_depth_estimate(1u, &held);
     const uint32_t refused_before = kernel_processor_sleep_refused_depth_count();
     const uint32_t retakes_before = kernel_tickless_probe_retakes();
+    const uint32_t timed_before = kernel_processor_sleep_timed_port_read_count();
     for (uint32_t slot = 0u; slot < CPU_TOPOLOGY_MAX_LOGICAL_CPUS_PUBLIC; ++slot)
         reconsiders[slot] = tickless_test_reconsiders_of(slot);
 
@@ -1419,6 +1420,7 @@ KERNEL_TEST(a_port_depth_whose_read_does_not_stop_is_refused_at_the_first_stop_o
     const uint32_t stopped_ranks = kernel_tickless_stopped_probe_ranks_at(1u);
     const uint32_t taught = kernel_tickless_wake_samples_at(1u);
     const uint32_t retakes = kernel_tickless_probe_retakes() - retakes_before;
+    const uint32_t timed = kernel_processor_sleep_timed_port_read_count() - timed_before;
     kernel_tickless_disable();
     kernel_processor_sleep_port_verdicts(verdicts);
     const uint32_t reached = tickless_test_reconsiders_since(reconsiders, &others);
@@ -1430,6 +1432,8 @@ KERNEL_TEST(a_port_depth_whose_read_does_not_stop_is_refused_at_the_first_stop_o
     kernel_test_check(test, depth == PROCESSOR_SLEEP_DEPTH_C1, "and the sleeps fall to C1");
     kernel_test_check(test, kernel_tickless_judge_a_probe(stopped_ranks, unstopped) != KERNEL_TICKLESS_PROBE_KEEPS,
                       "for reads that did not stop");
+    kernel_test_check(test, timed >= KERNEL_TICKLESS_PROBES,
+                      "each read of its probe timed, rather than judged on zeros");
     kernel_test_check(test, taught == 0u,
                       "and the refused depth is taught nothing, so that its next adoption is probed again");
     kernel_test_check(test, verdicts[0] == (TICKLESS_TEST_UNDECODED_PORT | PROCESSOR_SLEEP_PORT_VERDICT_REFUSED),
@@ -1438,6 +1442,7 @@ KERNEL_TEST(a_port_depth_whose_read_does_not_stop_is_refused_at_the_first_stop_o
     kernel_test_measure(test, "unstopped_ranks", unstopped);
     kernel_test_measure(test, "stopped_ranks", stopped_ranks);
     kernel_test_measure(test, "retakes", retakes);
+    kernel_test_measure(test, "timed_reads", timed);
     kernel_test_measure(test, "others_reached", reached);
 }
 
