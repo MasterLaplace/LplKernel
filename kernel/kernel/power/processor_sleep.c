@@ -766,6 +766,12 @@ bool kernel_processor_sleep_depth_of(uint32_t depth, ProcessorSleepDepth_t *out_
     return true;
 }
 
+bool kernel_processor_sleep_is_port_depth(const ProcessorSleepLadder_t *ladder, uint32_t depth)
+{
+    return depth < PROCESSOR_SLEEP_DEPTHS && ((ladder->available >> depth) & 1u) != 0u &&
+           ladder->depths[depth].entry == PROCESSOR_SLEEP_ENTRY_PORT;
+}
+
 const ProcessorSleepLadder_t *kernel_processor_sleep_ladder(void) { return &processor_sleep_ladder; }
 
 bool kernel_processor_sleep_request_depth(uint32_t depth)

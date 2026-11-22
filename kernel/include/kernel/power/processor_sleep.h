@@ -423,6 +423,14 @@ uint32_t kernel_processor_sleep_residency_of(uint32_t depth);
 bool kernel_processor_sleep_depth_of(uint32_t depth, ProcessorSleepDepth_t *out_depth);
 
 /**
+ * @brief Whether depth @p depth of @p ladder is available and entered by a port read.
+ * @param ladder The ladder.
+ * @param depth  A depth; one past PROCESSOR_SLEEP_DEPTH_DEEPEST is none.
+ * @return true when it is.
+ */
+bool kernel_processor_sleep_is_port_depth(const ProcessorSleepLadder_t *ladder, uint32_t depth);
+
+/**
  * @brief The adopted ladder, available or refused, as @ref kernel_processor_sleep_build_ladder built it.
  * @return The ladder.
  */

@@ -270,16 +270,6 @@ static KernelWakeLeadSource_t tickless_assume_a_lead(uint32_t depth)
 }
 
 /**
- * @brief Whether @p depth is entered by reading a port.
- */
-static bool tickless_reads_a_port(uint32_t depth)
-{
-    ProcessorSleepDepth_t entered;
-
-    return kernel_processor_sleep_depth_of(depth, &entered) && entered.entry == PROCESSOR_SLEEP_ENTRY_PORT;
-}
-
-/**
  * @brief Sleeps once on the timer, @p length from now, at the depth sleeps enter, @p depth, its port read timed, and
  *        says what the sleep says of @p depth: a port read by when it began and returned against the deadline
  *        (@ref kernel_tickless_judge_a_probe_read); a halt or an MWAIT stopped the processor; a sleep the bus-master
@@ -387,7 +377,7 @@ static uint32_t tickless_probe(uint32_t depth)
     uint32_t stopped_ranks = 0u;
     uint64_t length = kernel_tickless_cycles_from_microseconds(KERNEL_TICKLESS_FIRST_PROBE_MICROSECONDS);
     const bool validating = depth == kernel_processor_sleep_depth_awaiting_probe();
-    const bool port = tickless_reads_a_port(depth);
+    const bool port = kernel_processor_sleep_is_port_depth(kernel_processor_sleep_ladder(), depth);
     const uint64_t began = asmutils_read_timestamp_counter();
 
     if (validating)

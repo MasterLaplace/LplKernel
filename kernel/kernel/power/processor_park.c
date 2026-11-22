@@ -28,14 +28,6 @@ static volatile uint32_t processor_park_quick_cycles_word = 0u;
 static volatile uint8_t processor_park_vector = 0u;
 
 /**
- * @brief Whether depth @p depth of @p ladder is available and entered by a port read.
- */
-static bool processor_park_is_port_depth(const ProcessorSleepLadder_t *ladder, uint32_t depth)
-{
-    return ((ladder->available >> depth) & 1u) != 0u && ladder->depths[depth].entry == PROCESSOR_SLEEP_ENTRY_PORT;
-}
-
-/**
  * @brief Whether some word of @p verdicts names @p port with @p verdict.
  */
 static bool processor_park_verdict_names(const uint32_t *verdicts, uint32_t count, uint16_t port, uint32_t verdict)
@@ -216,7 +208,7 @@ uint32_t kernel_processor_park_inherited_depths(const ProcessorSleepLadder_t *la
     {
         const uint16_t port = ladder->depths[depth].port;
 
-        if (processor_park_is_port_depth(ladder, depth) &&
+        if (kernel_processor_sleep_is_port_depth(ladder, depth) &&
             processor_park_verdict_names(verdicts, count, port, PROCESSOR_SLEEP_PORT_VERDICT_VALIDATED) &&
             !processor_park_verdict_names(verdicts, count, port, PROCESSOR_SLEEP_PORT_VERDICT_REFUSED))
             inherited |= 1u << depth;
@@ -232,7 +224,7 @@ uint32_t kernel_processor_park_allowed_depths(const ProcessorSleepLadder_t *ladd
 
     for (uint32_t depth = PROCESSOR_SLEEP_DEPTH_C1 + 1u; depth < PROCESSOR_SLEEP_DEPTHS; ++depth)
         if (((ladder->available >> depth) & 1u) != 0u &&
-            (!processor_park_is_port_depth(ladder, depth) || ((ports_allowed >> depth) & 1u) != 0u))
+            (!kernel_processor_sleep_is_port_depth(ladder, depth) || ((ports_allowed >> depth) & 1u) != 0u))
             allowed |= 1u << depth;
     return allowed;
 }
