@@ -1,3 +1,4 @@
+#include <kernel/cpu/exception.h>
 #include <kernel/cpu/exception_trigger.h>
 #include <kernel/testing/test.h>
 
@@ -82,5 +83,15 @@ KERNEL_TEST_MANUAL(page_fault, EXCEPTION_TEST_HALTS)
 KERNEL_TEST_MANUAL(double_fault, EXCEPTION_TEST_HALTS)
 {
     exception_trigger_double_fault_vector();
+    exception_test_came_back(test);
+}
+
+/**
+ * @brief Gives up on a contract the way kstd::fatal does: the kernel reports it as `[KERNEL PANIC] fatal:`, with its
+ *        reason and the address it was called from, and halts.
+ */
+KERNEL_TEST_MANUAL(fatal_contract, "gives up on a contract, which the kernel reports and halts on")
+{
+    interrupt_exception_panic("the contract this test names", __builtin_return_address(0));
     exception_test_came_back(test);
 }

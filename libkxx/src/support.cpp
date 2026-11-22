@@ -1,29 +1,20 @@
 #include <kstd/support.hpp>
 
 extern "C" {
-void asmutils_disable_interrupts(void);
-void asmutils_halt(void);
+[[noreturn]] void interrupt_exception_panic(const char *reason, const void *caller);
 }
 
 namespace kstd {
 
 /**
- * @brief Halts on a kstd contract violation.
+ * @brief Halts on a kstd contract violation, through the kernel's panic report.
  *
  * @details A contract violation is a hard logic/resource error with no safe continuation in
- *          -fno-exceptions code: interrupts are masked and the processor halts forever.
- *
- * @note The reason string is accepted for a future serial-logging panic but is currently
- *       unused, since kstd must not depend on a particular logging facility.
+ *          -fno-exceptions code: the kernel reports @p reason and the address fatal was called
+ *          from on its serial port, masks interrupts and halts forever.
  *
  * @param reason What was violated.
  */
-[[noreturn]] void fatal(const char *reason) noexcept
-{
-    (void) reason;
-    asmutils_disable_interrupts();
-    for (;;)
-        asmutils_halt();
-}
+[[noreturn]] void fatal(const char *reason) noexcept { interrupt_exception_panic(reason, __builtin_return_address(0)); }
 
 } // namespace kstd

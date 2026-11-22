@@ -56,4 +56,16 @@ extern bool interrupt_exception_resumes_model_specific_register_read(uint32_t in
  */
 extern uint32_t interrupt_exception_refused_model_specific_register_reads(void);
 
+/**
+ * @brief Reports a contract that failed, as `[KERNEL PANIC] fatal:` with @p reason and the address it was called from,
+ *        on the serial port the exception handlers write to, then halts the machine.
+ *
+ * kstd::fatal ends here, and through it every LPL_VERIFY and LPL_ASSERT of the engine and the assistant in ring 0.
+ * The port is polled, so the report needs neither interrupts nor a driver.
+ *
+ * @param reason What failed, as text.
+ * @param caller Where it failed: the return address of the call that gave up, for addr2line.
+ */
+extern _Noreturn void interrupt_exception_panic(const char *reason, const void *caller);
+
 #endif /* KERNEL_CPU_EXCEPTION_H */
