@@ -10,16 +10,25 @@ Boots <kernel> on QEMU with an Intel 82540EM on a tap device of an unprivileged 
 kernel at 10.0.0.2. The kernel runs network_interface.answers_a_linux_peer while the peer pings it five
 times; the peer then prints the station address it resolved for 10.0.0.2 by ARP.
 
-Passes when the peer got its five echo replies, resolved the address to the kernel's e1000, and the kernel's
-test passed. No root is needed; the namespace and its tap go away with the script. LOG names the serial log
-(a temporary file by default), and BOOT_TIMEOUT the seconds the boot may take (180).
+No root is needed; the namespace and its tap go away with the script. LOG names the serial log, kept;
+without it the log is a temporary file, removed on exit. BOOT_TIMEOUT is the seconds the boot may take (180).
+
+Exit status: 0 when the peer got its five echo replies, resolved the address to the kernel's e1000, and the
+kernel's test passed; 1 when one of these failed; 2 for a wrong use, a missing kernel, or a namespace that
+could not make its tap device.
 USAGE
 }
 
-[ $# -eq 1 ] && [ "$1" != "--help" ] || { usage; exit 2; }
+[ "${1:-}" = "--help" ] && { usage; exit 0; }
+[ $# -eq 1 ] || { usage >&2; exit 2; }
 kernel=$1
 [ -f "$kernel" ] || { echo "linux-peer: no kernel at $kernel" >&2; exit 2; }
-log=${LOG:-$(mktemp)}
+if [ -n "${LOG:-}" ]; then
+    log=$LOG
+else
+    log=$(mktemp)
+    trap 'rm -f "$log"' EXIT
+fi
 timeout_seconds=${BOOT_TIMEOUT:-180}
 
 unshare --user --map-root-user --net bash -s "$kernel" "$log" "$timeout_seconds" <<'NAMESPACE'
