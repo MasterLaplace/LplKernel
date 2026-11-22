@@ -558,7 +558,10 @@ KERNEL_TEST(a_deadline_wakes_the_core_by_the_interrupts_latency_after_it)
     kernel_test_check(test, held.due_unslept,
                       "the control: a deadline the test lets pass before its sleep is served by that sleep without "
                       "sleeping, and told apart");
-    kernel_test_check(test, served == TICKLESS_TEST_DEADLINES, "each deadline is served once");
+    kernel_test_check(test,
+                      served == TICKLESS_TEST_DEADLINES &&
+                          tickless_test_runs == TICKLESS_TEST_DEADLINES + (held.served ? 1u : 0u),
+                      "each deadline is served once");
     kernel_test_check(test, due_unslept <= TICKLESS_TEST_DEADLINES / 4u,
                       "three deadlines in four at least are not yet due when their sleep begins");
     kernel_test_check(test, deadlines ? halts == slept_on + early : halts >= slept_on + early,
