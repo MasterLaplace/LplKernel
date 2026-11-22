@@ -30,6 +30,13 @@
  * one a frame. Its link is read on a caller's demand, never per batch: on most cards it is a register read,
  * which costs a VM exit under virtualisation.
  *
+ * A loop over a batch's frames passes the accessors copies of the card and of its queue pair, taken once at the
+ * start of the batch. Through the card's own structures, the compiler must assume that each descriptor word
+ * written may have changed the strides, the bounds and the command, and reads them again for every frame. On
+ * the bounce of network_interface.*bounce*, the copies bring the interface from 49.1 instructions a frame to
+ * 38.7, against 32.4 for the driver's own accessors: the describe is down to its store and one compare, and the
+ * rest is a batch's bookkeeping through pointers, about 100 instructions for 16 frames.
+ *
  * @author @MasterLaplace
  * @version 0.0.0
  * @date 2026-11-22

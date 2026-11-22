@@ -23,6 +23,11 @@
 #define NETWORK_INTERFACE_TEST_PEER_PINGS     5u          /**< Echo requests the peer sends, and the test waits for. */
 #define NETWORK_INTERFACE_TEST_ECHO_BYTES     16u         /**< An echo request's bytes: its header and 8 of data. */
 #define NETWORK_INTERFACE_TEST_INTERRUPT_FLAG (1u << 9)   /**< EFLAGS.IF. */
+#define NETWORK_INTERFACE_TEST_ETHER_TYPE     0x88B5u     /**< IEEE 802's Local Experimental 1: no stack answers. */
+#define NETWORK_INTERFACE_TEST_FRAME_BYTES    60u         /**< Ethernet's minimum, CRC left out: never padded. */
+#define NETWORK_INTERFACE_TEST_BOUNCE_FRAMES  1024u       /**< Frames the bounce sends. */
+#define NETWORK_INTERFACE_TEST_BOUNCE_BATCH   16u         /**< Frames one publish of the bounce sends. */
+#define NETWORK_INTERFACE_TEST_IDLE_ROUNDS    4096u       /**< Empty peeks after which the bounce gives up. */
 
 static KernelNetworkInterface_t network_interface_test;
 
@@ -172,6 +177,105 @@ static bool network_interface_test_read_echo_reply(const uint8_t *request)
     return found;
 }
 
+/**
+ * @brief Writes, once, a frame of 60 bytes to the card's own station in every transmit buffer.
+ */
+static void network_interface_test_fill_transmit_buffers(KernelNetworkDevice_t *device)
+{
+    KernelNetworkQueue_t *const queue = &device->queues[0];
+    const uint32_t slots = kernel_spsc_ring_capacity(queue->transmit);
+
+    for (uint32_t slot = 0u; slot < slots; ++slot)
+    {
+        uint8_t *const frame = kernel_network_transmit_buffer(device, queue, slot);
+
+        memset(frame, 0, NETWORK_INTERFACE_TEST_FRAME_BYTES);
+        kernel_ethernet_write_header(frame, device->address, device->address, NETWORK_INTERFACE_TEST_ETHER_TYPE);
+    }
+}
+
+/**
+ * @brief Sends the frames of the transmit buffers through the loopback until one comes back, within
+ *        NETWORK_INTERFACE_TEST_MICROSECONDS: QEMU drops looped-back frames for 1 s after a write of RCTL.
+ */
+static bool network_interface_test_wait_for_the_loopback(KernelNetworkDevice_t *device)
+{
+    KernelNetworkQueue_t *const queue = &device->queues[0];
+    InterruptRequestDeadline_t deadline;
+    uint32_t slot = 0u;
+
+    interrupt_request_deadline_start(&deadline, NETWORK_INTERFACE_TEST_MICROSECONDS);
+    while (!interrupt_request_deadline_passed(&deadline))
+    {
+        (void) device->operations->kick(device, 0u);
+        if (kernel_spsc_ring_reserve(queue->transmit, 1u, &slot) == 1u &&
+            kernel_network_transmit_describe(device, queue, slot, NETWORK_INTERFACE_TEST_FRAME_BYTES))
+            kernel_spsc_ring_publish(queue->transmit, 1u);
+        (void) device->operations->kick(device, 0u);
+        (void) device->operations->harvest(device, 0u);
+
+        const uint32_t ready = kernel_spsc_ring_ready_count(queue->receive);
+
+        kernel_spsc_ring_release(queue->receive, ready);
+        if (ready != 0u)
+            return true;
+        network_interface_test_wait_a_little();
+    }
+    return false;
+}
+
+/**
+ * @brief Bounces @p frames frames of 60 bytes through the loopback by the network device interface alone, in
+ *        publishes of at most @p batch, reading back each frame's length.
+ *
+ * @details The counterpart of e1000_test_bounce through kernel_network_* and the card's operations, so that a
+ *          count of the two sets the interface's cost a frame against the driver's own. It reads the card and its
+ *          queue pair through copies taken once, as device.h says a batch does. Kept out of interprocedural
+ *          optimisation (noipa), so that its symbol keeps its name.
+ *
+ * @return The bytes the frames received carried, summed.
+ */
+__attribute__((noipa)) static uint32_t network_interface_test_bounce(KernelNetworkDevice_t *device, uint32_t frames,
+                                                                     uint32_t batch)
+{
+    const KernelNetworkDevice_t card = *device;
+    const KernelNetworkQueue_t queue = device->queues[0];
+    uint32_t sent = 0u;
+    uint32_t received = 0u;
+    uint32_t bytes = 0u;
+    uint32_t idle = 0u;
+
+    while (received < frames && idle < NETWORK_INTERFACE_TEST_IDLE_ROUNDS)
+    {
+        uint32_t first_slot = 0u;
+
+        if (sent < frames)
+        {
+            const uint32_t wanted = frames - sent < batch ? frames - sent : batch;
+            const uint32_t reserved = kernel_spsc_ring_reserve(queue.transmit, wanted, &first_slot);
+
+            for (uint32_t frame = 0u; frame < reserved; ++frame)
+                (void) kernel_network_transmit_describe(&card, &queue, first_slot + frame,
+                                                        NETWORK_INTERFACE_TEST_FRAME_BYTES);
+            kernel_spsc_ring_publish(queue.transmit, reserved);
+            sent += reserved;
+            (void) card.operations->kick(device, 0u);
+        }
+        (void) card.operations->harvest(device, 0u);
+
+        const uint32_t peeked =
+            kernel_spsc_ring_peek(queue.receive, kernel_spsc_ring_capacity(queue.receive), &first_slot);
+
+        for (uint32_t frame = 0u; frame < peeked; ++frame)
+            bytes += kernel_network_receive_length(&queue, first_slot + frame);
+        kernel_spsc_ring_release(queue.receive, peeked);
+        received += peeked;
+        idle = peeked == 0u ? idle + 1u : 0u;
+    }
+    (void) card.operations->harvest(device, 0u);
+    return bytes;
+}
+
 KERNEL_TEST_SUITE(network_interface, KERNEL_TEST_STAGE_BOOTED);
 
 /**
@@ -286,6 +390,31 @@ KERNEL_TEST(the_link_reads_through_the_network_device_interface)
 
     kernel_test_check(test, device->operations->link_up(device) == e1000_link_up(),
                       "the operation gives STATUS.LU, as e1000_link_up does");
+}
+
+/**
+ * @brief 1024 frames bounce through the loopback by the network device interface alone, with no byte written per
+ *        frame, so that a count of network_interface_test_bounce sets its cost against e1000_test_bounce's.
+ *
+ * @details `tools/instructions.sh --inside network_interface_test_bounce --times 1 --append
+ *          lpl.test=network_interface.*bounce*` on a debug kernel counts it.
+ */
+KERNEL_TEST(frames_bounce_through_the_network_device_interface)
+{
+    if (!network_interface_test_bring_up(test, NETWORK_INTERFACE_TEST_ADDRESS, true))
+        return;
+
+    KernelNetworkDevice_t *const device = network_interface_test.device;
+
+    network_interface_test_fill_transmit_buffers(device);
+    if (!kernel_test_check(test, network_interface_test_wait_for_the_loopback(device), "the loopback carries frames"))
+        return;
+
+    const uint32_t bytes = network_interface_test_bounce(device, NETWORK_INTERFACE_TEST_BOUNCE_FRAMES,
+                                                         NETWORK_INTERFACE_TEST_BOUNCE_BATCH);
+
+    kernel_test_check(test, bytes == NETWORK_INTERFACE_TEST_BOUNCE_FRAMES * NETWORK_INTERFACE_TEST_FRAME_BYTES,
+                      "1024 frames of 60 bytes bounce");
 }
 
 /**

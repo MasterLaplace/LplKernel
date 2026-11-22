@@ -359,27 +359,28 @@ KernelNetworkInterfaceSetup_t kernel_network_interface_initialize(KernelNetworkI
 uint32_t kernel_network_interface_poll(KernelNetworkInterface_t *interface, uint32_t now)
 {
     KernelNetworkDevice_t *const device = interface->device;
-    KernelNetworkQueue_t *const queue = kernel_network_interface_queue(interface);
+    const KernelNetworkDevice_t card = *device;
+    const KernelNetworkQueue_t queue = *kernel_network_interface_queue(interface);
 
     interface->transmit_exhausted = false;
     kernel_address_resolution_cache_expire(&interface->cache, now);
-    (void) device->operations->harvest(device, 0u);
+    (void) card.operations->harvest(device, 0u);
 
-    const uint32_t ready = kernel_spsc_ring_ready_count(queue->receive);
+    const uint32_t ready = kernel_spsc_ring_ready_count(queue.receive);
 
     for (uint32_t frame = 0u; frame < ready; ++frame)
     {
-        const uint32_t slot = kernel_spsc_ring_slot_at(queue->receive, frame);
+        const uint32_t slot = kernel_spsc_ring_slot_at(queue.receive, frame);
         const KernelNetworkInterfaceFate_t fate =
-            kernel_network_interface_take_frame(interface, kernel_network_receive_bytes(device, queue, slot),
-                                                kernel_network_receive_length(queue, slot), now);
+            kernel_network_interface_take_frame(interface, kernel_network_receive_bytes(&card, &queue, slot),
+                                                kernel_network_receive_length(&queue, slot), now);
 
         ++interface->counters.frames_received;
         if (fate != KERNEL_NETWORK_INTERFACE_FATES)
             ++interface->counters.fates[fate];
     }
-    kernel_spsc_ring_release(queue->receive, ready);
-    (void) device->operations->kick(device, 0u);
+    kernel_spsc_ring_release(queue.receive, ready);
+    (void) card.operations->kick(device, 0u);
     return ready;
 }
 
