@@ -246,9 +246,11 @@ uint32_t kernel_tickless_wake_samples_at(uint32_t depth);
  * @brief What a probe of a port depth decides from which of its sleeps did not stop the processor.
  */
 typedef enum {
-    KERNEL_TICKLESS_PROBE_KEEPS = 0,    /**< The depth stops the processor: it is validated. */
-    KERNEL_TICKLESS_PROBE_REFUSES = 1,  /**< It does not: it is refused. */
-    KERNEL_TICKLESS_PROBE_CONFIRMS = 2, /**< One more sleep of KERNEL_TICKLESS_CONFIRMATION_MICROSECONDS decides. */
+    KERNEL_TICKLESS_PROBE_KEEPS = 0,        /**< The depth stops the processor: it is validated. */
+    KERNEL_TICKLESS_PROBE_REFUSES = 1,      /**< It does not: it is refused. */
+    KERNEL_TICKLESS_PROBE_CONFIRMS = 2,     /**< One more sleep of KERNEL_TICKLESS_CONFIRMATION_MICROSECONDS decides. */
+    KERNEL_TICKLESS_PROBE_SAYS_NOTHING = 3, /**< No long sleep told: the depth stays as it was, unless it awaited this
+                                                 probe to be validated, which it then is not. */
 } KernelTicklessProbeVerdict_t;
 
 /**
@@ -283,7 +285,8 @@ KernelTicklessProbeRead_t kernel_tickless_judge_a_probe_read(uint64_t began, uin
 
 /**
  * @brief What a probe of a port depth decides from the ranks of its sleeps whose reads stopped the processor
- *        (KERNEL_TICKLESS_PROBE_READ_STOPPED), bit i for the sleep of KERNEL_TICKLESS_FIRST_PROBE_MICROSECONDS times
+ *        (KERNEL_TICKLESS_PROBE_READ_STOPPED) and of those whose reads returned at once
+ *        (KERNEL_TICKLESS_PROBE_READ_RETURNED), bit i for the sleep of KERNEL_TICKLESS_FIRST_PROBE_MICROSECONDS times
  *        KERNEL_TICKLESS_PROBE_GROWTH to the power i.
  *
  * @details A port read that stops the processor returns on a break event, the probe's timer most often (ACPI 6.6
@@ -293,12 +296,30 @@ KernelTicklessProbeRead_t kernel_tickless_judge_a_probe_read(uint64_t began, uin
  *          depth is kept only when both stopped, so that one hold of the host inside a read does not keep a port that
  *          returns at once (121 us for a 64 us sleep measured under KVM, #880); one of the two asks for one more,
  *          longer sleep, which keeps the depth if it stops too, so that an SMI that ends one sleep of a port that stops
- *          does not refuse it; neither refuses it. Pure, so that a test hands it every pattern.
+ *          does not refuse it; neither, one of them returning at once, refuses it. When neither told, both demoted by
+ *          the bus-master check or held before their read every time they were taken, the probe says nothing of the
+ *          port (#850). Pure, so that a test hands it every pattern.
  *
- * @param stopped_ranks The ranks whose reads stopped the processor, a bit per probe sleep.
+ * @param stopped_ranks  The ranks whose reads stopped the processor, a bit per probe sleep.
+ * @param returned_ranks The ranks whose reads returned at once.
  * @return The verdict.
  */
-KernelTicklessProbeVerdict_t kernel_tickless_judge_a_probe(uint32_t stopped_ranks);
+KernelTicklessProbeVerdict_t kernel_tickless_judge_a_probe(uint32_t stopped_ranks, uint32_t returned_ranks);
+
+/**
+ * @brief Whether a probe refuses a port depth, from its verdict (@ref kernel_tickless_judge_a_probe) and, when the
+ *        verdict asks one more sleep, what that sleep's read says (@ref kernel_tickless_judge_a_probe_read): the depth
+ *        is refused when the verdict refuses it, or the sleep asked for returned at once; kept when the verdict keeps
+ *        it, or the sleep asked for stopped too. When nothing told, a depth that awaited this probe to be validated is
+ *        refused, since only two stops validate it, and one validated before stays so (#850). Pure, so that a test
+ *        hands it the sleep that stops, which no emulator gives.
+ * @param verdict      The probe's verdict.
+ * @param confirmation What the sleep the verdict asked for says; KERNEL_TICKLESS_PROBE_READ_SAYS_NOTHING when none was.
+ * @param validating   Whether the depth awaited this probe to be validated.
+ * @return true when the probe refuses the depth.
+ */
+bool kernel_tickless_settle_a_probe(KernelTicklessProbeVerdict_t verdict, KernelTicklessProbeRead_t confirmation,
+                                    bool validating);
 
 /**
  * @brief The depths the first stop of the tick probes below the depth sleeps enter: each one usable that no wake-up
@@ -312,8 +333,8 @@ KernelTicklessProbeVerdict_t kernel_tickless_judge_a_probe(uint32_t stopped_rank
 uint32_t kernel_tickless_depths_to_probe_below(uint32_t usable, uint32_t taught, uint32_t ceiling);
 
 /**
- * @brief The ranks of the sleeps of the last probe of @p depth that were port reads returning before their deadline
- *        with no interrupt.
+ * @brief The ranks of the sleeps of the last probe of @p depth whose port reads began and returned before their
+ *        deadline (KERNEL_TICKLESS_PROBE_READ_RETURNED).
  * @param depth A depth; one past PROCESSOR_SLEEP_DEPTH_DEEPEST has none.
  * @return A bit per probe sleep (@ref kernel_tickless_judge_a_probe).
  */
@@ -332,16 +353,6 @@ uint32_t kernel_tickless_stopped_probe_ranks_at(uint32_t depth);
  * @return The count.
  */
 uint32_t kernel_tickless_probe_retakes(void);
-
-/**
- * @brief Whether a probe sleep was a port read that did not stop the processor: it returned before its deadline, the
- *        timer still armed, and no interrupt was taken. Pure, so that a test hands it what no emulator gives: a port
- *        read that stops.
- * @param before_its_deadline Whether the sleep returned with the probe's timer still armed.
- * @param outcome             How the processor slept.
- * @return true when it did not stop.
- */
-bool kernel_tickless_probe_sleep_did_not_stop(bool before_its_deadline, const ProcessorSleepOutcome_t *outcome);
 
 /**
  * @brief How long the last probe took, from its first sleep to the end of its last.

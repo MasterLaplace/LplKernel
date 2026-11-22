@@ -227,7 +227,9 @@ static uint64_t tickless_longest_probe_cycles(void)
 static uint64_t tickless_bound_cycles(void) { return tickless_longest_probe_cycles() / 2u; }
 
 /**
- * @brief The cycles a probe may take: its sleeps, each followed by a wake-up as late as the bound.
+ * @brief The cycles a probe may take: its sleeps, each followed by a wake-up as late as the bound. A long sleep taken
+ *        again, after the host held the processor before its read, and the sleep a probe left open asks for, run past
+ *        it: a window then served late is counted so.
  * @return Cycles.
  */
 static uint64_t tickless_probe_span_cycles(void)
@@ -268,16 +270,28 @@ static KernelWakeLeadSource_t tickless_assume_a_lead(uint32_t depth)
 }
 
 /**
- * @brief Sleeps once on the timer, @p length from now, at the depth sleeps enter, @p depth, and judges the sleep only
- *        when it entered @p depth: one the bus-master check demoted says nothing of it.
+ * @brief Whether @p depth is entered by reading a port.
+ */
+static bool tickless_reads_a_port(uint32_t depth)
+{
+    ProcessorSleepDepth_t entered;
+
+    return kernel_processor_sleep_depth_of(depth, &entered) && entered.entry == PROCESSOR_SLEEP_ENTRY_PORT;
+}
+
+/**
+ * @brief Sleeps once on the timer, @p length from now, at the depth sleeps enter, @p depth, its port read timed, and
+ *        says what the sleep says of @p depth: a port read by when it began and returned against the deadline
+ *        (@ref kernel_tickless_judge_a_probe_read); a halt or an MWAIT stopped the processor; a sleep the bus-master
+ *        check demoted, or that the timer could not arm, says nothing of it.
  * @param depth           The depth probed.
  * @param length          How long, in cycles.
  * @param out_latency     Receives how late the wake-up came after the deadline.
  * @param out_timer_ended Receives whether the timer ended a sleep at @p depth.
- * @return Whether the sleep was a port read at @p depth that did not stop the processor
- *         (@ref kernel_tickless_probe_sleep_did_not_stop).
+ * @return What the sleep says.
  */
-static bool tickless_probe_sleep(uint32_t depth, uint64_t length, uint64_t *out_latency, bool *out_timer_ended)
+static KernelTicklessProbeRead_t tickless_probe_sleep_once(uint32_t depth, uint64_t length, uint64_t *out_latency,
+                                                           bool *out_timer_ended)
 {
     const uint64_t armed = asmutils_read_timestamp_counter() + length;
     uint64_t after = armed;
@@ -285,29 +299,69 @@ static bool tickless_probe_sleep(uint32_t depth, uint64_t length, uint64_t *out_
     ProcessorSleepRead_t read = {0u, 0u};
     tickless_hold_before_the_probe_read_when_asked();
     const TicklessWake_t wake = tickless_sleep_until(armed, &after, &outcome, depth, &read);
-    const bool entered = outcome.depth == depth;
+    const bool entered = wake != TICKLESS_WAKE_UNARMED && outcome.depth == depth;
 
     *out_timer_ended = entered && wake == TICKLESS_WAKE_TIMER;
     *out_latency = after > armed ? after - armed : 0u;
-    return entered && kernel_tickless_probe_sleep_did_not_stop(wake == TICKLESS_WAKE_EARLY, &outcome);
+    if (!entered)
+        return KERNEL_TICKLESS_PROBE_READ_SAYS_NOTHING;
+    if (outcome.mode != PROCESSOR_SLEEP_PORT)
+        return KERNEL_TICKLESS_PROBE_READ_STOPPED;
+    return kernel_tickless_judge_a_probe_read(read.began, read.returned, armed);
 }
 
 /**
- * @brief Whether a probe of port depth @p depth whose ranks @p unstopped_ranks did not stop the processor refuses it,
- *        one more sleep of KERNEL_TICKLESS_CONFIRMATION_MICROSECONDS deciding when @ref kernel_tickless_judge_a_probe
- *        asks.
+ * @brief Sleeps as tickless_probe_sleep_once does, and takes the sleep again while it says nothing, @p retakes times at
+ *        most, each retake counted (@ref kernel_tickless_probe_retakes).
+ * @param depth           The depth probed.
+ * @param length          How long, in cycles.
+ * @param retakes         The most times the sleep is taken again.
+ * @param out_latency     Receives how late the last wake-up came after the deadline.
+ * @param out_timer_ended Receives whether the timer ended the last sleep at @p depth.
+ * @return What the last sleep says.
  */
-static bool tickless_probe_refuses(uint32_t depth, uint32_t stopped_ranks)
+static KernelTicklessProbeRead_t tickless_probe_sleep(uint32_t depth, uint64_t length, uint32_t retakes,
+                                                      uint64_t *out_latency, bool *out_timer_ended)
 {
-    const KernelTicklessProbeVerdict_t verdict = kernel_tickless_judge_a_probe(stopped_ranks);
+    KernelTicklessProbeRead_t said = tickless_probe_sleep_once(depth, length, out_latency, out_timer_ended);
+
+    for (uint32_t retake = 0u; said == KERNEL_TICKLESS_PROBE_READ_SAYS_NOTHING && retake < retakes; ++retake)
+    {
+        ++tickless_probe_retakes;
+        said = tickless_probe_sleep_once(depth, length, out_latency, out_timer_ended);
+    }
+    return said;
+}
+
+/**
+ * @brief Takes the sleep a probe left open: one more of KERNEL_TICKLESS_CONFIRMATION_MICROSECONDS, taken again while it
+ *        says nothing.
+ * @param depth The depth probed.
+ * @return What it says.
+ */
+static KernelTicklessProbeRead_t tickless_take_the_confirmation(uint32_t depth)
+{
     uint64_t latency = 0u;
     bool timer_ended = false;
 
-    if (verdict != KERNEL_TICKLESS_PROBE_CONFIRMS)
-        return verdict == KERNEL_TICKLESS_PROBE_REFUSES;
     return tickless_probe_sleep(depth,
                                 kernel_tickless_cycles_from_microseconds(KERNEL_TICKLESS_CONFIRMATION_MICROSECONDS),
-                                &latency, &timer_ended);
+                                KERNEL_TICKLESS_PROBE_RETAKES, &latency, &timer_ended);
+}
+
+/**
+ * @brief Whether a probe of port depth @p depth refuses it, from its ranks that stopped the processor and returned at
+ *        once (@ref kernel_tickless_judge_a_probe), the sleep it left open taken when the verdict asks
+ *        (@ref kernel_tickless_settle_a_probe).
+ */
+static bool tickless_probe_refuses(uint32_t depth, uint32_t stopped_ranks, uint32_t returned_ranks, bool validating)
+{
+    const KernelTicklessProbeVerdict_t verdict = kernel_tickless_judge_a_probe(stopped_ranks, returned_ranks);
+    const KernelTicklessProbeRead_t confirmation = verdict == KERNEL_TICKLESS_PROBE_CONFIRMS ?
+                                                       tickless_take_the_confirmation(depth) :
+                                                       KERNEL_TICKLESS_PROBE_READ_SAYS_NOTHING;
+
+    return kernel_tickless_settle_a_probe(verdict, confirmation, validating);
 }
 
 /**
@@ -316,9 +370,12 @@ static bool tickless_probe_refuses(uint32_t depth, uint32_t stopped_ranks)
  *        before, so that a hypervisor's halt-polling window and a package state that engages late are both crossed.
  *        Those the timer ended teach the depth's estimate from the longest sleep down, a latency counting at most as
  *        long as that longest sleep, and their time with the tick stopped is counted. A port depth awaiting a probe is
- *        entered for it alone (@ref kernel_processor_sleep_begin_probe); one whose reads did not stop the processor
+ *        entered for it alone (@ref kernel_processor_sleep_begin_probe), and its reads are judged by when each began
+ *        and returned (@ref kernel_tickless_judge_a_probe_read), a long sleep whose read says nothing taken again
+ *        KERNEL_TICKLESS_PROBE_RETAKES times at most; one whose two longest reads did not both stop the processor
  *        (@ref kernel_tickless_judge_a_probe) is refused and taught nothing, so that the next stop of the tick, once an
- *        initialisation adopts the depth again, probes it again; one whose reads stopped it is validated.
+ *        initialisation adopts the depth again, probes it again; one whose reads stopped it is validated. A depth
+ *        that reads no port is never refused.
  * @param depth The depth: the one sleeps enter, or the one awaiting a probe.
  * @return The microseconds the probe took.
  */
@@ -327,8 +384,10 @@ static uint32_t tickless_probe(uint32_t depth)
     uint64_t latencies[KERNEL_TICKLESS_PROBES];
     uint32_t taught = 0u;
     uint32_t unstopped_ranks = 0u;
+    uint32_t stopped_ranks = 0u;
     uint64_t length = kernel_tickless_cycles_from_microseconds(KERNEL_TICKLESS_FIRST_PROBE_MICROSECONDS);
     const bool validating = depth == kernel_processor_sleep_depth_awaiting_probe();
+    const bool port = tickless_reads_a_port(depth);
     const uint64_t began = asmutils_read_timestamp_counter();
 
     if (validating)
@@ -337,13 +396,14 @@ static uint32_t tickless_probe(uint32_t depth)
     {
         uint64_t latency = 0u;
         bool timer_ended = false;
-        if (tickless_probe_sleep(depth, length, &latency, &timer_ended))
-            unstopped_ranks |= 1u << probe;
-        else if (timer_ended)
+        const uint32_t retakes = port && probe + 2u >= KERNEL_TICKLESS_PROBES ? KERNEL_TICKLESS_PROBE_RETAKES : 0u;
+        const KernelTicklessProbeRead_t said = tickless_probe_sleep(depth, length, retakes, &latency, &timer_ended);
+        unstopped_ranks |= said == KERNEL_TICKLESS_PROBE_READ_RETURNED ? 1u << probe : 0u;
+        stopped_ranks |= said == KERNEL_TICKLESS_PROBE_READ_STOPPED ? 1u << probe : 0u;
+        if (said != KERNEL_TICKLESS_PROBE_READ_RETURNED && timer_ended)
             latencies[taught++] = latency;
     }
-    const uint32_t stopped_ranks = ~unstopped_ranks & ((1u << KERNEL_TICKLESS_PROBES) - 1u);
-    const bool refused = tickless_probe_refuses(depth, stopped_ranks);
+    const bool refused = port && tickless_probe_refuses(depth, stopped_ranks, unstopped_ranks, validating);
     if (validating)
         kernel_processor_sleep_end_probe(!refused);
     else if (refused)
@@ -873,25 +933,38 @@ uint32_t kernel_tickless_wake_samples_at(uint32_t depth)
     return depth < PROCESSOR_SLEEP_DEPTHS ? tickless_wake_latency[depth].samples : 0u;
 }
 
-KernelTicklessProbeVerdict_t kernel_tickless_judge_a_probe(uint32_t stopped_ranks)
+KernelTicklessProbeVerdict_t kernel_tickless_judge_a_probe(uint32_t stopped_ranks, uint32_t returned_ranks)
 {
     const uint32_t longest = 1u << (KERNEL_TICKLESS_PROBES - 1u);
     const uint32_t second_longest = 1u << (KERNEL_TICKLESS_PROBES - 2u);
+    const uint32_t long_ones_stopped =
+        ((stopped_ranks & longest) != 0u ? 1u : 0u) + ((stopped_ranks & second_longest) != 0u ? 1u : 0u);
 
-    if ((stopped_ranks & longest) != 0u)
+    if (long_ones_stopped == 2u)
         return KERNEL_TICKLESS_PROBE_KEEPS;
-    return (stopped_ranks & second_longest) == 0u ? KERNEL_TICKLESS_PROBE_REFUSES : KERNEL_TICKLESS_PROBE_CONFIRMS;
+    if (long_ones_stopped == 1u)
+        return KERNEL_TICKLESS_PROBE_CONFIRMS;
+    return (returned_ranks & (longest | second_longest)) != 0u ? KERNEL_TICKLESS_PROBE_REFUSES :
+                                                                 KERNEL_TICKLESS_PROBE_SAYS_NOTHING;
+}
+
+bool kernel_tickless_settle_a_probe(KernelTicklessProbeVerdict_t verdict, KernelTicklessProbeRead_t confirmation,
+                                    bool validating)
+{
+    if (verdict == KERNEL_TICKLESS_PROBE_CONFIRMS && confirmation == KERNEL_TICKLESS_PROBE_READ_STOPPED)
+        return false;
+    if (verdict == KERNEL_TICKLESS_PROBE_CONFIRMS && confirmation == KERNEL_TICKLESS_PROBE_READ_RETURNED)
+        return true;
+    if (verdict == KERNEL_TICKLESS_PROBE_CONFIRMS || verdict == KERNEL_TICKLESS_PROBE_SAYS_NOTHING)
+        return validating;
+    return verdict == KERNEL_TICKLESS_PROBE_REFUSES;
 }
 
 KernelTicklessProbeRead_t kernel_tickless_judge_a_probe_read(uint64_t began, uint64_t returned, uint64_t deadline)
 {
-    (void) began;
+    if (began >= deadline)
+        return KERNEL_TICKLESS_PROBE_READ_SAYS_NOTHING;
     return returned < deadline ? KERNEL_TICKLESS_PROBE_READ_RETURNED : KERNEL_TICKLESS_PROBE_READ_STOPPED;
-}
-
-bool kernel_tickless_probe_sleep_did_not_stop(bool before_its_deadline, const ProcessorSleepOutcome_t *outcome)
-{
-    return before_its_deadline && outcome->mode == PROCESSOR_SLEEP_PORT && !outcome->interrupted;
 }
 
 uint32_t kernel_tickless_unstopped_probe_ranks_at(uint32_t depth)
