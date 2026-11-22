@@ -559,12 +559,13 @@ KERNEL_TEST(the_receive_ring_holds_one_frame_fewer_than_its_descriptors)
  * @brief Sends and receives @p frames test frames of 60 bytes through the loopback, @p batch a publish,
  *        writing no byte of them: the frames' path alone, for tools/instructions.sh --inside to count.
  *
- * @details The transmit buffers already hold their frames, written once by the caller. Kept out of line so
+ * @details The transmit buffers already hold their frames, written once by the caller. Kept out of line and
+ *          out of interprocedural optimisation (noipa), so that its symbol keeps its name and
  *          that a count of it holds the driver's calls and this loop, and nothing the test does around it.
  *
  * @return The bytes the frames received carried, summed.
  */
-__attribute__((noinline)) static uint32_t e1000_test_bounce(uint32_t frames, uint32_t batch)
+__attribute__((noipa)) static uint32_t e1000_test_bounce(uint32_t frames, uint32_t batch)
 {
     static const uint16_t lengths[E1000_TRANSMIT_DESCRIPTORS] = {[0 ... E1000_TRANSMIT_DESCRIPTORS - 1u] = 60u};
     uint8_t *buffers[E1000_TRANSMIT_DESCRIPTORS];
