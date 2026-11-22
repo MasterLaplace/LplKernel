@@ -628,6 +628,45 @@ static void e1000_give_back_received(void)
     e1000_write_register(E1000_REGISTER_RECEIVE_TAIL, (read_index - 1u) & (E1000_RECEIVE_DESCRIPTORS - 1u));
 }
 
+/**
+ * @brief The network device's harvest: the receive ring's.
+ */
+static uint32_t e1000_device_harvest(KernelNetworkDevice_t *device, uint32_t queue)
+{
+    (void) device;
+    (void) queue;
+    return e1000_receive_harvest();
+}
+
+/**
+ * @brief The network device's kick: the transmit ring's.
+ */
+static uint32_t e1000_device_kick(KernelNetworkDevice_t *device, uint32_t queue)
+{
+    (void) device;
+    (void) queue;
+    return e1000_transmit_kick();
+}
+
+/**
+ * @brief The network device's link: STATUS.LU.
+ */
+static bool e1000_device_link_up(KernelNetworkDevice_t *device)
+{
+    (void) device;
+    return e1000_link_up();
+}
+
+static const KernelNetworkDeviceOperations_t e1000_device_operations = {.harvest = e1000_device_harvest,
+                                                                        .kick = e1000_device_kick,
+                                                                        .link_up = e1000_device_link_up};
+static KernelNetworkQueue_t e1000_device_queue;
+static KernelNetworkDevice_t e1000_device;
+
+_Static_assert(sizeof(E1000ReceiveDescriptor_t) % sizeof(uint16_t) == 0u &&
+                   sizeof(E1000TransmitDescriptor_t) % sizeof(uint32_t) == 0u,
+               "a descriptor's length and command word sit at a whole stride");
+
 bool e1000_initialize(void)
 {
     const PeripheralComponentInterconnectDevice_t *const device = peripheral_component_interconnect_find_by_identifiers(
@@ -787,45 +826,6 @@ uint32_t e1000_transmit_kick(void)
     e1000_write_register(E1000_REGISTER_TRANSMIT_TAIL, tail & (E1000_TRANSMIT_DESCRIPTORS - 1u));
     return handed;
 }
-
-/**
- * @brief The network device's harvest: the receive ring's.
- */
-static uint32_t e1000_device_harvest(KernelNetworkDevice_t *device, uint32_t queue)
-{
-    (void) device;
-    (void) queue;
-    return e1000_receive_harvest();
-}
-
-/**
- * @brief The network device's kick: the transmit ring's.
- */
-static uint32_t e1000_device_kick(KernelNetworkDevice_t *device, uint32_t queue)
-{
-    (void) device;
-    (void) queue;
-    return e1000_transmit_kick();
-}
-
-/**
- * @brief The network device's link: STATUS.LU.
- */
-static bool e1000_device_link_up(KernelNetworkDevice_t *device)
-{
-    (void) device;
-    return e1000_link_up();
-}
-
-static const KernelNetworkDeviceOperations_t e1000_device_operations = {.harvest = e1000_device_harvest,
-                                                                        .kick = e1000_device_kick,
-                                                                        .link_up = e1000_device_link_up};
-static KernelNetworkQueue_t e1000_device_queue;
-static KernelNetworkDevice_t e1000_device;
-
-_Static_assert(sizeof(E1000ReceiveDescriptor_t) % sizeof(uint16_t) == 0u &&
-                   sizeof(E1000TransmitDescriptor_t) % sizeof(uint32_t) == 0u,
-               "a descriptor's length and command word sit at a whole stride");
 
 KernelNetworkDevice_t *e1000_network_device(void)
 {
