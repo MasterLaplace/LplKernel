@@ -1290,7 +1290,7 @@ KERNEL_TEST(a_probe_settles_on_its_verdict_and_the_sleep_it_asked_for)
 /**
  * @brief A probe read is judged by when it began and returned against its deadline: one that began and returned before
  *        it did not stop the processor; one that began before it and returned at or past it stopped it; one that
- *        began at or past it says nothing.
+ *        began at or past it says nothing, and so does one that returned before it with an interrupt waiting.
  */
 KERNEL_TEST(a_probe_read_is_judged_by_when_it_began_and_returned)
 {
@@ -1298,22 +1298,28 @@ KERNEL_TEST(a_probe_read_is_judged_by_when_it_began_and_returned)
     const uint64_t began = TICKLESS_TEST_READ_BEGAN;
     const uint64_t held = TICKLESS_TEST_READ_HELD;
 
-    kernel_test_check(
-        test,
-        kernel_tickless_judge_a_probe_read(began, began + 1u, deadline) == KERNEL_TICKLESS_PROBE_READ_RETURNED &&
-            kernel_tickless_judge_a_probe_read(began, deadline - 1u, deadline) == KERNEL_TICKLESS_PROBE_READ_RETURNED,
-        "a read that began and returned before its deadline did not stop, a cycle short of it included");
-    kernel_test_check(
-        test,
-        kernel_tickless_judge_a_probe_read(began, deadline, deadline) == KERNEL_TICKLESS_PROBE_READ_STOPPED &&
-            kernel_tickless_judge_a_probe_read(deadline - 1u, held, deadline) == KERNEL_TICKLESS_PROBE_READ_STOPPED,
-        "one that began before its deadline and returned at or past it stopped");
     kernel_test_check(test,
-                      kernel_tickless_judge_a_probe_read(deadline, deadline + 1u, deadline) ==
+                      kernel_tickless_judge_a_probe_read(began, began + 1u, deadline, false) ==
+                              KERNEL_TICKLESS_PROBE_READ_RETURNED &&
+                          kernel_tickless_judge_a_probe_read(began, deadline - 1u, deadline, false) ==
+                              KERNEL_TICKLESS_PROBE_READ_RETURNED,
+                      "a read that began and returned before its deadline did not stop, a cycle short of it included");
+    kernel_test_check(test,
+                      kernel_tickless_judge_a_probe_read(began, deadline, deadline, false) ==
+                              KERNEL_TICKLESS_PROBE_READ_STOPPED &&
+                          kernel_tickless_judge_a_probe_read(deadline - 1u, held, deadline, true) ==
+                              KERNEL_TICKLESS_PROBE_READ_STOPPED,
+                      "one that began before its deadline and returned at or past it stopped, an interrupt or none");
+    kernel_test_check(test,
+                      kernel_tickless_judge_a_probe_read(deadline, deadline + 1u, deadline, false) ==
                               KERNEL_TICKLESS_PROBE_READ_SAYS_NOTHING &&
-                          kernel_tickless_judge_a_probe_read(held, held + 1u, deadline) ==
+                          kernel_tickless_judge_a_probe_read(held, held + 1u, deadline, false) ==
                               KERNEL_TICKLESS_PROBE_READ_SAYS_NOTHING,
                       "one that began at or past its deadline says nothing, however fast it returned");
+    kernel_test_check(test,
+                      kernel_tickless_judge_a_probe_read(began, began + 1u, deadline, true) ==
+                          KERNEL_TICKLESS_PROBE_READ_SAYS_NOTHING,
+                      "and so does one that returned before its deadline with an interrupt waiting");
 }
 
 /** The port the made-up depth reads: nothing decodes it on QEMU's q35, whose ICH9 power management lies at 0x600. */
@@ -1586,8 +1592,8 @@ KERNEL_TEST(a_near_window_at_a_deeper_unlearned_depth_is_planned_on_its_publishe
  * @brief Under a hypervisor, a sleep the bus-master check demoted teaches the depth it entered, never the one asked:
  *        with a validated C3 whose status register reads BM_STS set, a port nothing decodes, and HLT below it, every
  *        sleep of a session enters HLT, which the timer ends, and only its estimate learns; the C3's probe, every one
- *        of its sleeps demoted, teaches nothing and refuses nothing. Skipped on a real processor, whose ports may stop
- *        it.
+ *        of its sleeps demoted, teaches nothing, refuses nothing and takes none of them again. Skipped on a real
+ *        processor, whose ports may stop it.
  */
 KERNEL_TEST(a_sleep_the_bus_master_check_demoted_is_learned_at_the_depth_it_entered)
 {
@@ -1623,10 +1629,12 @@ KERNEL_TEST(a_sleep_the_bus_master_check_demoted_is_learned_at_the_depth_it_ente
     kernel_tickless_debug_exchange_depth_estimate(2u, &held_c3);
     const uint32_t refused_before = kernel_processor_sleep_refused_depth_count();
     const uint32_t demotions_before = kernel_processor_sleep_bus_master_demotion_count();
+    const uint32_t retakes_before = kernel_tickless_probe_retakes();
 
     const uint32_t duty = tickless_test_begin();
     const bool stopped = kernel_tickless_enable(true, &tickless_test_plan);
     const uint32_t probe_taught = kernel_tickless_wake_samples_at(2u);
+    const uint32_t retakes = kernel_tickless_probe_retakes() - retakes_before;
     const uint64_t earliest = asmutils_read_timestamp_counter() +
                               kernel_tickless_cycles_from_microseconds(TICKLESS_TEST_WINDOW_OPENS_MICROSECONDS);
     (void) kernel_wake_planner_arm(&tickless_test_plan, duty, earliest,
@@ -1645,6 +1653,7 @@ KERNEL_TEST(a_sleep_the_bus_master_check_demoted_is_learned_at_the_depth_it_ente
 
     kernel_test_check(test, stopped && tickless_test_runs == 1u, "the tick stops, and the duty is served");
     kernel_test_check(test, probe_taught == 0u && refused == 0u, "the C3's probe teaches nothing, and refuses nothing");
+    kernel_test_check(test, retakes == 0u, "and takes none of its demoted sleeps again");
     kernel_test_check(test, demotions > 0u, "the check demotes the sleeps");
     kernel_test_check(test, halt_taught > 0u, "HLT, the depth they entered, learns");
     kernel_test_check(test, c3_taught == 0u, "the C3, never entered, learns nothing");

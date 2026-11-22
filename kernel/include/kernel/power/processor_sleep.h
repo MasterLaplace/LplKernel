@@ -644,9 +644,9 @@ ProcessorSleepOutcome_t processor_sleep_until_interrupt_at(uint32_t depth);
 
 /**
  * @brief Sleeps as @ref processor_sleep_until_interrupt_at does, and times the read of a port depth's port: when it
- *        began and when it returned, before interrupts are enabled (@ref
- * asmutils_timed_input_byte_then_enable_interrupts), so that a probe judges the read itself rather than what the host
- * did around it (#880).
+ *        began and when it returned, before interrupts are enabled, so that a probe judges the read itself rather than
+ *        what the host did around it (#880).
+ * @details The read is @ref asmutils_timed_input_byte_then_enable_interrupts; every other sleep reads its port untimed.
  * @param depth    The depth chosen for this sleep.
  * @param out_read Receives when the read began and returned; zeros when the depth entered reads no port.
  * @return As @ref processor_sleep_until_interrupt.

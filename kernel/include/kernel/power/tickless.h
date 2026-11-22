@@ -265,23 +265,26 @@ typedef enum {
 
 /**
  * @brief What a probe sleep's port read says, from when it began and returned against the sleep's deadline, all three
- *        on the timestamp counter.
+ *        on the timestamp counter, and from whether an interrupt was taken right after it.
  *
  * @details A read that began and returned before the deadline did not stop the processor, whatever the host did once
  *          it returned: a hold after the read no longer passes for a stop (3,860 us measured under TCG, #880). One that
  *          began before the deadline and returned at or past it stopped the processor, or the host held it in the read
  *          itself, which only a second long sleep tells apart (@ref kernel_tickless_judge_a_probe). One that began at
- *          or past the deadline says nothing: the host held the processor before it, and the sleep is taken again.
- *          An interrupt that ended a read that stopped makes it look returned: that errs towards refusing a depth,
- *          which its next adoption probes again, never towards keeping one. Pure, so that a test hands it what no
- *          emulator gives: a read that stops.
+ *          or past the deadline says nothing: the host held the processor before it, and the sleep is taken again. So
+ *          does one that returned before the deadline with an interrupt waiting: that interrupt may have ended a read
+ *          that stopped, and counting it against the port would refuse a port that stops, while counting it for the
+ *          port would keep, under a hypervisor, one that does not. Pure, so that a test hands it what no emulator
+ *          gives: a read that stops.
  *
- * @param began    The counter just before the read.
- * @param returned The counter just after it.
- * @param deadline The sleep's deadline.
+ * @param began       The counter just before the read.
+ * @param returned    The counter just after it.
+ * @param deadline    The sleep's deadline.
+ * @param interrupted Whether an interrupt was taken right after the read.
  * @return What the read says.
  */
-KernelTicklessProbeRead_t kernel_tickless_judge_a_probe_read(uint64_t began, uint64_t returned, uint64_t deadline);
+KernelTicklessProbeRead_t kernel_tickless_judge_a_probe_read(uint64_t began, uint64_t returned, uint64_t deadline,
+                                                             bool interrupted);
 
 /**
  * @brief What a probe of a port depth decides from the ranks of its sleeps whose reads stopped the processor
@@ -349,7 +352,8 @@ uint32_t kernel_tickless_unstopped_probe_ranks_at(uint32_t depth);
 uint32_t kernel_tickless_stopped_probe_ranks_at(uint32_t depth);
 
 /**
- * @brief The probe sleeps taken again since boot because their read began at or past its deadline.
+ * @brief The probe sleeps taken again since boot because their read said nothing: it began at or past its deadline,
+ *        or returned before it with an interrupt waiting; a sleep the bus-master check demoted is not taken again.
  * @return The count.
  */
 uint32_t kernel_tickless_probe_retakes(void);
