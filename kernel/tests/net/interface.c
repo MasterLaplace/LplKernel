@@ -282,4 +282,6 @@ KERNEL_TEST(frames_the_interface_does_not_take_are_counted_by_their_cause)
                           network_fake_interface.counters.frames_received == 3u,
                       "one for another station, one of EtherType 86DDh, one of 13 bytes, out of three");
     kernel_test_check(test, network_fake_card.sent_count == 0u, "and none is answered");
+    kernel_test_check(test, kernel_spsc_ring_size(&network_fake_card.receive) == 0u,
+                      "and the poll gives every slot it read back to the card");
 }

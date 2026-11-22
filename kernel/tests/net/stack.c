@@ -33,6 +33,7 @@ KERNEL_TEST(the_checksum_of_the_rfc_example_is_its_published_value)
 {
     static const uint8_t words[8] = {0x00u, 0x01u, 0xF2u, 0x03u, 0xF4u, 0xF5u, 0xF6u, 0xF7u};
     static const uint8_t odd[3] = {0xABu, 0xCDu, 0xEFu};
+    static const uint8_t carries[6] = {0xFFu, 0xFFu, 0xFFu, 0xFFu, 0x00u, 0x01u};
 
     kernel_test_check(test, kernel_internet_checksum_finish(kernel_internet_checksum_add(0u, words, 8u)) == 0x220Du,
                       "the words 0001h F203h F4F5h F6F7h sum to the checksum 220Dh (RFC 1071, 3)");
@@ -44,6 +45,10 @@ KERNEL_TEST(the_checksum_of_the_rfc_example_is_its_published_value)
                       kernel_internet_checksum_finish(kernel_internet_checksum_add(0u, odd, 3u)) ==
                           network_stack_test_naive_checksum(odd, 3u),
                       "an odd last byte counts as a high byte");
+    kernel_test_check(test,
+                      kernel_internet_checksum_finish(kernel_internet_checksum_add(0u, carries, 6u)) == 0xFFFEu &&
+                          network_stack_test_naive_checksum(carries, 6u) == 0xFFFEu,
+                      "FFFFh, FFFFh and 0001h fold twice, to the checksum FFFEh");
 }
 
 /**
