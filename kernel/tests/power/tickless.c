@@ -1400,6 +1400,7 @@ KERNEL_TEST(a_port_depth_whose_read_does_not_stop_is_refused_at_the_first_stop_o
     const bool granted = kernel_processor_sleep_request_depth(1u);
     kernel_tickless_debug_exchange_depth_estimate(1u, &held);
     const uint32_t refused_before = kernel_processor_sleep_refused_depth_count();
+    const uint32_t retakes_before = kernel_tickless_probe_retakes();
     for (uint32_t slot = 0u; slot < CPU_TOPOLOGY_MAX_LOGICAL_CPUS_PUBLIC; ++slot)
         reconsiders[slot] = tickless_test_reconsiders_of(slot);
 
@@ -1411,6 +1412,7 @@ KERNEL_TEST(a_port_depth_whose_read_does_not_stop_is_refused_at_the_first_stop_o
     const uint32_t unstopped = kernel_tickless_unstopped_probe_ranks_at(1u);
     const uint32_t stopped_ranks = kernel_tickless_stopped_probe_ranks_at(1u);
     const uint32_t taught = kernel_tickless_wake_samples_at(1u);
+    const uint32_t retakes = kernel_tickless_probe_retakes() - retakes_before;
     kernel_tickless_disable();
     kernel_processor_sleep_port_verdicts(verdicts);
     const uint32_t reached = tickless_test_reconsiders_since(reconsiders, &others);
@@ -1429,6 +1431,7 @@ KERNEL_TEST(a_port_depth_whose_read_does_not_stop_is_refused_at_the_first_stop_o
     kernel_test_check(test, reached == others, "and each other processor is told to look at its target again");
     kernel_test_measure(test, "unstopped_ranks", unstopped);
     kernel_test_measure(test, "stopped_ranks", stopped_ranks);
+    kernel_test_measure(test, "retakes", retakes);
     kernel_test_measure(test, "others_reached", reached);
 }
 
@@ -1493,10 +1496,12 @@ static TicklessTestPortProbe_t tickless_test_probe_the_made_up_port(uint32_t bef
 
 /**
  * @brief Under a hypervisor, the made-up port depth is judged by its reads whatever the host does around them: held
- *        once each read returned, past every deadline, its reads still returned at once and it is refused (#880);
+ *        once each read returned, past every deadline, none of its long reads stopped and it is refused (#880);
  *        held before each read, past every deadline, its long reads say nothing, are each taken again
- *        KERNEL_TICKLESS_PROBE_RETAKES times, and it is refused, no long sleep having stopped. Skipped on a real
- *        processor, whose port may stop it.
+ *        KERNEL_TICKLESS_PROBE_RETAKES times, and it is refused, no long sleep having stopped. Under a loaded TCG, the
+ *        longest read of the first probe was seen to begin past its deadline on each of its three takes (2 boots in
+ *        40), and so says nothing: the test counts the retakes and lets it be, since a read that says nothing never
+ *        keeps a depth. Skipped on a real processor, whose port may stop it.
  */
 KERNEL_TEST(a_port_depth_is_judged_by_its_reads_whatever_the_host_does_around_them)
 {
@@ -1519,21 +1524,20 @@ KERNEL_TEST(a_port_depth_is_judged_by_its_reads_whatever_the_host_does_around_th
     kernel_test_check(test, after.granted && after.stopped && before.granted && before.stopped,
                       "depth 1 is granted, and the tick stops, twice");
     kernel_test_check(test,
-                      after.refused == 1u &&
-                          (after.returned & TICKLESS_TEST_LONGEST_RANKS) == TICKLESS_TEST_LONGEST_RANKS &&
-                          (after.halted & TICKLESS_TEST_LONGEST_RANKS) == 0u && after.taught == 0u,
-                      "held once each read returned, its long reads returned at once, and it is refused");
+                      after.refused == 1u && (after.halted & TICKLESS_TEST_LONGEST_RANKS) == 0u && after.taught == 0u,
+                      "held once each read returned, no long read stopped, and it is refused");
     kernel_test_check(test,
                       before.refused == 1u && ((before.returned | before.halted) & TICKLESS_TEST_LONGEST_RANKS) == 0u &&
                           before.taught == 0u,
                       "held before each read, its long reads say nothing, and it is refused");
-    kernel_test_check(test, before.retakes == 2u * KERNEL_TICKLESS_PROBE_RETAKES && after.retakes == 0u,
+    kernel_test_check(test, before.retakes == 2u * KERNEL_TICKLESS_PROBE_RETAKES,
                       "and each of the two long sleeps was taken again, the most a probe takes it");
     kernel_test_measure(test, "held_after_returned_ranks", after.returned);
     kernel_test_measure(test, "held_after_stopped_ranks", after.halted);
     kernel_test_measure(test, "held_before_returned_ranks", before.returned);
     kernel_test_measure(test, "held_before_stopped_ranks", before.halted);
     kernel_test_measure(test, "held_before_retakes", before.retakes);
+    kernel_test_measure(test, "held_after_retakes", after.retakes);
 }
 
 /** The latency the made-up deeper depth publishes, in microseconds. */
