@@ -416,8 +416,11 @@ void kernel_tickless_debug_exchange_depth_estimate(uint32_t depth, KernelWakeLat
  * @brief Holds the next depth choice a sleep makes for @p microseconds before it chooses, so that a debug kernel's
  *        tests see a choice as slow as TCG's first translation of it, which may outlast a window (#299, #879).
  *
- * @details The hold is spun once, by the next sleep that chooses a depth, then forgotten. A sleep counts from before
- *          its choice, so the hold is time slept with the tick stopped.
+ * @details The hold is spun once, by the next sleep that chooses a depth, then forgotten; a sleep at a depth that
+ *          learned nothing chooses none, and leaves it for the next. A sleep counts from before its choice, so the hold
+ *          is time slept with the tick stopped. A hold past the sleep's planned wake-up arms the timer on a deadline
+ *          already gone, and the wake-up teaches the depth that lateness: a test that wants the estimate it had gives
+ *          it back with kernel_tickless_debug_exchange_depth_estimate.
  *
  * @param microseconds How long the next choice spins; 0 holds nothing.
  */
