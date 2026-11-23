@@ -47,6 +47,7 @@
 #define KERNEL_DRIVERS_E1000_H_
 
 #include <kernel/memory/spsc_ring.h>
+#include <kernel/net/device.h>
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -317,6 +318,13 @@ static inline bool e1000_transmit_describe(E1000Transmit_t *transmit, uint32_t s
  * @return Frames handed to the controller by this kick; 0 when nothing new was published or no controller is ready.
  */
 extern uint32_t e1000_transmit_kick(void);
+
+/**
+ * @brief The controller as a network device of the stack (kernel/net/device.h), its one queue pair the two rings.
+ *
+ * @return The device, or NULL while no controller is ready.
+ */
+extern KernelNetworkDevice_t *e1000_network_device(void);
 
 /**
  * @brief Adds the controller's statistics registers to the counters, and returns them.
