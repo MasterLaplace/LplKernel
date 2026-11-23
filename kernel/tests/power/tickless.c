@@ -662,6 +662,15 @@ static bool tickless_test_same_estimate(const KernelWakeLatency_t *left, const K
 }
 
 /**
+ * @struct TicklessTestPlannedWindow_t
+ * @brief Where the plan armed a window's wake-up, and whether the window was served.
+ */
+typedef struct {
+    bool served;      /**< The duty ran; its cycle is then in tickless_test_instant. */
+    uint64_t planned; /**< The cycle the plan armed the wake-up on, with the lead before the window. */
+} TicklessTestPlannedWindow_t;
+
+/**
  * @brief Serves the test's duty for a window as tickless_test_serve_window does, and judges what its wake-up taught
  *        the depth sleeps enter: when one sleep served the window and taught the depth one wake-up, the estimate after
  *        it must be the one before taught that wake-up's lateness past the cycle the plan armed with the lead before.
@@ -669,10 +678,11 @@ static bool tickless_test_same_estimate(const KernelWakeLatency_t *left, const K
  * @param earliest The window's earliest cycle.
  * @param latest   Its latest cycle.
  * @param seen     Counts the windows judged, and those taught their lateness.
- * @return true when the duty was served; its cycle is then in tickless_test_instant.
+ * @return Whether the duty was served, and where the plan armed its wake-up.
  */
-static bool tickless_test_serve_window_and_judge_the_lesson(uint32_t duty, uint64_t earliest, uint64_t latest,
-                                                            TicklessTestTaught_t *seen)
+static TicklessTestPlannedWindow_t tickless_test_serve_window_and_judge_the_lesson(uint32_t duty, uint64_t earliest,
+                                                                                   uint64_t latest,
+                                                                                   TicklessTestTaught_t *seen)
 {
     const uint32_t depth = kernel_processor_sleep_depth();
     const KernelWakeLatency_t before = tickless_test_estimate_at(depth);
@@ -685,15 +695,27 @@ static bool tickless_test_serve_window_and_judge_the_lesson(uint32_t duty, uint6
         (void) kernel_tickless_sleep_on(&tickless_test_plan);
 
     const KernelWakeLatency_t after = tickless_test_estimate_at(depth);
-    const bool served = tickless_test_runs != runs;
-    if (!served || kernel_processor_sleep_count() - halts != 1u || after.samples != before.samples + 1u)
-        return served;
+    const TicklessTestPlannedWindow_t window = {tickless_test_runs != runs, planned};
+    if (!window.served || kernel_processor_sleep_count() - halts != 1u || after.samples != before.samples + 1u)
+        return window;
 
     KernelWakeLatency_t expected = before;
     kernel_wake_latency_learn(&expected, tickless_test_instant > planned ? tickless_test_instant - planned : 0u);
     ++seen->judged;
     seen->taught += tickless_test_same_estimate(&expected, &after) ? 1u : 0u;
-    return served;
+    return window;
+}
+
+/**
+ * @brief Whether a served window's wake-up came more than @p width cycles after the cycle the plan armed: a lateness no
+ *        lead within the window could have served.
+ * @param window Where the plan armed the window's wake-up, served at tickless_test_instant.
+ * @param width  The window's width.
+ * @return true when the wake-up came later than that.
+ */
+static bool tickless_test_woken_past_the_width(const TicklessTestPlannedWindow_t *window, uint64_t width)
+{
+    return tickless_test_instant > window->planned && tickless_test_instant - window->planned > width;
 }
 
 /**
@@ -701,14 +723,21 @@ static bool tickless_test_serve_window_and_judge_the_lesson(uint32_t duty, uint6
  *        which no lead can move, is served its latency late; the two alternate, so that a host that slows down
  *        slows both, and a wide window costs one wake-up of the timer, as without the lead.
  *
- * @details A quarter of the wide windows may still be late: a host that holds the virtual processor for
- *          milliseconds makes a wake-up no lead could have served, and the plan counts it late as it should. What
- *          teaches the lead is checked wake-up by wake-up rather than by its size, which on a loaded host follows the
- *          host's lateness past the sleeps' length as it should (#847): each window one sleep served, which taught the
- *          depth one wake-up, leaves the estimate taught exactly that wake-up's lateness past the cycle the plan armed,
- *          which a lead taught by the sleep's length is not, but on a window whose two values both pass the clip. At
- *          least half the windows are judged so, the control that the check is not empty: a host that held every
- *          sleep past its window would leave none judged and fail it, as a kernel that never learns does.
+ * @details A wide window may still be late when the host holds the virtual processor for milliseconds, which makes a
+ *          wake-up no lead could have served, and the plan counts it late as it should. Such a wake-up is told apart
+ *          by a bound the kernel does not choose: it came more than the window's width after the cycle the plan armed,
+ *          past what any lead that keeps the wake-up in the window can absorb (#903). A quarter at most of the other
+ *          wide windows may be late, a wake-up later than the lead but within the width, as a lead that covers the
+ *          latencies it learns lets through now and then, and a lead taught too little, or ignored, does not. The
+ *          control: half the wide windows at least are woken within their width, so that the bound judges them; a
+ *          kernel whose every wake-up is that late fails it.
+ *
+ *          What teaches the lead is checked wake-up by wake-up rather than by its size, which on a loaded host follows
+ *          the host's lateness past the sleeps' length as it should (#847): each window one sleep served, which taught
+ *          the depth one wake-up, leaves the estimate taught exactly that wake-up's lateness past the cycle the plan
+ *          armed, which a lead taught by the sleep's length is not, but on a window whose two values both pass the
+ *          clip. At least half the windows are judged so, the control that the check is not empty: a host that held
+ *          every sleep past its window would leave none judged and fail it, as a kernel that never learns does.
  */
 KERNEL_TEST(a_lead_learned_from_the_wake_ups_serves_wide_windows_by_their_latest)
 {
@@ -722,6 +751,7 @@ KERNEL_TEST(a_lead_learned_from_the_wake_ups_serves_wide_windows_by_their_latest
     uint32_t served = 0u;
     uint32_t late_narrow = 0u;
     uint32_t late_wide = 0u;
+    uint32_t held_past_the_width = 0u;
     uint32_t timer_wide = 0u;
     uint64_t margin_sum = 0u;
     uint64_t lead_sum = 0u;
@@ -733,7 +763,7 @@ KERNEL_TEST(a_lead_learned_from_the_wake_ups_serves_wide_windows_by_their_latest
     for (uint32_t round = 0u; round < TICKLESS_TEST_LED_ROUNDS; ++round)
     {
         const uint64_t narrow = asmutils_read_timestamp_counter() + closes;
-        served += tickless_test_serve_window_and_judge_the_lesson(duty, narrow, narrow, &taught) ? 1u : 0u;
+        served += tickless_test_serve_window_and_judge_the_lesson(duty, narrow, narrow, &taught).served ? 1u : 0u;
         late_narrow += tickless_test_instant > narrow ? 1u : 0u;
 
         const uint32_t timer_before = kernel_wakeup_accounting_get_vector_count(TICKLESS_TEST_TIMER_VECTOR);
@@ -742,12 +772,14 @@ KERNEL_TEST(a_lead_learned_from_the_wake_ups_serves_wide_windows_by_their_latest
         lead_least = lead_armed < lead_least ? lead_armed : lead_least;
         lead_most = lead_armed > lead_most ? lead_armed : lead_most;
         const uint64_t armed = asmutils_read_timestamp_counter();
-        served +=
-            tickless_test_serve_window_and_judge_the_lesson(duty, armed + opens, armed + closes, &taught) ? 1u : 0u;
+        const TicklessTestPlannedWindow_t wide =
+            tickless_test_serve_window_and_judge_the_lesson(duty, armed + opens, armed + closes, &taught);
+        served += wide.served ? 1u : 0u;
         timer_wide += kernel_wakeup_accounting_get_vector_count(TICKLESS_TEST_TIMER_VECTOR) - timer_before;
         if (tickless_test_instant > armed + closes)
         {
             ++late_wide;
+            held_past_the_width += tickless_test_woken_past_the_width(&wide, closes - opens) ? 1u : 0u;
             if (tickless_test_instant - (armed + closes) > overshoot_wide)
                 overshoot_wide = tickless_test_instant - (armed + closes);
         }
@@ -762,8 +794,12 @@ KERNEL_TEST(a_lead_learned_from_the_wake_ups_serves_wide_windows_by_their_latest
     kernel_test_check(test, served == 2u * TICKLESS_TEST_LED_ROUNDS, "every window is served once");
     kernel_test_check(test, late_narrow == TICKLESS_TEST_LED_ROUNDS,
                       "the control: each window of one cycle keeps its arming and is served its latency late");
-    kernel_test_check(test, late_wide <= TICKLESS_TEST_LED_ROUNDS / 4u,
-                      "the wide windows are served by their latest, but for a held wake-up now and then");
+    kernel_test_check(test, held_past_the_width <= TICKLESS_TEST_LED_ROUNDS / 2u,
+                      "the control: half the wide windows at least are woken within their width of the cycle the plan "
+                      "armed");
+    kernel_test_check(test, late_wide - held_past_the_width <= TICKLESS_TEST_LED_ROUNDS / 4u,
+                      "the wide windows are served by their latest, but for a wake-up held past their width, and for a "
+                      "quarter at most of the others");
     kernel_test_check(test, timer_wide <= TICKLESS_TEST_LED_ROUNDS,
                       "and each took at most one wake-up of the timer, as without the lead");
     kernel_test_check(test, lead_least != lead_most,
@@ -779,6 +815,7 @@ KERNEL_TEST(a_lead_learned_from_the_wake_ups_serves_wide_windows_by_their_latest
     kernel_test_measure(test, "lessons_judged", taught.judged);
     kernel_test_measure(test, "lessons_taught", taught.taught);
     kernel_test_measure(test, "late_wide", late_wide);
+    kernel_test_measure(test, "held_past_the_width", held_past_the_width);
     kernel_test_measure(test, "late_narrow", late_narrow);
     kernel_test_measure(test, "timer_wakes_wide", timer_wide);
     kernel_test_measure(test, "wake_lead_ns", (uint32_t) kernel_tickless_nanoseconds_from_cycles(lead));
