@@ -185,6 +185,7 @@ kernel/diag/telemetry.o \
 kernel/net/checksum.o \
 kernel/net/ethernet.o \
 kernel/net/arp.o \
+kernel/net/udp.o \
 kernel/net/ipv4.o \
 kernel/net/icmp.o \
 kernel/net/interface.o \

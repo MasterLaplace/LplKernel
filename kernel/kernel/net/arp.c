@@ -67,9 +67,9 @@ bool kernel_address_resolution_parse(const uint8_t *bytes, uint32_t length, Kern
         bytes[5] != KERNEL_ADDRESS_RESOLUTION_INTERNET_PROTOCOL_VERSION_4_BYTES)
         return false;
     out->operation = kernel_network_read_16(bytes + 6u);
-    memcpy(out->sender_station, bytes + 8u, KERNEL_NETWORK_ADDRESS_BYTES);
+    kernel_network_station_copy(out->sender_station, bytes + 8u);
     out->sender_address = kernel_network_read_32(bytes + 14u);
-    memcpy(out->target_station, bytes + 18u, KERNEL_NETWORK_ADDRESS_BYTES);
+    kernel_network_station_copy(out->target_station, bytes + 18u);
     out->target_address = kernel_network_read_32(bytes + 24u);
     return true;
 }
@@ -81,9 +81,9 @@ void kernel_address_resolution_write(uint8_t *bytes, const KernelAddressResoluti
     bytes[4] = KERNEL_NETWORK_ADDRESS_BYTES;
     bytes[5] = KERNEL_ADDRESS_RESOLUTION_INTERNET_PROTOCOL_VERSION_4_BYTES;
     kernel_network_write_16(bytes + 6u, packet->operation);
-    memcpy(bytes + 8u, packet->sender_station, KERNEL_NETWORK_ADDRESS_BYTES);
+    kernel_network_station_copy(bytes + 8u, packet->sender_station);
     kernel_network_write_32(bytes + 14u, packet->sender_address);
-    memcpy(bytes + 18u, packet->target_station, KERNEL_NETWORK_ADDRESS_BYTES);
+    kernel_network_station_copy(bytes + 18u, packet->target_station);
     kernel_network_write_32(bytes + 24u, packet->target_address);
 }
 
@@ -114,7 +114,7 @@ bool kernel_address_resolution_cache_merge(KernelAddressResolutionCache_t *cache
 
     if (entry == NULL)
         return false;
-    memcpy(entry->station, station, KERNEL_NETWORK_ADDRESS_BYTES);
+    kernel_network_station_copy(entry->station, station);
     entry->resolved = true;
     entry->since = now;
     return true;
@@ -128,7 +128,7 @@ bool kernel_address_resolution_cache_add(KernelAddressResolutionCache_t *cache, 
     if (entry == NULL)
         return false;
     *entry = (KernelAddressResolutionEntry_t){.address = address, .resolved = true, .wanted = false, .since = now};
-    memcpy(entry->station, station, KERNEL_NETWORK_ADDRESS_BYTES);
+    kernel_network_station_copy(entry->station, station);
     return true;
 }
 
@@ -143,15 +143,53 @@ bool kernel_address_resolution_cache_find(const KernelAddressResolutionCache_t *
             continue;
         if (!candidate->resolved || now - candidate->since >= cache->lifetime)
             return false;
-        memcpy(out_station, candidate->station, KERNEL_NETWORK_ADDRESS_BYTES);
+        kernel_network_station_copy(out_station, candidate->station);
         return true;
     }
     return false;
 }
 
-void kernel_address_resolution_cache_expire(KernelAddressResolutionCache_t *cache, uint32_t now)
+bool kernel_address_resolution_cache_find_hinted(const KernelAddressResolutionCache_t *cache, uint32_t address,
+                                                 uint32_t now, uint8_t *out_station, uint32_t *hint)
+{
+    uint32_t entry = *hint % KERNEL_ADDRESS_RESOLUTION_CACHE_ENTRIES;
+
+    if (cache->entries[entry].address != address)
+    {
+        entry = 0u;
+        while (entry < KERNEL_ADDRESS_RESOLUTION_CACHE_ENTRIES && cache->entries[entry].address != address)
+            ++entry;
+        if (entry == KERNEL_ADDRESS_RESOLUTION_CACHE_ENTRIES)
+            return false;
+        *hint = entry;
+    }
+
+    const KernelAddressResolutionEntry_t *const candidate = &cache->entries[entry];
+
+    if (!candidate->resolved || now - candidate->since >= cache->lifetime)
+        return false;
+    kernel_network_station_copy(out_station, candidate->station);
+    return true;
+}
+
+bool kernel_address_resolution_cache_is_pending(const KernelAddressResolutionCache_t *cache, uint32_t address,
+                                                uint32_t now, uint32_t interval)
 {
     for (uint32_t entry = 0u; entry < KERNEL_ADDRESS_RESOLUTION_CACHE_ENTRIES; ++entry)
-        if (cache->entries[entry].address != 0u && now - cache->entries[entry].since >= cache->lifetime)
-            cache->entries[entry].address = 0u;
+    {
+        const KernelAddressResolutionEntry_t *const candidate = &cache->entries[entry];
+
+        if (address != 0u && candidate->address == address)
+            return !candidate->resolved && now - candidate->since < interval;
+    }
+    return false;
+}
+
+void kernel_address_resolution_cache_expire_next(KernelAddressResolutionCache_t *cache, uint32_t now)
+{
+    KernelAddressResolutionEntry_t *const entry = &cache->entries[cache->next_to_expire];
+
+    if (entry->address != 0u && now - entry->since >= cache->lifetime)
+        entry->address = 0u;
+    cache->next_to_expire = (cache->next_to_expire + 1u) % KERNEL_ADDRESS_RESOLUTION_CACHE_ENTRIES;
 }

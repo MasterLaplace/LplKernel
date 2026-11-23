@@ -37,12 +37,15 @@ extern "C" {
  * @name IPv4
  * @{
  */
-#define KERNEL_INTERNET_PROTOCOL_HEADER_BYTES            20u         /**< A header without options. */
-#define KERNEL_INTERNET_PROTOCOL_CONTROL_MESSAGE         1u          /**< Protocol number of ICMP. */
-#define KERNEL_INTERNET_PROTOCOL_USER_DATAGRAM           17u         /**< Protocol number of UDP. */
-#define KERNEL_INTERNET_PROTOCOL_TIME_TO_LIVE            64u         /**< TTL of a packet sent. */
-#define KERNEL_INTERNET_PROTOCOL_LOOPBACK_NETWORK        127u        /**< First byte of the loopback addresses. */
-#define KERNEL_INTERNET_PROTOCOL_FIRST_MULTICAST_NETWORK 224u        /**< First byte of 224/4, 240/4 above it. */
+#define KERNEL_INTERNET_PROTOCOL_VERSION_4               4u      /**< Version, in the high nibble of the first byte. */
+#define KERNEL_INTERNET_PROTOCOL_DONT_FRAGMENT           0x4000u /**< DF, set on every packet sent. */
+#define KERNEL_INTERNET_PROTOCOL_HEADER_BYTES            20u     /**< A header without options. */
+#define KERNEL_INTERNET_PROTOCOL_CONTROL_MESSAGE         1u      /**< Protocol number of ICMP. */
+#define KERNEL_INTERNET_PROTOCOL_USER_DATAGRAM           17u     /**< Protocol number of UDP. */
+#define KERNEL_INTERNET_PROTOCOL_TIME_TO_LIVE            64u     /**< TTL of a packet sent. */
+#define KERNEL_INTERNET_PROTOCOL_MULTICAST_TIME_TO_LIVE  1u      /**< TTL of one to a group: RFC 1112, 6.1. */
+#define KERNEL_INTERNET_PROTOCOL_LOOPBACK_NETWORK        127u    /**< First byte of the loopback addresses. */
+#define KERNEL_INTERNET_PROTOCOL_FIRST_MULTICAST_NETWORK 224u    /**< First byte of 224/4, 240/4 above it. */
 #define KERNEL_INTERNET_PROTOCOL_LIMITED_BROADCAST       0xFFFFFFFFu /**< 255.255.255.255. */
 /** @} */
 
@@ -72,6 +75,16 @@ typedef struct KernelInternetProtocolPacket {
 } KernelInternetProtocolPacket_t;
 
 /**
+ * @brief The three addresses a source check refuses on an interface's subnet, computed once, all three in the byte
+ *        order of the source compared with them.
+ */
+typedef struct KernelInternetProtocolSubnet {
+    uint32_t address;   /**< The interface's own address. */
+    uint32_t network;   /**< Its subnet's network address, or its own address where the subnet has none. */
+    uint32_t broadcast; /**< Its subnet's directed broadcast, or its own address where the subnet has none. */
+} KernelInternetProtocolSubnet_t;
+
+/**
  * @brief Checks and reads the packet of @p length bytes at @p bytes.
  *
  * @param bytes  The packet, after its Ethernet header.
@@ -98,6 +111,30 @@ extern KernelInternetProtocolStatus_t kernel_internet_protocol_parse(const uint8
 extern bool kernel_internet_protocol_source_is_acceptable(uint32_t source, uint32_t address, uint32_t netmask);
 
 /**
+ * @brief The subnet of an interface at @p address with @p netmask, host order.
+ *
+ * @details A /31 or /32 has no network address and no broadcast to refuse: both are the interface's own address,
+ *          which is refused anyway.
+ *
+ * @param address The interface's address, host order.
+ * @param netmask Its netmask.
+ * @return Its address, its subnet's network address and its directed broadcast.
+ */
+static inline KernelInternetProtocolSubnet_t kernel_internet_protocol_subnet(uint32_t address, uint32_t netmask);
+
+/**
+ * @brief What kernel_internet_protocol_source_is_acceptable decides, on a subnet computed once, in either byte
+ *        order: @p source and @p subnet in the same one.
+ *
+ * @param first_byte The source's first byte on the wire.
+ * @param source     The source address, in the byte order of @p subnet.
+ * @param subnet     The interface's subnet, from kernel_internet_protocol_subnet or the same in another order.
+ * @return true for a source a datagram may come from.
+ */
+static inline bool kernel_internet_protocol_source_is_acceptable_in(uint8_t first_byte, uint32_t source,
+                                                                    const KernelInternetProtocolSubnet_t *subnet);
+
+/**
  * @brief Writes a header without options, its checksum computed, in front of a payload of @p payload_bytes.
  *
  * @param bytes          The header's first byte; KERNEL_INTERNET_PROTOCOL_HEADER_BYTES follow.
@@ -107,8 +144,20 @@ extern bool kernel_internet_protocol_source_is_acceptable(uint32_t source, uint3
  * @param payload_bytes  Bytes of the payload.
  * @param identification The packet's identification.
  */
-extern void kernel_internet_protocol_write_header(uint8_t *bytes, uint32_t source, uint32_t destination,
-                                                  uint8_t protocol, uint32_t payload_bytes, uint16_t identification);
+static inline void kernel_internet_protocol_write_header(uint8_t *bytes, uint32_t source, uint32_t destination,
+                                                         uint8_t protocol, uint32_t payload_bytes,
+                                                         uint16_t identification);
+
+/**
+ * @brief Sets the time to live of the header at @p bytes, its checksum updated in constant time from the word that
+ *        changed (RFC 1624, equation 3), as a router does when it lowers one.
+ *
+ * @param bytes        The header's first byte.
+ * @param time_to_live The new time to live.
+ */
+static inline void kernel_internet_protocol_set_time_to_live(uint8_t *bytes, uint8_t time_to_live);
+
+#include <kernel/net/ipv4.inl>
 
 #ifdef __cplusplus
 }

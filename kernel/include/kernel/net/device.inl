@@ -1,5 +1,18 @@
+#include <kernel/net/byte_order.h>
+
 #include <stdbool.h>
 #include <stdint.h>
+
+static inline void kernel_network_station_copy(uint8_t *destination, const uint8_t *source)
+{
+    __builtin_memcpy(destination, source, KERNEL_NETWORK_ADDRESS_BYTES);
+}
+
+static inline bool kernel_network_station_equals(const uint8_t *first, const uint8_t *second)
+{
+    return kernel_network_load_32(first) == kernel_network_load_32(second) &&
+           kernel_network_load_16(first + 4u) == kernel_network_load_16(second + 4u);
+}
 
 static inline const uint8_t *kernel_network_receive_bytes(const KernelNetworkDevice_t *device,
                                                           const KernelNetworkQueue_t *queue, uint32_t slot)

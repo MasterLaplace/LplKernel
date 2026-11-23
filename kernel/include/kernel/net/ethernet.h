@@ -54,6 +54,11 @@ typedef struct KernelEthernetFrame {
 } KernelEthernetFrame_t;
 
 /**
+ * @brief The broadcast station address, every bit set.
+ */
+extern const uint8_t kernel_ethernet_broadcast_station[KERNEL_NETWORK_ADDRESS_BYTES];
+
+/**
  * @brief Reads the header of the frame of @p length bytes at @p bytes.
  *
  * @param bytes  The frame.
@@ -88,8 +93,8 @@ static inline bool kernel_ethernet_is_group(const uint8_t *station);
  * @param source      Its source address.
  * @param type        Its EtherType.
  */
-extern void kernel_ethernet_write_header(uint8_t *bytes, const uint8_t *destination, const uint8_t *source,
-                                         uint16_t type);
+static inline void kernel_ethernet_write_header(uint8_t *bytes, const uint8_t *destination, const uint8_t *source,
+                                                uint16_t type);
 
 #include <kernel/net/ethernet.inl>
 

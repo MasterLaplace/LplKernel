@@ -23,6 +23,10 @@
  * - the stack produces on the transmit ring with kernel_spsc_ring_reserve and kernel_spsc_ring_publish,
  *   writing a frame into kernel_network_transmit_buffer and describing it with kernel_network_transmit_describe.
  *
+ * A card may keep slots of its receive ring to itself: the e1000 fills 63 of its 64, its tail one slot behind its
+ * head. receive_most_held says how many it fills before the stack releases one, so that the stack knows when the
+ * frames it holds leave the card nowhere to receive.
+ *
  * Per frame, the stack touches nothing but generic fields: a buffer at a base plus the slot times a stride,
  * a length at a stride in the card's own receive descriptors, and one word at a stride in its transmit
  * descriptors, written as a length or'ed with the card's command template. Per batch, the card's own
@@ -61,6 +65,7 @@ extern "C" {
  */
 typedef struct KernelNetworkQueue {
     KernelSpscRing_t *receive;                /**< Frames received: the card's harvest produces, the stack consumes. */
+    uint32_t receive_most_held;               /**< Frames it publishes unreleased at most, 1 to the ring's slots. */
     const uint8_t *receive_buffers;           /**< Slot s's frame starts at receive_buffers + s * buffer_bytes. */
     const volatile uint16_t *receive_lengths; /**< Slot s's length is receive_lengths[s * receive_length_stride]. */
     uint32_t receive_length_stride;           /**< uint16_t between two slots' lengths. */
@@ -95,6 +100,23 @@ typedef struct KernelNetworkDevice {
     KernelNetworkQueue_t *queues;                      /**< Its queue pairs. */
     const KernelNetworkDeviceOperations_t *operations; /**< What it does once a batch. */
 } KernelNetworkDevice_t;
+
+/**
+ * @brief Copies the station address at @p source to @p destination, as one load and store of 4 bytes and one of 2.
+ *
+ * @param destination Where it goes; KERNEL_NETWORK_ADDRESS_BYTES follow.
+ * @param source      The address.
+ */
+static inline void kernel_network_station_copy(uint8_t *destination, const uint8_t *source);
+
+/**
+ * @brief Whether the station addresses at @p first and @p second are the same, read as 4 bytes and 2.
+ *
+ * @param first  One address.
+ * @param second The other.
+ * @return true when all 6 bytes match.
+ */
+static inline bool kernel_network_station_equals(const uint8_t *first, const uint8_t *second);
 
 /**
  * @brief The first byte of the frame in receive slot @p slot of @p queue, where the card wrote it.

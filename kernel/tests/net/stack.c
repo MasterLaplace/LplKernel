@@ -5,6 +5,7 @@
 #include <kernel/net/icmp.h>
 #include <kernel/net/interface.h>
 #include <kernel/net/ipv4.h>
+#include <kernel/net/udp.h>
 #include <kernel/testing/test.h>
 
 #include <stddef.h>
@@ -49,6 +50,39 @@ KERNEL_TEST(the_checksum_of_the_rfc_example_is_its_published_value)
                       kernel_internet_checksum_finish(kernel_internet_checksum_add(0u, carries, 6u)) == 0xFFFEu &&
                           network_stack_test_naive_checksum(carries, 6u) == 0xFFFEu,
                       "FFFFh, FFFFh and 0001h fold twice, to the checksum FFFEh");
+}
+
+/**
+ * @brief The folded sum, four bytes a load in the host's order, gives the checksum the exact sum gives, at every
+ *        length from 0 to 40 and every alignment from 0 to 3, and folds bytes all zero to zero.
+ */
+KERNEL_TEST(the_folded_sum_gives_the_checksum_the_exact_sum_gives)
+{
+    static uint8_t bytes[48];
+    static const uint8_t zeros[9] = {0u};
+    static const uint8_t carries[12] = {0xFFu, 0xFFu, 0xFFu, 0xFFu, 0xFFu, 0xFFu, 0xFFu, 0xFFu, 0x01u, 0u, 0u, 0u};
+    uint32_t disagreements = 0u;
+
+    for (uint32_t byte = 0u; byte < sizeof(bytes); ++byte)
+        bytes[byte] = (uint8_t) (byte * 37u + 11u);
+    bytes[17] = 0xFFu;
+    bytes[18] = 0xFFu;
+    for (uint32_t offset = 0u; offset < 4u; ++offset)
+        for (uint32_t length = 0u; length <= 40u; ++length)
+            disagreements +=
+                kernel_internet_checksum_finish(kernel_internet_checksum_fold_bytes(bytes + offset, length)) !=
+                        network_stack_test_naive_checksum(bytes + offset, length) ?
+                    1u :
+                    0u;
+    kernel_test_check(test, disagreements == 0u, "164 lengths and alignments, each checksum the test's own");
+    kernel_test_check(test,
+                      kernel_internet_checksum_finish(kernel_internet_checksum_fold_bytes(carries, sizeof(carries))) ==
+                          network_stack_test_naive_checksum(carries, sizeof(carries)),
+                      "two words of FFFFFFFFh and a 1, whose 64-bit sum carries twice, fold as the test's sum does");
+    kernel_test_check(test,
+                      kernel_internet_checksum_fold_bytes(zeros, 9u) == 0u &&
+                          kernel_internet_checksum_fold_bytes(bytes, 0u) == 0u,
+                      "bytes all zero, or none, fold to zero");
 }
 
 /**
@@ -140,9 +174,11 @@ KERNEL_TEST(the_arp_cache_forgets_by_the_time_it_is_given)
     kernel_test_check(test, !kernel_address_resolution_cache_merge(&cache, 0x0A000002u, station, 150u),
                       "an address the cache does not hold is not merged");
     kernel_test_check(test, !kernel_address_resolution_cache_find(&cache, 0u, 180u, found), "address 0 is never found");
-    kernel_address_resolution_cache_expire(&cache, 250u);
-    kernel_test_check(test, !kernel_address_resolution_cache_find(&cache, 0x0A000001u, 150u, found),
-                      "expired at 250, it is gone at 150 too, as the time comes back around");
+    for (uint32_t entry = 0u; entry < KERNEL_ADDRESS_RESOLUTION_CACHE_ENTRIES; ++entry)
+        kernel_address_resolution_cache_expire_next(&cache, 250u);
+    kernel_test_check(
+        test, !kernel_address_resolution_cache_find(&cache, 0x0A000001u, 150u, found),
+        "16 expiries at 250, one an entry, free it: at 150 it is gone too, as the time comes back around");
 }
 
 /**
@@ -189,6 +225,51 @@ KERNEL_TEST(the_arp_cache_keeps_the_addresses_asked_for)
 }
 
 /**
+ * @brief A hinted lookup finds what a plain one finds, from a hint right or wrong, and leaves the entry found in its
+ *        hint.
+ */
+KERNEL_TEST(a_hinted_lookup_finds_what_a_plain_one_finds)
+{
+    static KernelAddressResolutionCache_t cache;
+    uint8_t station[6] = {2u, 0u, 0u, 0u, 0u, 9u};
+    uint8_t found[6] = {0u};
+    uint32_t hint = 0u;
+
+    kernel_address_resolution_cache_initialize(&cache, 100u);
+    for (uint32_t entry = 0u; entry < 5u; ++entry)
+        (void) kernel_address_resolution_cache_add(&cache, 0x0A000010u + entry, station, entry);
+    station[5] = 4u;
+    (void) kernel_address_resolution_cache_merge(&cache, 0x0A000014u, station, 5u);
+    kernel_test_check(test,
+                      kernel_address_resolution_cache_find_hinted(&cache, 0x0A000014u, 6u, found, &hint) &&
+                          found[5] == 4u && hint == 4u,
+                      "from a wrong hint, 10.0.0.20 is found in entry 4, which the hint then names");
+    found[5] = 0u;
+    kernel_test_check(
+        test, kernel_address_resolution_cache_find_hinted(&cache, 0x0A000014u, 6u, found, &hint) && found[5] == 4u,
+        "and is found again from it");
+    hint = 77u;
+    kernel_test_check(test,
+                      !kernel_address_resolution_cache_find_hinted(&cache, 0x0A000099u, 6u, found, &hint) &&
+                          hint == 77u && !kernel_address_resolution_cache_find_hinted(&cache, 0u, 6u, found, &hint),
+                      "an address not held, or 0, is not found, the hint left as it was");
+    kernel_address_resolution_cache_ask(&cache, 0x0A000030u, 7u);
+    hint = 5u;
+    kernel_test_check(test,
+                      !kernel_address_resolution_cache_find_hinted(&cache, 0x0A000030u, 8u, found, &hint) &&
+                          !kernel_address_resolution_cache_find_hinted(&cache, 0x0A000014u, 105u, found, &hint),
+                      "nor is an address asked for and unresolved, nor one a lifetime old");
+    for (uint32_t entry = 0u; entry < KERNEL_ADDRESS_RESOLUTION_CACHE_ENTRIES; ++entry)
+        kernel_address_resolution_cache_expire_next(&cache, 200u);
+    hint = 4u;
+    kernel_test_check(test,
+                      !kernel_address_resolution_cache_find(&cache, 0x0A000014u, 5u, found) &&
+                          !kernel_address_resolution_cache_find_hinted(&cache, 0u, 201u, found, &hint),
+                      "16 expiries free every entry, the fifth one too: at 5 again, 10.0.0.20 is gone, and address 0 "
+                      "is not found where it was");
+}
+
+/**
  * @brief Asking again for an expired address starts it over unresolved, so that the expiry of a batch does not
  *        free it before its reply.
  */
@@ -206,11 +287,12 @@ KERNEL_TEST(asking_again_for_an_expired_address_starts_it_over)
     kernel_address_resolution_cache_ask(&cache, 0x0A000001u, 200u);
     kernel_test_check(test, !kernel_address_resolution_cache_find(&cache, 0x0A000001u, 200u, found),
                       "asked for again once expired, it is unresolved");
-    kernel_address_resolution_cache_expire(&cache, 250u);
+    for (uint32_t entry = 0u; entry < KERNEL_ADDRESS_RESOLUTION_CACHE_ENTRIES; ++entry)
+        kernel_address_resolution_cache_expire_next(&cache, 250u);
     kernel_test_check(test,
                       kernel_address_resolution_cache_merge(&cache, 0x0A000001u, station, 260u) &&
                           kernel_address_resolution_cache_find(&cache, 0x0A000001u, 261u, found),
-                      "and survives the expiry of 250 to take its reply at 260");
+                      "and survives 16 expiries at 250 to take its reply at 260");
 }
 
 /**
@@ -353,4 +435,107 @@ KERNEL_TEST(a_source_no_host_sends_from_is_refused)
                       "10.0.0.2 may not");
     kernel_test_check(test, kernel_internet_protocol_source_is_acceptable(0x0A000000u, 0x0A000001u, 0xFFFFFFFEu),
                       "on a /31, which has no broadcast, 10.0.0.0 may send to 10.0.0.1");
+}
+
+/**
+ * @brief The checksum of a UDP datagram of @p datagram_bytes from @p source to @p destination, summed the slow way
+ *        over a pseudo-header the test lays out itself, with the datagram's checksum field as it stands.
+ */
+static uint16_t network_stack_test_naive_datagram_checksum(uint32_t source, uint32_t destination,
+                                                           const uint8_t *datagram, uint32_t datagram_bytes)
+{
+    static uint8_t whole[12u + 64u];
+
+    kernel_network_write_32(whole, source);
+    kernel_network_write_32(whole + 4u, destination);
+    whole[8] = 0u;
+    whole[9] = KERNEL_INTERNET_PROTOCOL_USER_DATAGRAM;
+    kernel_network_write_16(whole + 10u, (uint16_t) datagram_bytes);
+    memcpy(whole + 12u, datagram, datagram_bytes);
+    return network_stack_test_naive_checksum(whole, 12u + datagram_bytes);
+}
+
+/**
+ * @brief A datagram's checksum covers its pseudo-header, header and payload, the payload summed once by the caller;
+ *        one that folds to zero is sent as FFFFh (RFC 768).
+ */
+KERNEL_TEST(a_datagram_checksum_holds_by_the_tests_own_sum)
+{
+    uint8_t datagram[8u + 5u] = {0u};
+    const uint8_t payload[5] = {'h', 'e', 'l', 'l', 'o'};
+    const uint32_t source = 0x0A000001u;
+    const uint32_t destination = 0x0A000002u;
+    const uint32_t payload_sum = kernel_internet_checksum_add(0u, payload, 5u);
+
+    memcpy(datagram + 8u, payload, 5u);
+    kernel_user_datagram_write_header(
+        datagram, 7777u, 9000u, 5u,
+        kernel_user_datagram_checksum(kernel_user_datagram_pseudo_header_sum(source, destination, 13u), 7777u, 9000u,
+                                      5u, payload_sum));
+    kernel_test_check(test, kernel_network_read_16(datagram + 4u) == 13u, "its length counts its header");
+    kernel_test_check(test, network_stack_test_naive_datagram_checksum(source, destination, datagram, 13u) == 0u,
+                      "and its checksum, from the payload's sum, holds by the test's own sum of the whole");
+
+    uint8_t zero[8u + 2u] = {0u};
+    uint32_t sum = 0u;
+
+    kernel_user_datagram_write_header(zero, 1u, 2u, 2u, 0u);
+    sum =
+        (source >> 16) + (source & 0xFFFFu) + (destination >> 16) + (destination & 0xFFFFu) + 17u + 10u + 1u + 2u + 10u;
+    while (sum > 0xFFFFu)
+        sum = (sum & 0xFFFFu) + (sum >> 16);
+    kernel_network_write_16(zero + 8u, (uint16_t) (0xFFFFu - sum));
+    kernel_test_check(test,
+                      kernel_user_datagram_checksum(kernel_user_datagram_pseudo_header_sum(source, destination, 10u),
+                                                    1u, 2u, 2u,
+                                                    kernel_internet_checksum_add(0u, zero + 8u, 2u)) == 0xFFFFu,
+                      "a datagram whose sum folds to FFFFh, a checksum of zero, carries FFFFh");
+}
+
+/**
+ * @brief A datagram is read where it lies, its padding left out, and refused by its cause: too short, a length
+ *        past its packet or under its header, a checksum that fails; a zero checksum is said apart.
+ */
+KERNEL_TEST(a_datagram_is_taken_or_refused_by_its_cause)
+{
+    uint8_t datagram[8u + 6u + 4u];
+    const uint8_t payload[6] = {1u, 2u, 3u, 4u, 5u, 6u};
+    KernelInternetProtocolPacket_t packet = {.source = 0x0A000001u,
+                                             .destination = 0x0A000002u,
+                                             .protocol = KERNEL_INTERNET_PROTOCOL_USER_DATAGRAM,
+                                             .payload = datagram,
+                                             .payload_bytes = sizeof(datagram)};
+    KernelUserDatagram_t read;
+
+    memset(datagram, 0xEE, sizeof(datagram));
+    memcpy(datagram + 8u, payload, 6u);
+    kernel_user_datagram_write_header(datagram, 7777u, 9000u, 6u, 0u);
+    kernel_network_write_16(
+        datagram + 6u, network_stack_test_naive_datagram_checksum(packet.source, packet.destination, datagram, 14u));
+    kernel_test_check(test,
+                      kernel_user_datagram_parse(&packet, &read) == KERNEL_USER_DATAGRAM_TAKEN &&
+                          read.source_port == 7777u && read.destination_port == 9000u && read.payload == datagram + 8 &&
+                          read.payload_bytes == 6u,
+                      "a datagram of 14 bytes in a payload of 18 is taken, its 4 bytes of padding left out");
+    kernel_test_check(test, read.payload_sum == 0x0102u + 0x0304u + 0x0506u,
+                      "its payload's sum, folded to 16 bits, carries none here");
+    packet.payload_bytes = 7u;
+    kernel_test_check(test, kernel_user_datagram_parse(&packet, &read) == KERNEL_USER_DATAGRAM_TRUNCATED,
+                      "7 bytes are too short for a header");
+    packet.payload_bytes = 13u;
+    kernel_test_check(test, kernel_user_datagram_parse(&packet, &read) == KERNEL_USER_DATAGRAM_BAD_LENGTH,
+                      "a length of 14 in 13 bytes is refused");
+    packet.payload_bytes = sizeof(datagram);
+    kernel_network_write_16(datagram + 4u, 7u);
+    kernel_test_check(test, kernel_user_datagram_parse(&packet, &read) == KERNEL_USER_DATAGRAM_BAD_LENGTH,
+                      "and so is a length of 7");
+    kernel_network_write_16(datagram + 4u, 14u);
+    datagram[13] ^= 0x01u;
+    kernel_test_check(test, kernel_user_datagram_parse(&packet, &read) == KERNEL_USER_DATAGRAM_BAD_CHECKSUM,
+                      "a flipped payload bit fails the checksum");
+    kernel_network_write_16(datagram + 6u, 0u);
+    kernel_test_check(test,
+                      kernel_user_datagram_parse(&packet, &read) == KERNEL_USER_DATAGRAM_NO_CHECKSUM &&
+                          read.payload_bytes == 6u,
+                      "a zero checksum is said apart, the datagram read but unchecked");
 }

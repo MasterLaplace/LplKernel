@@ -23,3 +23,19 @@ static inline void kernel_network_write_32(uint8_t *bytes, uint32_t value)
     bytes[2] = (uint8_t) (value >> 8);
     bytes[3] = (uint8_t) value;
 }
+
+static inline uint16_t kernel_network_load_16(const uint8_t *bytes)
+{
+    uint16_t value = 0u;
+
+    __builtin_memcpy(&value, bytes, sizeof(value));
+    return value;
+}
+
+static inline uint32_t kernel_network_load_32(const uint8_t *bytes)
+{
+    uint32_t value = 0u;
+
+    __builtin_memcpy(&value, bytes, sizeof(value));
+    return value;
+}
