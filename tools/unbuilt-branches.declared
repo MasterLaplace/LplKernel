@@ -36,7 +36,7 @@ kernel/kernel/acpi/initialization.c | #else of #if defined(LPL_KERNEL_ENABLE_SMO
 kernel/include/kernel/acpi/log.h | #else of #if defined(LPL_KERNEL_ENABLE_SMOKE_TESTS) | a release kernel logs from the warning level up (O16), built by SMOKE_TESTS=0 or xmake -m release
 kernel/include/kernel/acpi/log.h | #else of #if ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_LOG_BUILD_LEVEL >= ADVANCED_CONFIGURATION_AND_POWER_INTERFACE_LOG_DEBUG | a release kernel compiles out the calls that log at debug level (O16), built by SMOKE_TESTS=0 or xmake -m release
 kernel/include/kernel/acpi/machine_language_decoder.h | #else of #if defined(LPL_KERNEL_ENABLE_SMOKE_TESTS) | a release kernel counts no executed opcode, space or access type (§4.1), built by SMOKE_TESTS=0 or xmake -m release, on which tools/budgets/acpi-initialization.budget counts W2
-kernel/kernel/power/tickless.c | #else of #if defined(LPL_KERNEL_ENABLE_SMOKE_TESTS) | a release kernel holds no depth choice (#879), built by SMOKE_TESTS=0 or xmake -m release, on which tools/budgets/server-tick.budget counts the tick
+kernel/kernel/power/tickless.c | #else of #if defined(LPL_KERNEL_ENABLE_SMOKE_TESTS) | a release kernel holds no depth choice (#879) and no probe sleep (#880), built by SMOKE_TESTS=0 or xmake -m release, on which tools/budgets/server-tick.budget counts the tick
 
 # Planned and never written.
 kernel/arch/i386/boot/boot2.o | no source | MULTIBOOT_VERSION=2 links a Multiboot 2 entry that was never written
