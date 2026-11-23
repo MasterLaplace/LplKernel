@@ -63,6 +63,8 @@ extern "C" {
 #define E1000_RECEIVE_DESCRIPTORS  64u   /**< Receive slots: the controller fills at most one fewer at once. */
 #define E1000_TRANSMIT_DESCRIPTORS 64u   /**< Transmit slots, all usable: the controller holds one fewer at once. */
 #define E1000_BUFFER_BYTES         2048u /**< Bytes of each frame buffer, receive and transmit (RCTL.BSIZE 00b). */
+
+#define E1000_RECEIVE_MOST_HELD (E1000_RECEIVE_DESCRIPTORS - 1u) /**< Slots it fills unreleased (§3.2.6). */
 /** @} */
 
 /**

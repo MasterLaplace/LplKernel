@@ -650,6 +650,8 @@ static KernelNetworkInterfaceSetup_t kernel_network_interface_check_device(const
         return KERNEL_NETWORK_INTERFACE_BAD_FRAME_BOUNDS;
     if (kernel_ethernet_is_group(device->address))
         return KERNEL_NETWORK_INTERFACE_GROUP_STATION;
+    if (queue->receive_most_held == 0u || queue->receive_most_held > kernel_spsc_ring_capacity(queue->receive))
+        return KERNEL_NETWORK_INTERFACE_BAD_RECEIVE_HELD;
     return KERNEL_NETWORK_INTERFACE_READY;
 }
 
@@ -720,7 +722,7 @@ uint32_t kernel_network_interface_poll(KernelNetworkInterface_t *interface, uint
     interface->counters.datagrams_common += common;
     interface->receive_taken = ready;
     kernel_network_interface_give_back(interface);
-    if (interface->receive_taken == kernel_spsc_ring_capacity(queue.receive))
+    if (interface->receive_taken == queue.receive_most_held)
         ++interface->counters.receive_held_full;
     (void) card.operations->kick(device, 0u);
     return ready - first;

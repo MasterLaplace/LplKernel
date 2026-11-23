@@ -23,6 +23,10 @@
  * - the stack produces on the transmit ring with kernel_spsc_ring_reserve and kernel_spsc_ring_publish,
  *   writing a frame into kernel_network_transmit_buffer and describing it with kernel_network_transmit_describe.
  *
+ * A card may keep slots of its receive ring to itself: the e1000 fills 63 of its 64, its tail one slot behind its
+ * head. receive_most_held says how many it fills before the stack releases one, so that the stack knows when the
+ * frames it holds leave the card nowhere to receive.
+ *
  * Per frame, the stack touches nothing but generic fields: a buffer at a base plus the slot times a stride,
  * a length at a stride in the card's own receive descriptors, and one word at a stride in its transmit
  * descriptors, written as a length or'ed with the card's command template. Per batch, the card's own
@@ -61,6 +65,7 @@ extern "C" {
  */
 typedef struct KernelNetworkQueue {
     KernelSpscRing_t *receive;                /**< Frames received: the card's harvest produces, the stack consumes. */
+    uint32_t receive_most_held;               /**< Frames it publishes unreleased at most, 1 to the ring's slots. */
     const uint8_t *receive_buffers;           /**< Slot s's frame starts at receive_buffers + s * buffer_bytes. */
     const volatile uint16_t *receive_lengths; /**< Slot s's length is receive_lengths[s * receive_length_stride]. */
     uint32_t receive_length_stride;           /**< uint16_t between two slots' lengths. */

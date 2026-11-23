@@ -778,7 +778,7 @@ uint32_t e1000_receive_harvest(void)
 
     KernelSpscRing_t *const ring = &e1000_receive_side.ring;
     const uint32_t write_index = ring->producer.write_index;
-    const uint32_t room = e1000_receive_given_back + (E1000_RECEIVE_DESCRIPTORS - 1u) - write_index;
+    const uint32_t room = e1000_receive_given_back + E1000_RECEIVE_MOST_HELD - write_index;
     const uint32_t first_slot = write_index & (E1000_RECEIVE_DESCRIPTORS - 1u);
     const uint32_t until_wrap = E1000_RECEIVE_DESCRIPTORS - first_slot;
     uint32_t arrived = e1000_take_received(first_slot, room < until_wrap ? room : until_wrap);
@@ -833,6 +833,7 @@ KernelNetworkDevice_t *e1000_network_device(void)
         return NULL;
     e1000_device_queue =
         (KernelNetworkQueue_t){.receive = &e1000_receive_side.ring,
+                               .receive_most_held = E1000_RECEIVE_MOST_HELD,
                                .receive_buffers = e1000_receive_buffers,
                                .receive_lengths = &e1000_receive_ring[0].length,
                                .receive_length_stride = sizeof(E1000ReceiveDescriptor_t) / sizeof(uint16_t),

@@ -120,6 +120,7 @@ static void network_fake_set_up_card(uint32_t frame_least_bytes)
     (void) kernel_spsc_ring_initialize(&network_fake_card.receive, NETWORK_FAKE_SLOTS);
     (void) kernel_spsc_ring_initialize(&network_fake_card.transmit, NETWORK_FAKE_SLOTS);
     network_fake_queue = (KernelNetworkQueue_t){.receive = &network_fake_card.receive,
+                                                .receive_most_held = NETWORK_FAKE_SLOTS,
                                                 .receive_buffers = &network_fake_card.receive_buffers[0][0],
                                                 .receive_lengths = network_fake_card.receive_lengths,
                                                 .receive_length_stride = 1u,
@@ -947,7 +948,8 @@ KERNEL_TEST(frames_the_interface_does_not_take_are_counted_by_their_cause)
 
 /**
  * @brief An interface refuses to set up on no card, on a card without a queue or an operation, on frame bounds out of
- *        order, and on a card whose station is a group's, each refusal by its cause.
+ *        order, on a card whose station is a group's, and on one that says it fills no receive slot or more than
+ *        its ring has, each refusal by its cause.
  */
 KERNEL_TEST(an_interface_refuses_a_card_by_its_cause)
 {
@@ -1000,6 +1002,17 @@ KERNEL_TEST(an_interface_refuses_a_card_by_its_cause)
                           KERNEL_NETWORK_INTERFACE_GROUP_STATION,
                       "or a multicast group's");
     memcpy(network_fake_device.address, network_fake_own_station, 6u);
+    network_fake_queue.receive_most_held = 0u;
+    kernel_test_check(test,
+                      kernel_network_interface_initialize(&interface, &network_fake_device, &config) ==
+                          KERNEL_NETWORK_INTERFACE_BAD_RECEIVE_HELD,
+                      "a card that fills none of its receive slots");
+    network_fake_queue.receive_most_held = NETWORK_FAKE_SLOTS + 1u;
+    kernel_test_check(test,
+                      kernel_network_interface_initialize(&interface, &network_fake_device, &config) ==
+                          KERNEL_NETWORK_INTERFACE_BAD_RECEIVE_HELD,
+                      "or more than its receive ring has");
+    network_fake_queue.receive_most_held = NETWORK_FAKE_SLOTS;
     kernel_test_check(test,
                       kernel_network_interface_initialize(&interface, &network_fake_device, &config) ==
                           KERNEL_NETWORK_INTERFACE_READY,
@@ -1742,6 +1755,7 @@ static const KernelNetworkDeviceOperations_t network_fake_big_operations = {.har
 KERNEL_TEST(a_datagram_past_the_lent_places_is_dropped_and_counted)
 {
     KernelNetworkQueue_t queue = {.receive = &network_fake_big_receive,
+                                  .receive_most_held = NETWORK_FAKE_BIG_SLOTS,
                                   .receive_buffers = &network_fake_big_buffers[0][0],
                                   .receive_lengths = network_fake_big_lengths,
                                   .receive_length_stride = 1u,

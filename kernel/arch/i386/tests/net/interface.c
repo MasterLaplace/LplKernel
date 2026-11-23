@@ -38,6 +38,8 @@
 #define NETWORK_INTERFACE_TEST_FNV_OFFSET       0x811C9DC5u /**< FNV-1a's offset basis. */
 #define NETWORK_INTERFACE_TEST_FNV_PRIME        0x01000193u /**< FNV-1a's prime. */
 
+#define NETWORK_INTERFACE_TEST_RECEIVE_HELD (E1000_RECEIVE_DESCRIPTORS - 1u) /**< Slots the 8254x fills (§3.2.6). */
+
 static KernelNetworkInterface_t network_interface_test;
 
 /**
@@ -416,6 +418,37 @@ static void network_interface_test_fill_with_datagrams(KernelNetworkDevice_t *de
 }
 
 /**
+ * @brief Sends @p frames datagrams of 18 bytes, already written in the transmit buffers, through the loopback, and
+ *        polls the interface at times after @p now until it holds them all lent, releasing none, or until
+ *        NETWORK_INTERFACE_TEST_MICROSECONDS passed.
+ *
+ * @return The datagrams the interface holds lent.
+ */
+static uint32_t network_interface_test_lend_unreleased(KernelNetworkDevice_t *device, uint32_t frames, uint32_t *now)
+{
+    KernelNetworkQueue_t *const queue = &device->queues[0];
+    InterruptRequestDeadline_t deadline;
+    uint32_t sent = 0u;
+
+    interrupt_request_deadline_start(&deadline, NETWORK_INTERFACE_TEST_MICROSECONDS);
+    while (kernel_network_interface_lent_count(&network_interface_test) < frames &&
+           !interrupt_request_deadline_passed(&deadline))
+    {
+        uint32_t first_slot = 0u;
+        const uint32_t reserved = kernel_spsc_ring_reserve(queue->transmit, frames - sent, &first_slot);
+
+        for (uint32_t frame = 0u; frame < reserved; ++frame)
+            (void) kernel_network_transmit_describe(device, queue, first_slot + frame,
+                                                    NETWORK_INTERFACE_TEST_FRAME_BYTES);
+        kernel_spsc_ring_publish(queue->transmit, reserved);
+        sent += reserved;
+        (void) kernel_network_interface_poll(&network_interface_test, ++*now);
+        network_interface_test_wait_a_little();
+    }
+    return kernel_network_interface_lent_count(&network_interface_test);
+}
+
+/**
  * @brief Bounces @p frames datagrams of 18 bytes, already written in the transmit buffers, into the interface's lent
  *        port 9000 through the loopback, in publishes of at most @p batch: the poll takes each, Ethernet, IPv4 and
  *        UDP checked and its payload summed, lends it, and the loop reads and releases what it lent.
@@ -708,6 +741,45 @@ KERNEL_TEST(the_interface_lends_a_datagram_and_echoes_it_on_its_own_sum)
     kernel_test_check(test, echoed, "and its echo comes back from port 9000, its checksum sound");
     kernel_test_check(test, network_interface_test.counters.checksums_computed == 0u,
                       "on the sum it arrived with, the payload not summed again");
+}
+
+/**
+ * @brief Through the loopback, 63 datagrams lent and not released hold every receive slot the e1000 fills, its tail
+ *        one slot behind its head: each poll that ends with them all held is counted, as the card counts its ring
+ *        full, and a poll after one of them is released is not.
+ */
+KERNEL_TEST(lent_datagrams_holding_every_slot_the_e1000_fills_are_counted_a_poll)
+{
+    if (!network_interface_test_bring_up(test, NETWORK_INTERFACE_TEST_ADDRESS, true) ||
+        !kernel_test_check(test, network_interface_test_bind_lent(NETWORK_INTERFACE_TEST_GAME_PORT),
+                           "port 9000 binds lent"))
+        return;
+
+    KernelNetworkDevice_t *const device = network_interface_test.device;
+    const uint32_t *const held_full = &network_interface_test.counters.receive_held_full;
+    uint32_t now = 0u;
+
+    network_interface_test_fill_with_datagrams(device);
+    if (!kernel_test_check(test, network_interface_test_wait_for_the_loopback(device), "the loopback carries frames"))
+        return;
+
+    const uint32_t full_before = e1000_counters()->receive_ring_full_harvests;
+    const uint32_t lent = network_interface_test_lend_unreleased(device, NETWORK_INTERFACE_TEST_RECEIVE_HELD, &now);
+
+    (void) kernel_network_interface_poll(&network_interface_test, ++now);
+    kernel_test_check(test, lent == NETWORK_INTERFACE_TEST_RECEIVE_HELD, "63 datagrams are lent, none released");
+    kernel_test_check(test, *held_full == 2u,
+                      "the poll that lent the 63rd and the next both end with every slot the card fills held");
+    kernel_test_check(test, e1000_counters()->receive_ring_full_harvests > full_before,
+                      "as the card counts its ring full");
+    (void) kernel_network_interface_release_lent(&network_interface_test, 1u);
+    (void) kernel_network_interface_poll(&network_interface_test, ++now);
+    kernel_test_check(test, *held_full == 2u, "one released gives its slot back, and the next poll is not counted");
+    (void) kernel_network_interface_release_lent(&network_interface_test,
+                                                 kernel_network_interface_lent_count(&network_interface_test));
+    (void) kernel_network_interface_poll(&network_interface_test, ++now);
+    kernel_test_check(test, kernel_spsc_ring_size(device->queues[0].receive) == 0u,
+                      "and releasing them all gives the card every slot back");
 }
 
 /**

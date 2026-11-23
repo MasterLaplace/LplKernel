@@ -148,7 +148,7 @@ typedef struct KernelNetworkInterfaceCounters {
     uint32_t sends[KERNEL_NETWORK_INTERFACE_SEND_RESULTS];                 /**< Datagrams sent or refused, by result. */
     uint32_t checksums_computed; /**< Payloads the interface summed, given no sum. */
     uint32_t datagrams_common;   /**< Datagrams lent by the common datagram's path, of all those lent. */
-    uint32_t receive_held_full;  /**< Polls that ended with lent datagrams holding every receive slot. */
+    uint32_t receive_held_full;  /**< Polls that ended with lent datagrams holding every slot the card fills. */
 } KernelNetworkInterfaceCounters_t;
 
 /**
@@ -283,6 +283,7 @@ typedef enum KernelNetworkInterfaceSetup {
     KERNEL_NETWORK_INTERFACE_NO_OPERATIONS,    /**< One of the card's operations missing. */
     KERNEL_NETWORK_INTERFACE_BAD_FRAME_BOUNDS, /**< Not frame_least <= frame_most <= buffer_bytes, 60 <= frame_most. */
     KERNEL_NETWORK_INTERFACE_GROUP_STATION,    /**< A card whose station is a group's, which no frame comes from. */
+    KERNEL_NETWORK_INTERFACE_BAD_RECEIVE_HELD, /**< A receive_most_held of 0, or past its receive ring's slots. */
 } KernelNetworkInterfaceSetup_t;
 
 /**
