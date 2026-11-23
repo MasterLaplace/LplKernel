@@ -670,6 +670,27 @@ static void tickless_record_a_sleep(const KernelWakePlan_t *plan, uint64_t now, 
     ++tickless_sleeps_recorded;
 }
 
+#if defined(LPL_KERNEL_ENABLE_SMOKE_TESTS)
+static uint64_t tickless_choice_hold_cycles = 0u;
+
+/**
+ * @brief Spins the hold a debug kernel's test asked of the next depth choice, then forgets it.
+ */
+static void tickless_hold_the_choice_when_asked(void)
+{
+    const uint64_t hold = tickless_choice_hold_cycles;
+
+    tickless_choice_hold_cycles = 0u;
+    for (const uint64_t until = asmutils_read_timestamp_counter() + hold; asmutils_read_timestamp_counter() < until;)
+        asmutils_pause();
+}
+#else
+/**
+ * @brief Holds nothing: only a debug kernel's tests hold a depth choice.
+ */
+static inline void tickless_hold_the_choice_when_asked(void) {}
+#endif
+
 /**
  * @brief The depth a sleep on @p plan from @p now enters under @p ceiling, the depth sleeps enter: the cheapest by
  *        measured costs, or the rule's (kernel_sleep_cost_choose), counted by which decided; @p ceiling when no depth
@@ -680,6 +701,7 @@ static uint32_t tickless_choose_a_depth(const KernelWakePlan_t *plan, uint32_t c
     KernelSleepCostCandidate_t candidates[PROCESSOR_SLEEP_DEPTHS];
     bool by_cost = false;
 
+    tickless_hold_the_choice_when_asked();
     for (uint32_t depth = PROCESSOR_SLEEP_DEPTH_C1; depth <= ceiling; ++depth)
         tickless_describe_a_candidate(plan, depth, ceiling, now, &candidates[depth]);
     const uint32_t chosen = kernel_sleep_cost_choose(candidates, ceiling + 1u, &by_cost);
@@ -886,5 +908,10 @@ void kernel_tickless_debug_exchange_depth_estimate(uint32_t depth, KernelWakeLat
     tickless_wake_latency[depth] = *estimate;
     *estimate = taken;
     tickless_probed_depths &= ~(1u << depth);
+}
+
+void kernel_tickless_debug_hold_the_next_depth_choice(uint32_t microseconds)
+{
+    tickless_choice_hold_cycles = kernel_tickless_cycles_from_microseconds(microseconds);
 }
 #endif

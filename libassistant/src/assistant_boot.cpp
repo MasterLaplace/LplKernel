@@ -9,6 +9,7 @@
 #include <lpl/infer/ModelImage.hpp>
 #include <lpl/infer/Parity.hpp>
 #include <lpl/infer/Tokenizer.hpp>
+#include <lpl/infer/Vocab.hpp>
 
 #include <new>
 #include <stdckdint.h>
@@ -77,6 +78,7 @@ WeightsOrigin gOrigin = WeightsOrigin::None;
 const char *gTable = "none";
 const char *gReading = "none";
 lpl::core::u32 gProtectedPages = 0u;
+lpl::core::u32 gIndexFallbacks = KERNEL_MODEL_SLOT_NOT_COUNTED;
 
 /**
  * @brief Tokens one reply may cost.
@@ -322,6 +324,8 @@ extern "C" const char *libassistant_model_reading(void) { return gReading; }
 
 extern "C" uint32_t libassistant_model_protected_pages(void) { return gProtectedPages; }
 
+extern "C" uint32_t libassistant_model_index_fallbacks(void) { return gIndexFallbacks; }
+
 extern "C" bool libassistant_boot_from_slot(size_t arena_bytes, const ModelSlot_t *slot)
 {
     gMind = nullptr;
@@ -331,8 +335,11 @@ extern "C" bool libassistant_boot_from_slot(size_t arena_bytes, const ModelSlot_
     gReading = "none";
     gProtectedPages = 0u;
 
+    const lpl::core::u32 fallbacksBefore = lpl::infer::vocabularySortFallbacks();
     const bool booted = bringTheMindUp(arena_bytes != 0u ? arena_bytes : libassistant_recommended_arena_bytes());
-    kernel_model_slot_report(&gSlot, libassistant_model_origin(), gTable, gReading, gProtectedPages, booted);
+    gIndexFallbacks = kernel_model_slot_index_fallbacks(fallbacksBefore, lpl::infer::vocabularySortFallbacks(), booted);
+    kernel_model_slot_report(&gSlot, libassistant_model_origin(), gTable, gReading, gProtectedPages, gIndexFallbacks,
+                             booted);
     return booted;
 }
 

@@ -71,8 +71,17 @@ uint32_t kernel_model_slot_protect(const ModelSlot_t *slot)
 #endif
 }
 
+uint32_t kernel_model_slot_index_fallbacks(uint32_t before, uint32_t after, bool booted)
+{
+    const uint32_t gained = after - before;
+
+    if (gained == 0u && !booted)
+        return KERNEL_MODEL_SLOT_NOT_COUNTED;
+    return gained;
+}
+
 void kernel_model_slot_report(const ModelSlot_t *slot, const char *origin, const char *table, const char *reading,
-                              uint32_t protected_pages, bool booted)
+                              uint32_t protected_pages, uint32_t index_fallbacks, bool booted)
 {
     kernel_telemetry_begin_record(&com1, "model");
     kernel_telemetry_write_text("slot", kernel_model_slot_state_text(slot));
@@ -82,6 +91,10 @@ void kernel_model_slot_report(const ModelSlot_t *slot, const char *origin, const
     kernel_telemetry_write_text("reading", reading);
     kernel_telemetry_write_unsigned("image_bytes", slot != NULL ? slot->size : 0u);
     kernel_telemetry_write_unsigned("protected_pages", protected_pages);
+    if (index_fallbacks == KERNEL_MODEL_SLOT_NOT_COUNTED)
+        kernel_telemetry_write_text("index_fallbacks", "none");
+    else
+        kernel_telemetry_write_unsigned("index_fallbacks", index_fallbacks);
     kernel_telemetry_end_record();
 }
 

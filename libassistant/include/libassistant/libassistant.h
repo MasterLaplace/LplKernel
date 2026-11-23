@@ -134,6 +134,14 @@ extern const char *libassistant_model_reading(void);
 extern uint32_t libassistant_model_protected_pages(void);
 
 /**
+ * @brief Runs the index sort of the last boot's vocabulary had no room to keep, and finished by comparing: the order
+ *        is the same, the sort only slower, and a count above 0 says that a bound of the sort no longer holds.
+ * @return The count, the one the `[LPLTLM] model` record gives; KERNEL_MODEL_SLOT_NOT_COUNTED before the first boot,
+ *         and after a boot that brought no mind up and counted none.
+ */
+extern uint32_t libassistant_model_index_fallbacks(void);
+
+/**
  * @brief Drops the live mind without releasing the region.
  *
  * Anything that re-carves the arena has to call this first. A mind whose weights
@@ -156,7 +164,7 @@ extern const char *libassistant_model_slot_state(void);
 
 /**
  * @brief Judges a loaded slot's image by the reader's own check (lpl/infer/ModelImage.hpp): an image whose header
- *        or table does not hold up, or that is not of version 2, makes the slot malformed.
+ *        or table does not hold up, or whose version is not the one the reader knows, makes the slot malformed.
  * @param slot A probed slot; one not loaded is left as it is.
  * @return NULL when the slot is left as it was, the name of the refusal otherwise.
  */
