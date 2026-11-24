@@ -248,8 +248,8 @@ rule_end()
 -- ===========================================================================
 if LPLPLUGIN_AVAILABLE then
 -- The LplPlugin modules the kernel compiles against: their headers, and their engine tests, as
--- ENGINE_MODULES in libengine/Makefile. net/ is here for the header-only lpl/net/Endpoint.hpp
--- alone, which EventQueue.hpp needs.
+-- ENGINE_MODULES in libengine/Makefile. net/ is here for its header-only part: lpl/net/Endpoint.hpp,
+-- which EventQueue.hpp needs, and the bit writer and reader of lpl/net/protocol, which tests/net/ checks.
 local kEngineModules = {
     "core", "testing", "math", "memory", "container", "ecs", "concurrency", "physics", "platform", "input", "net",
     "gpu", "image", "scene", "render", "engine", "procgen", "codec", "rosetta", "history", "ai", "ecology", "pack",
