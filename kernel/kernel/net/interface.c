@@ -676,6 +676,7 @@ KernelNetworkInterfaceSetup_t kernel_network_interface_initialize(KernelNetworkI
         (config->address >> 16) + (config->address & 0xFFFFu) + KERNEL_INTERNET_PROTOCOL_USER_DATAGRAM;
     interface->subnet = kernel_internet_protocol_subnet(config->address, config->netmask);
     interface->payload_most_bytes = device->frame_most_bytes - KERNEL_NETWORK_INTERFACE_HEADERS_BYTES;
+    interface->receive_most_held = device->queues->receive_most_held;
     interface->wire.subnet.address = kernel_network_interface_as_loaded_32(interface->subnet.address);
     interface->wire.subnet.network = kernel_network_interface_as_loaded_32(interface->subnet.network);
     interface->wire.subnet.broadcast = kernel_network_interface_as_loaded_32(interface->subnet.broadcast);
@@ -722,7 +723,7 @@ uint32_t kernel_network_interface_poll(KernelNetworkInterface_t *interface, uint
     interface->counters.datagrams_common += common;
     interface->receive_taken = ready;
     kernel_network_interface_give_back(interface);
-    if (interface->receive_taken == queue.receive_most_held)
+    if (interface->receive_taken == interface->receive_most_held)
         ++interface->counters.receive_held_full;
     (void) card.operations->kick(device, 0u);
     return ready - first;
