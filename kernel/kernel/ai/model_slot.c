@@ -8,8 +8,29 @@
 
 #include <stdckdint.h>
 
-/** Smallest image that can carry a header at all: an image's header (lpl/infer/ModelImage.hpp). */
-#define KERNEL_MODEL_SLOT_MINIMUM_BYTES 64u
+/** Bytes the probe reads, the magic's: the header and all past it are judged by the reader that knows the layout. */
+#define KERNEL_MODEL_SLOT_MAGIC_BYTES 4u
+
+bool kernel_model_slot_judge_magic(const uint8_t *bytes, uint32_t size, ModelSlot_t *out)
+{
+    if (out == NULL)
+        return false;
+
+    out->bytes = bytes;
+    out->size = size;
+    out->magic = 0u;
+    out->state = MODEL_SLOT_MALFORMED;
+    if (size < KERNEL_MODEL_SLOT_MAGIC_BYTES)
+        return false;
+
+    out->magic =
+        (uint32_t) bytes[0] | ((uint32_t) bytes[1] << 8) | ((uint32_t) bytes[2] << 16) | ((uint32_t) bytes[3] << 24);
+    if (out->magic != KERNEL_MODEL_SLOT_MAGIC)
+        return false;
+
+    out->state = MODEL_SLOT_LOADED;
+    return true;
+}
 
 bool kernel_model_slot_probe(ModelSlot_t *out)
 {
@@ -33,24 +54,7 @@ bool kernel_model_slot_probe(ModelSlot_t *out)
         return false;
     }
 
-    out->bytes = bytes;
-    if (size < KERNEL_MODEL_SLOT_MINIMUM_BYTES)
-    {
-        out->state = MODEL_SLOT_MALFORMED;
-        return false;
-    }
-
-    out->magic =
-        (uint32_t) bytes[0] | ((uint32_t) bytes[1] << 8) | ((uint32_t) bytes[2] << 16) | ((uint32_t) bytes[3] << 24);
-
-    if (out->magic != KERNEL_MODEL_SLOT_MAGIC)
-    {
-        out->state = MODEL_SLOT_MALFORMED;
-        return false;
-    }
-
-    out->state = MODEL_SLOT_LOADED;
-    return true;
+    return kernel_model_slot_judge_magic(bytes, size, out);
 }
 
 uint32_t kernel_model_slot_protect(const ModelSlot_t *slot)
