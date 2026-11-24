@@ -3,11 +3,13 @@
 # made-up tokens, on a debug server kernel (./build.sh --server) built with the siblings of DEPENDENCIES.lock, the test
 # alone selected. The radix sort of the tokens' bytes holds it (LplAssistant#99); the insertion sort it replaced
 # counted 81,857,478,043 instructions there, so a sort that turns quadratic again passes the budget a thousand times
-# over. Checked by tools/instructions.sh --budget tools/budgets/vocabulary-borrow.debug.budget kernel/lpl.kernel; a
-# pull request that moves the lock records the new counts.
+# over. Locking LplAssistant at its ranked merges (#908) added 450,118 instructions, Vocab::borrow's pass that finds
+# the longest token (LplAssistant#114): Vocab::borrow counts 700,063 of them for the hundred thousand tokens.
+# Checked by tools/instructions.sh --budget tools/budgets/vocabulary-borrow.debug.budget kernel/lpl.kernel; a pull
+# request that moves the lock records the new counts.
 inside=lpl::infer::Vocab::borrow
 times=1
 append=lpl.test=vocabulary.a_hundred_thousand_made_up_tokens_are_found_where_today_s_order_puts_them
-instructions=39539145
-accesses=22176534
+instructions=39989263
+accesses=22276599
 tolerance=1

@@ -11,6 +11,7 @@ namespace {
 constexpr lpl::core::u32 kHeaderAlignmentWord = 12u;
 constexpr lpl::core::u32 kHeaderVersionByte = 4u;
 constexpr lpl::core::u32 kImageVersion = 1u;
+constexpr lpl::core::u32 kPastTheMagicBytes = 10u; ///< A module that holds the magic and no whole header.
 
 [[nodiscard]] bool sameText(const char *lhs, const char *rhs)
 {
@@ -85,6 +86,11 @@ LPL_TEST(the_slot_judges_its_image_by_the_reader_s_check)
                "a version 2, as LplAssistant 0.4.0 and 0.5.0 wrote, makes it malformed as an unknown version");
     test.check(sameText(version3Refusal, "unknown_version") && version3.state == MODEL_SLOT_MALFORMED,
                "and so does a version 3");
+
+    ModelSlot_t truncated = loadedSlot(image, kPastTheMagicBytes);
+    const char *const truncatedRefusal = libassistant_judge_model_slot(&truncated);
+    test.check(sameText(truncatedRefusal, "too_short") && truncated.state == MODEL_SLOT_MALFORMED,
+               "10 bytes past the magic make it malformed as too short, by the reader that knows the header");
 
     ModelSlot_t empty{};
     test.check(libassistant_judge_model_slot(&empty) == nullptr && empty.state == MODEL_SLOT_EMPTY,

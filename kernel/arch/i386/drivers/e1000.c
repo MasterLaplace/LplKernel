@@ -628,6 +628,45 @@ static void e1000_give_back_received(void)
     e1000_write_register(E1000_REGISTER_RECEIVE_TAIL, (read_index - 1u) & (E1000_RECEIVE_DESCRIPTORS - 1u));
 }
 
+/**
+ * @brief The network device's harvest: the receive ring's.
+ */
+static uint32_t e1000_device_harvest(KernelNetworkDevice_t *device, uint32_t queue)
+{
+    (void) device;
+    (void) queue;
+    return e1000_receive_harvest();
+}
+
+/**
+ * @brief The network device's kick: the transmit ring's.
+ */
+static uint32_t e1000_device_kick(KernelNetworkDevice_t *device, uint32_t queue)
+{
+    (void) device;
+    (void) queue;
+    return e1000_transmit_kick();
+}
+
+/**
+ * @brief The network device's link: STATUS.LU.
+ */
+static bool e1000_device_link_up(KernelNetworkDevice_t *device)
+{
+    (void) device;
+    return e1000_link_up();
+}
+
+static const KernelNetworkDeviceOperations_t e1000_device_operations = {.harvest = e1000_device_harvest,
+                                                                        .kick = e1000_device_kick,
+                                                                        .link_up = e1000_device_link_up};
+static KernelNetworkQueue_t e1000_device_queue;
+static KernelNetworkDevice_t e1000_device;
+
+_Static_assert(sizeof(E1000ReceiveDescriptor_t) % sizeof(uint16_t) == 0u &&
+                   sizeof(E1000TransmitDescriptor_t) % sizeof(uint32_t) == 0u,
+               "a descriptor's length and command word sit at a whole stride");
+
 bool e1000_initialize(void)
 {
     const PeripheralComponentInterconnectDevice_t *const device = peripheral_component_interconnect_find_by_identifiers(
@@ -739,7 +778,7 @@ uint32_t e1000_receive_harvest(void)
 
     KernelSpscRing_t *const ring = &e1000_receive_side.ring;
     const uint32_t write_index = ring->producer.write_index;
-    const uint32_t room = e1000_receive_given_back + (E1000_RECEIVE_DESCRIPTORS - 1u) - write_index;
+    const uint32_t room = e1000_receive_given_back + E1000_RECEIVE_MOST_HELD - write_index;
     const uint32_t first_slot = write_index & (E1000_RECEIVE_DESCRIPTORS - 1u);
     const uint32_t until_wrap = E1000_RECEIVE_DESCRIPTORS - first_slot;
     uint32_t arrived = e1000_take_received(first_slot, room < until_wrap ? room : until_wrap);
@@ -786,6 +825,32 @@ uint32_t e1000_transmit_kick(void)
     ++e1000_counted.transmit_doorbells;
     e1000_write_register(E1000_REGISTER_TRANSMIT_TAIL, tail & (E1000_TRANSMIT_DESCRIPTORS - 1u));
     return handed;
+}
+
+KernelNetworkDevice_t *e1000_network_device(void)
+{
+    if (!e1000_found.controller_ready)
+        return NULL;
+    e1000_device_queue =
+        (KernelNetworkQueue_t){.receive = &e1000_receive_side.ring,
+                               .receive_most_held = E1000_RECEIVE_MOST_HELD,
+                               .receive_buffers = e1000_receive_buffers,
+                               .receive_lengths = &e1000_receive_ring[0].length,
+                               .receive_length_stride = sizeof(E1000ReceiveDescriptor_t) / sizeof(uint16_t),
+                               .transmit = &e1000_transmit_side.ring,
+                               .transmit_buffers = e1000_transmit_buffers,
+                               .transmit_words = &e1000_transmit_ring[0].length_and_command,
+                               .transmit_word_stride = sizeof(E1000TransmitDescriptor_t) / sizeof(uint32_t),
+                               .transmit_command = E1000_TRANSMIT_FRAME_COMMAND};
+    e1000_device = (KernelNetworkDevice_t){.name = "e1000",
+                                           .buffer_bytes = E1000_BUFFER_BYTES,
+                                           .frame_least_bytes = E1000_FRAME_LEAST_BYTES,
+                                           .frame_most_bytes = E1000_FRAME_MOST_BYTES,
+                                           .queue_count = 1u,
+                                           .queues = &e1000_device_queue,
+                                           .operations = &e1000_device_operations};
+    memcpy(e1000_device.address, e1000_found.address, E1000_ADDRESS_BYTES);
+    return &e1000_device;
 }
 
 const E1000Counters_t *e1000_counters(void)

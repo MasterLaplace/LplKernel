@@ -270,16 +270,17 @@ bool bringTheMindUp(size_t arena_bytes)
     gMind = new (gMindStorage) MindState{kernel_tensor_arena_base(), kernel_tensor_arena_size()};
     lpl::core::u32 phraseCount = 0u;
     const char *const *phrases = lpl::infer::parityGrammarPhrases(phraseCount);
-    const bool ready = ((loaded && takeModule(placement)) || takeSeed()) &&
-                       gMind->grammar.build(gMind->arena, phrases, phraseCount) &&
-                       gMind->inference.initialise(gMind->arena, gMind->model, lpl::infer::CachePolicy::Refuse);
+    const bool ready =
+        ((loaded && takeModule(placement)) || takeSeed()) &&
+        gMind->tokenizer.bind(gMind->arena, gMind->vocab, gMind->model.merges(), gMind->model.preTokenizer()) &&
+        gMind->grammar.build(gMind->arena, phrases, phraseCount) &&
+        gMind->inference.initialise(gMind->arena, gMind->model, lpl::infer::CachePolicy::Refuse);
     if (!ready)
     {
         gMind = nullptr;
         return false;
     }
 
-    gMind->tokenizer = lpl::infer::Tokenizer{gMind->vocab};
     kernel_tensor_arena_record_used(gMind->arena.used());
     kernel_dialogue_channel_reset();
     kernel_inference_budget_open(kReplyTokenBudget);

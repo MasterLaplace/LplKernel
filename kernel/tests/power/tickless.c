@@ -36,6 +36,9 @@ KERNEL_TEST_SUITE(tickless, KERNEL_TEST_STAGE_BOOTED);
 #define TICKLESS_TEST_DEADLINE_MICROSECONDS 2000u /**< How far each is from the sleep before it. */
 /** @} */
 
+/** How long the deadline test holds its control deadline between its arming and its sleep: past the deadline. */
+#define TICKLESS_TEST_HELD_DEADLINE_MICROSECONDS (2u * TICKLESS_TEST_DEADLINE_MICROSECONDS)
+
 /** @name Deadlines closer than arming the timer takes, the window of #300
  *  @{ */
 #define TICKLESS_TEST_CLOSE_DEADLINES        64u  /**< How many. */
@@ -247,12 +250,85 @@ KERNEL_TEST(the_reconciler_pass_goes_on_with_the_tick_stopped)
     kernel_test_measure(test, "period_cycles_low", (uint32_t) period);
 }
 
+/** How long the window-due test holds a sleep's depth choice: past its window's close, whenever the sleep began. */
+#define TICKLESS_TEST_HELD_CHOICE_MICROSECONDS                                                                         \
+    (2u * (TICKLESS_TEST_WINDOW_OPENS_MICROSECONDS + TICKLESS_TEST_WINDOW_MICROSECONDS))
+
+/**
+ * @struct TicklessTestHeldChoice_t
+ * @brief What one sleep on the plan, its depth choice held, counted and served.
+ */
+typedef struct {
+    bool chose;                /**< The depth it entered had learned a wake-up, so that the sleep chose a depth. */
+    bool served;               /**< The sleep served the test's duty. */
+    uint32_t slept;            /**< The microseconds it counted asleep. */
+    uint32_t served_to_return; /**< The microseconds from the cycle it served the duty at to its return. */
+} TicklessTestHeldChoice_t;
+
+/**
+ * @brief A copy of the estimate sleeps at @p depth arm with, taken out through the debug seam and put back at once.
+ *
+ * @details The seam also forgets that the depth was probed since the tick stopped, which only a depth that learned
+ *          nothing consults: a copy of a learned estimate changes nothing else.
+ *
+ * @param depth The depth.
+ * @return The copy.
+ */
+static KernelWakeLatency_t tickless_test_estimate_at(uint32_t depth)
+{
+    KernelWakeLatency_t taken = {0};
+
+    kernel_tickless_debug_exchange_depth_estimate(depth, &taken);
+    const KernelWakeLatency_t estimate = taken;
+    kernel_tickless_debug_exchange_depth_estimate(depth, &taken);
+    return estimate;
+}
+
+/**
+ * @brief Arms the test's duty for a window as wide as the window-due test's, holds the next depth choice past its
+ *        close, and sleeps on the plan once; then gives the depth back the estimate it had, since the timer, armed on
+ *        a deadline the hold let pass, would otherwise leave the rest of the boot a lead taught by the hold.
+ * @param duty The test's duty.
+ * @return What the sleep counted and served.
+ */
+static TicklessTestHeldChoice_t tickless_test_sleep_with_the_choice_held(uint32_t duty)
+{
+    const uint32_t runs = tickless_test_runs;
+    const uint32_t depth = kernel_processor_sleep_depth();
+    KernelWakeLatency_t estimate = tickless_test_estimate_at(depth);
+    const uint64_t earliest = asmutils_read_timestamp_counter() +
+                              kernel_tickless_cycles_from_microseconds(TICKLESS_TEST_WINDOW_OPENS_MICROSECONDS);
+
+    (void) kernel_wake_planner_arm(&tickless_test_plan, duty, earliest,
+                                   earliest +
+                                       kernel_tickless_cycles_from_microseconds(TICKLESS_TEST_WINDOW_MICROSECONDS));
+    kernel_tickless_debug_hold_the_next_depth_choice(TICKLESS_TEST_HELD_CHOICE_MICROSECONDS);
+    const uint32_t slept = kernel_tickless_sleep_on(&tickless_test_plan);
+    const uint64_t returned = asmutils_read_timestamp_counter();
+    kernel_tickless_debug_hold_the_next_depth_choice(0u);
+    const bool chose = estimate.samples != 0u;
+    kernel_tickless_debug_exchange_depth_estimate(depth, &estimate);
+
+    const bool served = tickless_test_runs == runs + 1u;
+    return (TicklessTestHeldChoice_t){
+        chose, served, slept, served ? kernel_tickless_microseconds_from_cycles(returned - tickless_test_instant) : 0u};
+}
+
 /**
  * @brief A sleep on a plan, with the tick stopped, serves its duty once its window has opened, at the cycle the
  *        core woke: a lead before its latest, and when the latency passed the lead, the plan's overshoot holds how
- *        late. The time counted asleep is at least the time from the first sleep to the window's earliest, each sleep
- *        rounding down a microsecond at most: the lead can bring the wake-up as early as that earliest, and the test's
- *        own arming, before the sleep, is not slept.
+ *        late; the time it counts asleep stays within the window and its lateness. A sleep counts from before it
+ *        chooses its depth: one whose choice is held past its window's close, as TCG's first translation of the choice
+ *        may take (#299), counts the hold asleep, or, when its window was due before it began, serves the duty at the
+ *        cycle it began, once the held choice is made; either way the hold lies between the start of the count and the
+ *        sleep's return.
+ *
+ * @details The start of the count is not read against the test's own reading of the counter before the sleep: on a
+ *          loaded host the processor may be held for milliseconds between the two, and a lead learned on that host may
+ *          plan the wake-up on the window's earliest, leaving no margin (#879). The held choice makes the start
+ *          observable whatever the host does: the hold lies whole in one of two durations, the microseconds the sleep
+ *          counted or those from its service to its return, whose conversion to microseconds rounds down by one at
+ *          most. The control: the depth the held sleep enters learned a wake-up, without which no depth is chosen.
  */
 KERNEL_TEST(a_sleep_on_the_plan_serves_its_duty_when_its_window_is_due)
 {
@@ -268,37 +344,43 @@ KERNEL_TEST(a_sleep_on_the_plan_serves_its_duty_when_its_window_is_due)
 
     uint32_t sleeps = 0u;
     uint32_t slept = 0u;
-    const uint64_t asleep = asmutils_read_timestamp_counter();
     while (tickless_test_runs == 0u && sleeps < TICKLESS_TEST_SLEEPS)
     {
         slept += kernel_tickless_sleep_on(&tickless_test_plan);
         ++sleeps;
     }
+    const uint32_t runs = tickless_test_runs;
+    const uint64_t instant = tickless_test_instant;
+    const uint32_t late_services = tickless_test_plan.late_services;
+    const uint64_t overshoot = tickless_test_plan.latest_overshoot;
+    const TicklessTestHeldChoice_t held =
+        stopped ? tickless_test_sleep_with_the_choice_held(duty) : (TicklessTestHeldChoice_t){false, false, 0u, 0u};
     kernel_tickless_disable();
 
     const uint64_t lateness = kernel_tickless_cycles_from_microseconds(TICKLESS_TEST_LATENESS_MICROSECONDS);
     kernel_test_check(test, stopped, "the tick stops");
-    kernel_test_check(test, tickless_test_runs == 1u, "the duty is served once");
-    kernel_test_check(test, tickless_test_instant >= earliest && tickless_test_instant <= latest + lateness,
+    kernel_test_check(test, runs == 1u, "the duty is served once");
+    kernel_test_check(test, instant >= earliest && instant <= latest + lateness,
                       "once its window has opened, and soon after it closed");
     kernel_test_check(test,
-                      tickless_test_instant > latest ?
-                          tickless_test_plan.late_services == 1u &&
-                              tickless_test_plan.latest_overshoot == tickless_test_instant - latest :
-                          tickless_test_plan.late_services == 0u && tickless_test_plan.latest_overshoot == 0u,
+                      instant > latest ? late_services == 1u && overshoot == instant - latest :
+                                         late_services == 0u && overshoot == 0u,
                       "late exactly by how far past its latest it ran");
-    const uint32_t shortest = kernel_tickless_microseconds_from_cycles(earliest > asleep ? earliest - asleep : 0u);
-    kernel_test_check(
-        test,
-        slept + sleeps >= shortest && slept <= TICKLESS_TEST_WINDOW_OPENS_MICROSECONDS +
-                                                   TICKLESS_TEST_WINDOW_MICROSECONDS +
-                                                   TICKLESS_TEST_LATENESS_MICROSECONDS,
-        "and the microseconds it counts asleep are the window's, from the sleep to its earliest at least");
+    kernel_test_check(test,
+                      slept <= TICKLESS_TEST_WINDOW_OPENS_MICROSECONDS + TICKLESS_TEST_WINDOW_MICROSECONDS +
+                                   TICKLESS_TEST_LATENESS_MICROSECONDS,
+                      "and the microseconds it counts asleep stay within the window and its lateness");
+    kernel_test_check(test, held.chose, "the control: the depth the held sleep enters learned a wake-up");
+    kernel_test_check(test,
+                      held.served && held.slept + held.served_to_return + 1u >= TICKLESS_TEST_HELD_CHOICE_MICROSECONDS,
+                      "a sleep whose depth choice is held past its window's close counts the hold: it counts from "
+                      "before its choice");
     kernel_test_check(test, tickless_test_tick_runs(), "and the tick runs again");
     kernel_test_measure(test, "sleeps", sleeps);
     kernel_test_measure(test, "slept_us", slept);
-    kernel_test_measure(test, "overshoot_ns",
-                        (uint32_t) kernel_tickless_nanoseconds_from_cycles(tickless_test_plan.latest_overshoot));
+    kernel_test_measure(test, "overshoot_ns", (uint32_t) kernel_tickless_nanoseconds_from_cycles(overshoot));
+    kernel_test_measure(test, "held_slept_us", held.slept);
+    kernel_test_measure(test, "held_served_to_return_us", held.served_to_return);
 }
 
 /**
@@ -378,11 +460,62 @@ KERNEL_TEST(a_plan_other_than_the_sessions_is_refused)
 }
 
 /**
+ * @struct TicklessTestDeadline_t
+ * @brief How the sleeps on one deadline of the deadline test served it.
+ */
+typedef struct {
+    bool served;      /**< Its duty ran. */
+    bool due_unslept; /**< The first sleep on it served it without sleeping, at a cycle at or past the deadline that
+                           had passed when that sleep returned: the deadline was due when the sleep began. */
+    uint64_t error;   /**< Cycles from the deadline to its service; 0 when it was not served. */
+} TicklessTestDeadline_t;
+
+/**
+ * @brief Arms the test's duty for a deadline, a window of one cycle, holds @p hold cycles, then sleeps on the plan
+ *        until the duty is served, or gives up.
+ * @param duty     The duty.
+ * @param deadline The deadline.
+ * @param hold     Cycles spun between the arming and the first sleep.
+ * @return How the sleeps served it.
+ */
+static TicklessTestDeadline_t tickless_test_sleep_until_the_deadline(uint32_t duty, uint64_t deadline, uint64_t hold)
+{
+    const uint32_t runs = tickless_test_runs;
+    const uint32_t halts = kernel_processor_sleep_count();
+    uint32_t sleeps = 0u;
+    uint64_t returned = 0u;
+
+    (void) kernel_wake_planner_arm(&tickless_test_plan, duty, deadline, deadline);
+    for (const uint64_t until = asmutils_read_timestamp_counter() + hold; asmutils_read_timestamp_counter() < until;)
+        asmutils_pause();
+    for (; tickless_test_runs == runs && sleeps < TICKLESS_TEST_SLEEPS; ++sleeps)
+    {
+        (void) kernel_tickless_sleep_on(&tickless_test_plan);
+        returned = asmutils_read_timestamp_counter();
+    }
+
+    const bool served = tickless_test_runs != runs;
+    const bool due_unslept = served && sleeps == 1u && kernel_processor_sleep_count() == halts &&
+                             deadline <= tickless_test_instant && tickless_test_instant <= returned;
+    return (TicklessTestDeadline_t){served, due_unslept, served ? tickless_test_instant - deadline : 0u};
+}
+
+/**
  * @brief Slept on one after the other, deadlines that are windows of one cycle are each served once, by the
  *        interrupt's latency after it: the wake error, measured. The dispatcher, not the backend, says which
  *        interrupt ended each sleep: in TSC-deadline mode the timer ends at most one sleep per deadline, since it
  *        never fires before it, while in count mode the calibration's ratio may fire it a little before, which costs
  *        at most one more sleep per deadline over the run.
+ *
+ * @details A deadline already due when its sleep begins is served by that sleep at once, without sleeping, as it
+ *          should: a loaded host that holds the processor for milliseconds between the arming and the kernel's
+ *          reading of the clock does that now and then (#892). Such a deadline is told apart from one served early by
+ *          mistake by what the test sees: one sleep on it, no sleep of the processor, and a service at a cycle at or
+ *          past the deadline that had passed when the sleep returned, which a kernel serving a deadline before it is
+ *          due cannot give. It needs no sleep, so takes none from the count; the control is a deadline the test holds
+ *          past before its sleep, which must be told apart so, and the bound that three deadlines in four at least
+ *          were slept on, which a kernel that never sleeps fails as it should, and a host that holds one now and then
+ *          does not.
  */
 KERNEL_TEST(a_deadline_wakes_the_core_by_the_interrupts_latency_after_it)
 {
@@ -391,24 +524,28 @@ KERNEL_TEST(a_deadline_wakes_the_core_by_the_interrupts_latency_after_it)
 
     const uint32_t duty = tickless_test_begin();
     const bool stopped = kernel_tickless_enable(true, &tickless_test_plan);
+    const uint64_t distance = kernel_tickless_cycles_from_microseconds(TICKLESS_TEST_DEADLINE_MICROSECONDS);
+    const TicklessTestDeadline_t held = tickless_test_sleep_until_the_deadline(
+        duty, asmutils_read_timestamp_counter() + distance,
+        kernel_tickless_cycles_from_microseconds(TICKLESS_TEST_HELD_DEADLINE_MICROSECONDS));
     const uint32_t early_before = kernel_tickless_early_wakes();
     const uint32_t halts_before = kernel_processor_sleep_count();
     const uint32_t timer_before = kernel_wakeup_accounting_get_vector_count(TICKLESS_TEST_TIMER_VECTOR);
+    uint32_t served = 0u;
+    uint32_t due_unslept = 0u;
     uint64_t error_sum = 0u;
     uint64_t error_max = 0u;
 
     for (uint32_t deadline_index = 0u; deadline_index < TICKLESS_TEST_DEADLINES; ++deadline_index)
     {
-        const uint32_t runs = tickless_test_runs;
-        const uint64_t deadline = asmutils_read_timestamp_counter() +
-                                  kernel_tickless_cycles_from_microseconds(TICKLESS_TEST_DEADLINE_MICROSECONDS);
-        (void) kernel_wake_planner_arm(&tickless_test_plan, duty, deadline, deadline);
-        for (uint32_t sleeps = 0u; tickless_test_runs == runs && sleeps < TICKLESS_TEST_SLEEPS; ++sleeps)
-            (void) kernel_tickless_sleep_on(&tickless_test_plan);
-
-        const uint64_t error = tickless_test_runs != runs ? tickless_test_instant - deadline : 0u;
-        error_sum += error;
-        error_max = error > error_max ? error : error_max;
+        const TicklessTestDeadline_t seen =
+            tickless_test_sleep_until_the_deadline(duty, asmutils_read_timestamp_counter() + distance, 0u);
+        served += seen.served ? 1u : 0u;
+        due_unslept += seen.due_unslept ? 1u : 0u;
+        if (seen.due_unslept)
+            continue;
+        error_sum += seen.error;
+        error_max = seen.error > error_max ? seen.error : error_max;
     }
     const uint32_t early = kernel_tickless_early_wakes() - early_before;
     const uint32_t halts = kernel_processor_sleep_count() - halts_before;
@@ -416,21 +553,30 @@ KERNEL_TEST(a_deadline_wakes_the_core_by_the_interrupts_latency_after_it)
     kernel_tickless_disable();
 
     const bool deadlines = advanced_pic_timer_backend_arms_timestamp_counter_deadlines() != 0u;
+    const uint32_t slept_on = TICKLESS_TEST_DEADLINES - due_unslept;
     kernel_test_check(test, stopped, "the tick stops");
-    kernel_test_check(test, tickless_test_runs == TICKLESS_TEST_DEADLINES, "each deadline is served once");
+    kernel_test_check(test, held.due_unslept,
+                      "the control: a deadline the test lets pass before its sleep is served by that sleep without "
+                      "sleeping, and told apart");
     kernel_test_check(test,
-                      deadlines ? halts == TICKLESS_TEST_DEADLINES + early : halts >= TICKLESS_TEST_DEADLINES + early,
+                      served == TICKLESS_TEST_DEADLINES &&
+                          tickless_test_runs == TICKLESS_TEST_DEADLINES + (held.served ? 1u : 0u),
+                      "each deadline is served once");
+    kernel_test_check(test, due_unslept <= TICKLESS_TEST_DEADLINES / 4u,
+                      "three deadlines in four at least are not yet due when their sleep begins");
+    kernel_test_check(test, deadlines ? halts == slept_on + early : halts >= slept_on + early,
                       "every sleep ended on a deadline served, early with the timer still armed, or in count mode on "
-                      "the timer just before its deadline");
-    kernel_test_check(test,
-                      timer_wakes <= (deadlines ? TICKLESS_TEST_DEADLINES : 2u * TICKLESS_TEST_DEADLINES) &&
-                          timer_wakes + early <= halts,
+                      "the timer just before its deadline, and each deadline not due when its sleep began was slept "
+                      "on");
+    kernel_test_check(test, timer_wakes <= (deadlines ? slept_on : 2u * slept_on) && timer_wakes + early <= halts,
                       deadlines ? "the timer ended at most one sleep per deadline, so it never fired before one" :
                                   "the timer ended at most two sleeps per deadline, over the run");
     kernel_test_check(test, tickless_test_tick_runs(), "and the tick runs again");
     kernel_test_measure(test, "tsc_deadline", deadlines ? 1u : 0u);
-    kernel_test_measure(test, "wake_error_mean_ns",
-                        (uint32_t) kernel_tickless_nanoseconds_from_cycles(error_sum / TICKLESS_TEST_DEADLINES));
+    kernel_test_measure(test, "due_unslept", due_unslept);
+    if (slept_on != 0u)
+        kernel_test_measure(test, "wake_error_mean_ns",
+                            (uint32_t) kernel_tickless_nanoseconds_from_cycles(error_sum / slept_on));
     kernel_test_measure(test, "wake_error_max_ns", (uint32_t) kernel_tickless_nanoseconds_from_cycles(error_max));
     kernel_test_measure(test, "wasted_wakes", tickless_test_plan.wasted_wakes);
     kernel_test_measure(test, "early_wakes", early);
@@ -495,13 +641,103 @@ KERNEL_TEST(a_deadline_closer_than_its_arming_ends_the_sleep)
 }
 
 /**
+ * @struct TicklessTestTaught_t
+ * @brief What the wake-ups of a run of windows taught the lead, as far as the test judged it.
+ */
+typedef struct {
+    uint32_t judged; /**< Windows one sleep served that taught the depth one wake-up. */
+    uint32_t taught; /**< Those whose wake-up taught the estimate its lateness past the planned cycle alone. */
+} TicklessTestTaught_t;
+
+/**
+ * @brief Whether two estimates hold the same lesson, field by field.
+ * @param left  One estimate.
+ * @param right The other.
+ * @return true when every field is equal.
+ */
+static bool tickless_test_same_estimate(const KernelWakeLatency_t *left, const KernelWakeLatency_t *right)
+{
+    return left->smoothed_eighths == right->smoothed_eighths && left->deviation_quarters == right->deviation_quarters &&
+           left->lead == right->lead && left->samples == right->samples;
+}
+
+/**
+ * @struct TicklessTestPlannedWindow_t
+ * @brief Where the plan armed a window's wake-up, and whether the window was served.
+ */
+typedef struct {
+    bool served;      /**< The duty ran; its cycle is then in tickless_test_instant. */
+    uint64_t planned; /**< The cycle the plan armed the wake-up on, with the lead before the window. */
+} TicklessTestPlannedWindow_t;
+
+/**
+ * @brief Serves the test's duty for a window as tickless_test_serve_window does, and judges what its wake-up taught
+ *        the depth sleeps enter: when one sleep served the window and taught the depth one wake-up, the estimate after
+ *        it must be the one before taught that wake-up's lateness past the cycle the plan armed with the lead before.
+ * @param duty     The duty.
+ * @param earliest The window's earliest cycle.
+ * @param latest   Its latest cycle.
+ * @param seen     Counts the windows judged, and those taught their lateness.
+ * @return Whether the duty was served, and where the plan armed its wake-up.
+ */
+static TicklessTestPlannedWindow_t tickless_test_serve_window_and_judge_the_lesson(uint32_t duty, uint64_t earliest,
+                                                                                   uint64_t latest,
+                                                                                   TicklessTestTaught_t *seen)
+{
+    const uint32_t depth = kernel_processor_sleep_depth();
+    const KernelWakeLatency_t before = tickless_test_estimate_at(depth);
+    const uint32_t halts = kernel_processor_sleep_count();
+    const uint32_t runs = tickless_test_runs;
+
+    (void) kernel_wake_planner_arm(&tickless_test_plan, duty, earliest, latest);
+    const uint64_t planned = kernel_wake_planner_next_wake(&tickless_test_plan, kernel_wake_latency_lead(&before));
+    for (uint32_t sleeps = 0u; tickless_test_runs == runs && sleeps < TICKLESS_TEST_SLEEPS; ++sleeps)
+        (void) kernel_tickless_sleep_on(&tickless_test_plan);
+
+    const KernelWakeLatency_t after = tickless_test_estimate_at(depth);
+    const TicklessTestPlannedWindow_t window = {tickless_test_runs != runs, planned};
+    if (!window.served || kernel_processor_sleep_count() - halts != 1u || after.samples != before.samples + 1u)
+        return window;
+
+    KernelWakeLatency_t expected = before;
+    kernel_wake_latency_learn(&expected, tickless_test_instant > planned ? tickless_test_instant - planned : 0u);
+    ++seen->judged;
+    seen->taught += tickless_test_same_estimate(&expected, &after) ? 1u : 0u;
+    return window;
+}
+
+/**
+ * @brief Whether a served window's wake-up came more than @p width cycles after the cycle the plan armed: a lateness no
+ *        lead within the window could have served.
+ * @param window Where the plan armed the window's wake-up, served at tickless_test_instant.
+ * @param width  The window's width.
+ * @return true when the wake-up came later than that.
+ */
+static bool tickless_test_woken_past_the_width(const TicklessTestPlannedWindow_t *window, uint64_t width)
+{
+    return tickless_test_instant > window->planned && tickless_test_instant - window->planned > width;
+}
+
+/**
  * @brief The lead the wake-ups teach serves a window at least that wide by its latest, where a window of one cycle,
  *        which no lead can move, is served its latency late; the two alternate, so that a host that slows down
  *        slows both, and a wide window costs one wake-up of the timer, as without the lead.
  *
- * @details A quarter of the wide windows may still be late: a host that holds the virtual processor for
- *          milliseconds makes a wake-up no lead could have served, and the plan counts it late as it should. The lead
- *          stays shorter than the sleeps it is taught by, which a lead taught by their length would not.
+ * @details A wide window may still be late when the host holds the virtual processor for milliseconds, which makes a
+ *          wake-up no lead could have served, and the plan counts it late as it should. Such a wake-up is told apart
+ *          by a bound the kernel does not choose: it came more than the window's width after the cycle the plan armed,
+ *          past what any lead that keeps the wake-up in the window can absorb (#903). A quarter at most of the other
+ *          wide windows may be late, a wake-up later than the lead but within the width, as a lead that covers the
+ *          latencies it learns lets through now and then, and a lead taught too little, or ignored, does not. The
+ *          control: half the wide windows at least are woken within their width, so that the bound judges them; a
+ *          kernel whose every wake-up is that late fails it.
+ *
+ *          What teaches the lead is checked wake-up by wake-up rather than by its size, which on a loaded host follows
+ *          the host's lateness past the sleeps' length as it should (#847): each window one sleep served, which taught
+ *          the depth one wake-up, leaves the estimate taught exactly that wake-up's lateness past the cycle the plan
+ *          armed, which a lead taught by the sleep's length is not, but on a window whose two values both pass the
+ *          clip. At least half the windows are judged so, the control that the check is not empty: a host that held
+ *          every sleep past its window would leave none judged and fail it, as a kernel that never learns does.
  */
 KERNEL_TEST(a_lead_learned_from_the_wake_ups_serves_wide_windows_by_their_latest)
 {
@@ -515,17 +751,19 @@ KERNEL_TEST(a_lead_learned_from_the_wake_ups_serves_wide_windows_by_their_latest
     uint32_t served = 0u;
     uint32_t late_narrow = 0u;
     uint32_t late_wide = 0u;
+    uint32_t held_past_the_width = 0u;
     uint32_t timer_wide = 0u;
     uint64_t margin_sum = 0u;
     uint64_t lead_sum = 0u;
     uint64_t lead_least = UINT64_MAX;
     uint64_t lead_most = 0u;
     uint64_t overshoot_wide = 0u;
+    TicklessTestTaught_t taught = {0u, 0u};
 
     for (uint32_t round = 0u; round < TICKLESS_TEST_LED_ROUNDS; ++round)
     {
         const uint64_t narrow = asmutils_read_timestamp_counter() + closes;
-        served += tickless_test_serve_window(duty, narrow, narrow) ? 1u : 0u;
+        served += tickless_test_serve_window_and_judge_the_lesson(duty, narrow, narrow, &taught).served ? 1u : 0u;
         late_narrow += tickless_test_instant > narrow ? 1u : 0u;
 
         const uint32_t timer_before = kernel_wakeup_accounting_get_vector_count(TICKLESS_TEST_TIMER_VECTOR);
@@ -534,11 +772,14 @@ KERNEL_TEST(a_lead_learned_from_the_wake_ups_serves_wide_windows_by_their_latest
         lead_least = lead_armed < lead_least ? lead_armed : lead_least;
         lead_most = lead_armed > lead_most ? lead_armed : lead_most;
         const uint64_t armed = asmutils_read_timestamp_counter();
-        served += tickless_test_serve_window(duty, armed + opens, armed + closes) ? 1u : 0u;
+        const TicklessTestPlannedWindow_t wide =
+            tickless_test_serve_window_and_judge_the_lesson(duty, armed + opens, armed + closes, &taught);
+        served += wide.served ? 1u : 0u;
         timer_wide += kernel_wakeup_accounting_get_vector_count(TICKLESS_TEST_TIMER_VECTOR) - timer_before;
         if (tickless_test_instant > armed + closes)
         {
             ++late_wide;
+            held_past_the_width += tickless_test_woken_past_the_width(&wide, closes - opens) ? 1u : 0u;
             if (tickless_test_instant - (armed + closes) > overshoot_wide)
                 overshoot_wide = tickless_test_instant - (armed + closes);
         }
@@ -553,17 +794,28 @@ KERNEL_TEST(a_lead_learned_from_the_wake_ups_serves_wide_windows_by_their_latest
     kernel_test_check(test, served == 2u * TICKLESS_TEST_LED_ROUNDS, "every window is served once");
     kernel_test_check(test, late_narrow == TICKLESS_TEST_LED_ROUNDS,
                       "the control: each window of one cycle keeps its arming and is served its latency late");
-    kernel_test_check(test, late_wide <= TICKLESS_TEST_LED_ROUNDS / 4u,
-                      "the wide windows are served by their latest, but for a held wake-up now and then");
+    kernel_test_check(test, held_past_the_width <= TICKLESS_TEST_LED_ROUNDS / 2u,
+                      "the control: half the wide windows at least are woken within their width of the cycle the plan "
+                      "armed");
+    kernel_test_check(test, late_wide - held_past_the_width <= TICKLESS_TEST_LED_ROUNDS / 4u,
+                      "the wide windows are served by their latest, but for a wake-up held past their width, and for a "
+                      "quarter at most of the others");
     kernel_test_check(test, timer_wide <= TICKLESS_TEST_LED_ROUNDS,
                       "and each took at most one wake-up of the timer, as without the lead");
     kernel_test_check(test, lead_least != lead_most,
                       "the control: the timer's wake-ups move the lead from round to round");
-    kernel_test_check(test, lead_sum / TICKLESS_TEST_LED_ROUNDS < closes,
-                      "the lead is taught by the timer's lateness, not by the sleeps, and stays shorter than them");
+    kernel_test_check(
+        test, taught.judged >= TICKLESS_TEST_LED_ROUNDS,
+        "the control: half the windows at least are served by one sleep that teaches the depth one wake-up");
+    kernel_test_check(test, taught.taught == taught.judged,
+                      "each of those wake-ups teaches the lead its lateness past the cycle the plan armed, not the "
+                      "sleep's length");
     kernel_test_check(test, tickless_test_tick_runs(), "and the tick runs again");
     kernel_test_measure(test, "tsc_deadline", advanced_pic_timer_backend_arms_timestamp_counter_deadlines());
+    kernel_test_measure(test, "lessons_judged", taught.judged);
+    kernel_test_measure(test, "lessons_taught", taught.taught);
     kernel_test_measure(test, "late_wide", late_wide);
+    kernel_test_measure(test, "held_past_the_width", held_past_the_width);
     kernel_test_measure(test, "late_narrow", late_narrow);
     kernel_test_measure(test, "timer_wakes_wide", timer_wide);
     kernel_test_measure(test, "wake_lead_ns", (uint32_t) kernel_tickless_nanoseconds_from_cycles(lead));
@@ -574,10 +826,83 @@ KERNEL_TEST(a_lead_learned_from_the_wake_ups_serves_wide_windows_by_their_latest
                         on_time != 0u ? (uint32_t) kernel_tickless_nanoseconds_from_cycles(margin_sum / on_time) : 0u);
 }
 
+/** Tries the other-interrupt test makes at most: one more each time a try could not be judged. */
+#define TICKLESS_TEST_INTERRUPTED_TRIES 4u
+
+/**
+ * @struct TicklessTestInterruptedSleep_t
+ * @brief What one sleep a pending interrupt should end did, and what it taught.
+ */
+typedef struct {
+    bool sent;              /**< The interrupt was sent. */
+    bool served_when_due;   /**< No sleep: the duty was served at a cycle at or past the window's planned wake-up. */
+    bool returned_when_due; /**< The sleep returned at or past the window's planned wake-up. */
+    uint32_t sleeps;        /**< Times the processor slept. */
+    uint32_t ended;         /**< Wake-ups the dispatcher credited to the interrupt. */
+    uint32_t early;         /**< Sleeps the kernel counted as ended before their deadline. */
+    uint64_t lead_before;   /**< The lead before the sleep. */
+    uint64_t lead_after;    /**< The lead after it. */
+} TicklessTestInterruptedSleep_t;
+
+/**
+ * @brief Sends this processor an interrupt with interrupts masked, arms the test's duty for a window from @p opens to
+ *        @p closes cycles after, and sleeps on the plan once, the interrupt pending.
+ * @param duty   The test's duty.
+ * @param vector The interrupt's vector.
+ * @param opens  When the window opens after the arming.
+ * @param closes When it closes.
+ * @return What the sleep did and taught.
+ */
+static TicklessTestInterruptedSleep_t tickless_test_sleep_with_an_interrupt_pending(uint32_t duty, uint8_t vector,
+                                                                                    uint64_t opens, uint64_t closes)
+{
+    TicklessTestInterruptedSleep_t seen = {.lead_before = kernel_tickless_wake_lead_cycles()};
+    const uint32_t early_before = kernel_tickless_early_wakes();
+    const uint32_t runs = tickless_test_runs;
+    const uint32_t flags = asmutils_save_flags_and_disable_interrupts();
+
+    seen.sent = advanced_pic_ipi_send_fixed(0u, vector, ADVANCED_PIC_IPI_SHORT_SELF) != 0u;
+    const uint64_t armed = asmutils_read_timestamp_counter();
+    (void) kernel_wake_planner_arm(&tickless_test_plan, duty, armed + opens, armed + closes);
+    const uint64_t planned = kernel_wake_planner_next_wake(&tickless_test_plan, seen.lead_before);
+    const uint32_t halts = kernel_processor_sleep_count();
+    const uint32_t ended = kernel_wakeup_accounting_get_vector_count(vector);
+    (void) kernel_tickless_sleep_on(&tickless_test_plan);
+    const uint64_t returned = asmutils_read_timestamp_counter();
+    seen.sleeps = kernel_processor_sleep_count() - halts;
+    seen.ended = kernel_wakeup_accounting_get_vector_count(vector) - ended;
+    asmutils_restore_flags(flags);
+
+    seen.early = kernel_tickless_early_wakes() - early_before;
+    seen.lead_after = kernel_tickless_wake_lead_cycles();
+    seen.served_when_due = seen.sleeps == 0u && tickless_test_runs != runs && tickless_test_instant >= planned;
+    seen.returned_when_due = returned >= planned;
+    return seen;
+}
+
+/**
+ * @brief Whether a try can judge the claim: unless the window was due before its sleep began, or the interrupt
+ *        ended the sleep and the kernel took it for the timer's wake-up only once the planned wake-up had passed.
+ * @param seen The try.
+ * @return true when it can.
+ */
+static bool tickless_test_interrupted_sleep_judges(const TicklessTestInterruptedSleep_t *seen)
+{
+    return !seen->served_when_due && !(seen->ended == 1u && seen->early == 0u && seen->returned_when_due);
+}
+
 /**
  * @brief A sleep another interrupt ends before its deadline teaches the lead nothing: only the timer's own wake-ups
  *        tell how late it comes. The interrupt is sent to this processor with interrupts masked, so that it is
- *        pending when the sleep begins and ends it at once.
+ *        pending when the sleep begins and ends it at once; the dispatcher says which interrupt ended the sleep.
+ *
+ * @details The window is armed once the interrupt is sent, so that sending it, slow under TCG, takes nothing from the
+ *          margin before the window's planned wake-up. A try cannot judge the claim when the processor runs past that
+ *          wake-up before the sleep begins, which leaves the window due and no sleep for the interrupt to end, or
+ *          past the deadline once the interrupt ended the sleep, which the kernel, reading the timer then, takes for
+ *          the timer's wake-up. A loaded host does either now and then (#847), a kernel that is slow there every
+ *          time: the test tries again, TICKLESS_TEST_INTERRUPTED_TRIES times at most, and fails when no try could
+ *          judge. A sleep the timer ended rather than the interrupt fails.
  */
 KERNEL_TEST(a_sleep_another_interrupt_ends_teaches_the_lead_nothing)
 {
@@ -601,26 +926,36 @@ KERNEL_TEST(a_sleep_another_interrupt_ends_teaches_the_lead_nothing)
     const uint64_t taught = asmutils_read_timestamp_counter();
     const bool warmed = tickless_test_serve_window(duty, taught + opens, taught + closes) &&
                         tickless_test_serve_window(duty, tickless_test_instant + opens, tickless_test_instant + closes);
+    const uint64_t lead_warmed = kernel_tickless_wake_lead_cycles();
 
-    const uint64_t lead_before = kernel_tickless_wake_lead_cycles();
-    const uint32_t early_before = kernel_tickless_early_wakes();
-    const uint64_t armed = asmutils_read_timestamp_counter();
-    (void) kernel_wake_planner_arm(&tickless_test_plan, duty, armed + opens, armed + closes);
-    const uint32_t flags = asmutils_save_flags_and_disable_interrupts();
-    const bool sent = advanced_pic_ipi_send_fixed(0u, vector, ADVANCED_PIC_IPI_SHORT_SELF) != 0u;
-    (void) kernel_tickless_sleep_on(&tickless_test_plan);
-    asmutils_restore_flags(flags);
-    const uint64_t lead_after = kernel_tickless_wake_lead_cycles();
-    const uint32_t early = kernel_tickless_early_wakes() - early_before;
+    TicklessTestInterruptedSleep_t seen = {0};
+    uint32_t tries = 0u;
+    bool judged = false;
+    while (stopped && !judged && tries < TICKLESS_TEST_INTERRUPTED_TRIES)
+    {
+        seen = tickless_test_sleep_with_an_interrupt_pending(duty, vector, opens, closes);
+        judged = tickless_test_interrupted_sleep_judges(&seen);
+        ++tries;
+    }
     kernel_tickless_disable();
     device_interrupt_release(vector);
 
-    kernel_test_check(test, stopped && warmed && lead_before != lead_cold,
+    kernel_test_check(test, stopped && warmed && lead_warmed != lead_cold,
                       "the control: the tick stops, and a window the timer serves moves the lead");
-    kernel_test_check(test, sent && early == 1u, "the interrupt ends the next sleep before its deadline");
-    kernel_test_check(test, lead_before != 0u && lead_after == lead_before, "and that sleep leaves the lead as it was");
     kernel_test_check(test, tickless_test_tick_runs(), "and the tick runs again");
-    kernel_test_measure(test, "wake_lead_ns", (uint32_t) kernel_tickless_nanoseconds_from_cycles(lead_after));
+    kernel_test_measure(test, "wake_lead_ns", (uint32_t) kernel_tickless_nanoseconds_from_cycles(seen.lead_after));
+    kernel_test_measure(test, "tries", tries);
+    kernel_test_measure(test, "sleeps", seen.sleeps);
+    kernel_test_measure(test, "interrupt_wakes", seen.ended);
+    kernel_test_measure(test, "early_wakes", seen.early);
+    if (!kernel_test_check(test, judged,
+                           "a try judges: the window is not due before its sleep, nor the deadline past when the "
+                           "kernel reads the clock after the interrupt ended it"))
+        return;
+    kernel_test_check(test, seen.sent && seen.sleeps == 1u && seen.ended == 1u, "the interrupt ends the next sleep");
+    kernel_test_check(test, seen.early == 1u, "before its deadline, the timer still armed");
+    kernel_test_check(test, seen.lead_before != 0u && seen.lead_after == seen.lead_before,
+                      "and that sleep leaves the lead as it was");
 }
 
 /** @name The decision to probe a depth before a sleep, in cycles
@@ -716,7 +1051,8 @@ KERNEL_TEST(a_depth_entered_with_the_tick_stopped_is_probed_at_its_first_sleep)
     kernel_test_check(test, stopped && served, "the tick stops and the window is served");
     kernel_test_check(test, probe != probe_before, "the depth entered is probed at its first sleep");
     kernel_test_check(test,
-                      refused ? kernel_tickless_judge_a_probe(kernel_tickless_unstopped_probe_ranks_at(entered)) !=
+                      refused ? kernel_tickless_judge_a_probe(kernel_tickless_stopped_probe_ranks_at(entered),
+                                                              kernel_tickless_unstopped_probe_ranks_at(entered)) !=
                                     KERNEL_TICKLESS_PROBE_KEEPS :
                                 samples >= 1u,
                       "so its lead is learned, or it is refused for reads that did not stop");
@@ -976,36 +1312,137 @@ KERNEL_TEST(the_first_stop_probes_each_usable_untaught_depth_below_the_ceiling)
 }
 
 /**
- * @brief A probe of a port depth keeps it when its longest sleep stopped the processor, whatever ended the shorter ones
- *        early; refuses it when its two longest did not stop it; asks one more sleep when the longest alone did not.
+ * @brief A probe of a port depth keeps it only when its two longest sleeps stopped the processor, whatever the shorter
+ *        ones did; asks one more sleep when one of the two did; refuses it when neither did and one returned at once;
+ *        says nothing of it when neither told.
  */
-KERNEL_TEST(a_probe_judges_a_port_depth_by_its_longest_sleeps)
+KERNEL_TEST(a_probe_keeps_a_port_depth_only_when_its_two_longest_sleeps_stopped)
 {
     static const struct {
-        uint32_t ranks;
+        uint32_t stopped;
+        uint32_t returned;
         KernelTicklessProbeVerdict_t verdict;
     } cases[] = {
-        {0x0u, KERNEL_TICKLESS_PROBE_KEEPS   },
-        {0x1u, KERNEL_TICKLESS_PROBE_KEEPS   },
-        {0x3u, KERNEL_TICKLESS_PROBE_KEEPS   },
-        {0x4u, KERNEL_TICKLESS_PROBE_KEEPS   },
-        {0x7u, KERNEL_TICKLESS_PROBE_KEEPS   },
-        {0x8u, KERNEL_TICKLESS_PROBE_CONFIRMS},
-        {0xBu, KERNEL_TICKLESS_PROBE_CONFIRMS},
-        {0xCu, KERNEL_TICKLESS_PROBE_REFUSES },
-        {0xEu, KERNEL_TICKLESS_PROBE_REFUSES },
-        {0xFu, KERNEL_TICKLESS_PROBE_REFUSES },
+        {0xCu, 0x0u, KERNEL_TICKLESS_PROBE_KEEPS       },
+        {0xDu, 0x2u, KERNEL_TICKLESS_PROBE_KEEPS       },
+        {0xFu, 0x0u, KERNEL_TICKLESS_PROBE_KEEPS       },
+        {0x8u, 0x4u, KERNEL_TICKLESS_PROBE_CONFIRMS    },
+        {0xBu, 0x4u, KERNEL_TICKLESS_PROBE_CONFIRMS    },
+        {0x4u, 0x8u, KERNEL_TICKLESS_PROBE_CONFIRMS    },
+        {0x8u, 0x0u, KERNEL_TICKLESS_PROBE_CONFIRMS    },
+        {0x0u, 0xCu, KERNEL_TICKLESS_PROBE_REFUSES     },
+        {0x3u, 0xCu, KERNEL_TICKLESS_PROBE_REFUSES     },
+        {0x1u, 0x8u, KERNEL_TICKLESS_PROBE_REFUSES     },
+        {0x0u, 0x0u, KERNEL_TICKLESS_PROBE_SAYS_NOTHING},
+        {0x3u, 0x0u, KERNEL_TICKLESS_PROBE_SAYS_NOTHING},
     };
-    bool held = true;
+    uint32_t held[4] = {0u};
+    uint32_t seen[4] = {0u};
 
     for (uint32_t index = 0u; index < sizeof(cases) / sizeof(cases[0]); ++index)
-        held = held && kernel_tickless_judge_a_probe(cases[index].ranks) == cases[index].verdict;
+    {
+        ++seen[cases[index].verdict];
+        held[cases[index].verdict] +=
+            kernel_tickless_judge_a_probe(cases[index].stopped, cases[index].returned) == cases[index].verdict ? 1u :
+                                                                                                                 0u;
+    }
+    kernel_test_check(test, held[KERNEL_TICKLESS_PROBE_KEEPS] == seen[KERNEL_TICKLESS_PROBE_KEEPS],
+                      "the two longest that stopped keep, whatever the shorter did");
+    kernel_test_check(test, held[KERNEL_TICKLESS_PROBE_CONFIRMS] == seen[KERNEL_TICKLESS_PROBE_CONFIRMS],
+                      "one of the two longest that stopped, the longest or the other, asks one more");
+    kernel_test_check(test, held[KERNEL_TICKLESS_PROBE_REFUSES] == seen[KERNEL_TICKLESS_PROBE_REFUSES],
+                      "neither of them stopping, one returning at once, refuses, even when the shorter stopped");
+    kernel_test_check(test, held[KERNEL_TICKLESS_PROBE_SAYS_NOTHING] == seen[KERNEL_TICKLESS_PROBE_SAYS_NOTHING],
+                      "neither of them telling says nothing");
+}
+
+/**
+ * @brief A probe settles on its verdict and on the sleep it asked for: a refusal refuses and a keep keeps; one more
+ *        sleep that stopped keeps and one that returned at once refuses; when nothing told, a depth that awaited the
+ *        probe to be validated is refused and one validated before stays.
+ */
+KERNEL_TEST(a_probe_settles_on_its_verdict_and_the_sleep_it_asked_for)
+{
+    const KernelTicklessProbeRead_t nothing = KERNEL_TICKLESS_PROBE_READ_SAYS_NOTHING;
+
+    kernel_test_check(test,
+                      kernel_tickless_settle_a_probe(KERNEL_TICKLESS_PROBE_REFUSES, nothing, false) &&
+                          !kernel_tickless_settle_a_probe(KERNEL_TICKLESS_PROBE_KEEPS, nothing, true),
+                      "a refusal refuses, and a keep keeps, validated before or not");
     kernel_test_check(
-        test, held, "the longest that stopped keeps; the two longest that did not refuse; the longest alone confirms");
+        test,
+        !kernel_tickless_settle_a_probe(KERNEL_TICKLESS_PROBE_CONFIRMS, KERNEL_TICKLESS_PROBE_READ_STOPPED, true) &&
+            kernel_tickless_settle_a_probe(KERNEL_TICKLESS_PROBE_CONFIRMS, KERNEL_TICKLESS_PROBE_READ_RETURNED, false),
+        "one more sleep that stopped keeps the depth, one that returned at once refuses it");
+    kernel_test_check(test,
+                      kernel_tickless_settle_a_probe(KERNEL_TICKLESS_PROBE_SAYS_NOTHING, nothing, true) &&
+                          kernel_tickless_settle_a_probe(KERNEL_TICKLESS_PROBE_CONFIRMS, nothing, true),
+                      "when nothing told, a depth awaiting its validation is refused");
+    kernel_test_check(test,
+                      !kernel_tickless_settle_a_probe(KERNEL_TICKLESS_PROBE_SAYS_NOTHING, nothing, false) &&
+                          !kernel_tickless_settle_a_probe(KERNEL_TICKLESS_PROBE_CONFIRMS, nothing, false),
+                      "and one validated before stays");
+}
+
+/** @name A probe sleep's deadline and reads around it, in made-up cycles of the timestamp counter
+ *  @{ */
+#define TICKLESS_TEST_READ_DEADLINE 100000u /**< The sleep's deadline. */
+#define TICKLESS_TEST_READ_BEGAN    20000u  /**< When a read that began in time began. */
+#define TICKLESS_TEST_READ_HELD     900000u /**< When a read the host held before it began. */
+/** @} */
+
+/**
+ * @brief A probe read is judged by when it began and returned against its deadline: one that began and returned before
+ *        it did not stop the processor; one that began before it and returned at or past it stopped it; one that
+ *        began at or past it says nothing, and so does one that returned before it with an interrupt waiting.
+ */
+KERNEL_TEST(a_probe_read_is_judged_by_when_it_began_and_returned)
+{
+    const uint64_t deadline = TICKLESS_TEST_READ_DEADLINE;
+    const uint64_t began = TICKLESS_TEST_READ_BEGAN;
+    const uint64_t held = TICKLESS_TEST_READ_HELD;
+
+    kernel_test_check(test,
+                      kernel_tickless_judge_a_probe_read(began, began + 1u, deadline, false) ==
+                              KERNEL_TICKLESS_PROBE_READ_RETURNED &&
+                          kernel_tickless_judge_a_probe_read(began, deadline - 1u, deadline, false) ==
+                              KERNEL_TICKLESS_PROBE_READ_RETURNED,
+                      "a read that began and returned before its deadline did not stop, a cycle short of it included");
+    kernel_test_check(test,
+                      kernel_tickless_judge_a_probe_read(began, deadline, deadline, false) ==
+                              KERNEL_TICKLESS_PROBE_READ_STOPPED &&
+                          kernel_tickless_judge_a_probe_read(deadline - 1u, held, deadline, true) ==
+                              KERNEL_TICKLESS_PROBE_READ_STOPPED,
+                      "one that began before its deadline and returned at or past it stopped, an interrupt or none");
+    kernel_test_check(test,
+                      kernel_tickless_judge_a_probe_read(deadline, deadline + 1u, deadline, false) ==
+                              KERNEL_TICKLESS_PROBE_READ_SAYS_NOTHING &&
+                          kernel_tickless_judge_a_probe_read(held, held + 1u, deadline, false) ==
+                              KERNEL_TICKLESS_PROBE_READ_SAYS_NOTHING,
+                      "one that began at or past its deadline says nothing, however fast it returned");
+    kernel_test_check(test,
+                      kernel_tickless_judge_a_probe_read(began, began + 1u, deadline, true) ==
+                          KERNEL_TICKLESS_PROBE_READ_SAYS_NOTHING,
+                      "and so does one that returned before its deadline with an interrupt waiting");
 }
 
 /** The port the made-up depth reads: nothing decodes it on QEMU's q35, whose ICH9 power management lies at 0x600. */
 #define TICKLESS_TEST_UNDECODED_PORT 0x414u
+
+/**
+ * @brief Adopts the ladder in force with a made-up depth 1 that reads the port nothing decodes.
+ * @param ladder Receives the ladder adopted; it must outlive the adoption.
+ */
+static void tickless_test_adopt_a_made_up_port_depth(ProcessorSleepLadder_t *ladder)
+{
+    *ladder = *kernel_processor_sleep_ladder();
+    ladder->available |= 1u << 1u;
+    ladder->depths[1] = (ProcessorSleepDepth_t){.entry = PROCESSOR_SLEEP_ENTRY_PORT,
+                                                .port = TICKLESS_TEST_UNDECODED_PORT,
+                                                .latency_published = true,
+                                                .latency = 18u};
+    kernel_processor_sleep_debug_adopt_ladder(ladder);
+}
 
 #define TICKLESS_TEST_RECONSIDER_MICROSECONDS 100000u /**< How long a parked processor may take to be reached. */
 
@@ -1069,16 +1506,12 @@ KERNEL_TEST(a_port_depth_whose_read_does_not_stop_is_refused_at_the_first_stop_o
     if (!tickless_test_can_stop_the_tick(test))
         return;
 
-    ladder = *kernel_processor_sleep_ladder();
-    ladder.available |= 1u << 1u;
-    ladder.depths[1] = (ProcessorSleepDepth_t){.entry = PROCESSOR_SLEEP_ENTRY_PORT,
-                                               .port = TICKLESS_TEST_UNDECODED_PORT,
-                                               .latency_published = true,
-                                               .latency = 18u};
-    kernel_processor_sleep_debug_adopt_ladder(&ladder);
+    tickless_test_adopt_a_made_up_port_depth(&ladder);
     const bool granted = kernel_processor_sleep_request_depth(1u);
     kernel_tickless_debug_exchange_depth_estimate(1u, &held);
     const uint32_t refused_before = kernel_processor_sleep_refused_depth_count();
+    const uint32_t retakes_before = kernel_tickless_probe_retakes();
+    const uint32_t timed_before = kernel_processor_sleep_timed_port_read_count();
     for (uint32_t slot = 0u; slot < CPU_TOPOLOGY_MAX_LOGICAL_CPUS_PUBLIC; ++slot)
         reconsiders[slot] = tickless_test_reconsiders_of(slot);
 
@@ -1088,7 +1521,10 @@ KERNEL_TEST(a_port_depth_whose_read_does_not_stop_is_refused_at_the_first_stop_o
     const uint32_t available = kernel_processor_sleep_available_depths();
     const uint32_t refused = kernel_processor_sleep_refused_depth_count() - refused_before;
     const uint32_t unstopped = kernel_tickless_unstopped_probe_ranks_at(1u);
+    const uint32_t stopped_ranks = kernel_tickless_stopped_probe_ranks_at(1u);
     const uint32_t taught = kernel_tickless_wake_samples_at(1u);
+    const uint32_t retakes = kernel_tickless_probe_retakes() - retakes_before;
+    const uint32_t timed = kernel_processor_sleep_timed_port_read_count() - timed_before;
     kernel_tickless_disable();
     kernel_processor_sleep_port_verdicts(verdicts);
     const uint32_t reached = tickless_test_reconsiders_since(reconsiders, &others);
@@ -1098,38 +1534,125 @@ KERNEL_TEST(a_port_depth_whose_read_does_not_stop_is_refused_at_the_first_stop_o
     kernel_test_check(test, granted && stopped, "depth 1 is granted, and the tick stops");
     kernel_test_check(test, refused == 1u && ((available >> 1u) & 1u) == 0u, "the port depth is refused");
     kernel_test_check(test, depth == PROCESSOR_SLEEP_DEPTH_C1, "and the sleeps fall to C1");
-    kernel_test_check(test, kernel_tickless_judge_a_probe(unstopped) != KERNEL_TICKLESS_PROBE_KEEPS,
+    kernel_test_check(test, kernel_tickless_judge_a_probe(stopped_ranks, unstopped) != KERNEL_TICKLESS_PROBE_KEEPS,
                       "for reads that did not stop");
+    kernel_test_check(test, timed >= KERNEL_TICKLESS_PROBES,
+                      "each read of its probe timed, rather than judged on zeros");
     kernel_test_check(test, taught == 0u,
                       "and the refused depth is taught nothing, so that its next adoption is probed again");
     kernel_test_check(test, verdicts[0] == (TICKLESS_TEST_UNDECODED_PORT | PROCESSOR_SLEEP_PORT_VERDICT_REFUSED),
                       "the refusal is published for the parked processors");
     kernel_test_check(test, reached == others, "and each other processor is told to look at its target again");
     kernel_test_measure(test, "unstopped_ranks", unstopped);
+    kernel_test_measure(test, "stopped_ranks", stopped_ranks);
+    kernel_test_measure(test, "retakes", retakes);
+    kernel_test_measure(test, "timed_reads", timed);
     kernel_test_measure(test, "others_reached", reached);
 }
 
-/**
- * @brief A probe sleep did not stop the processor when it was a port read that returned before its deadline with no
- *        interrupt; one the timer ended, one an interrupt ended, and a halt or an MWAIT did stop it.
- */
-KERNEL_TEST(a_probe_sleep_did_not_stop_when_its_port_read_returned_early_with_no_interrupt)
-{
-    const ProcessorSleepOutcome_t port = {PROCESSOR_SLEEP_PORT, false, PROCESSOR_SLEEP_DEPTH_C1};
-    const ProcessorSleepOutcome_t interrupted_port = {PROCESSOR_SLEEP_PORT, true, PROCESSOR_SLEEP_DEPTH_C1};
-    const ProcessorSleepOutcome_t halt = {PROCESSOR_SLEEP_HALT, false, PROCESSOR_SLEEP_DEPTH_C1};
-    const ProcessorSleepOutcome_t monitor_wait = {PROCESSOR_SLEEP_MONITOR, false, PROCESSOR_SLEEP_DEPTH_C1};
+/** How long the port-depth tests hold each probe sleep: twice the longest, past every deadline of the probe's ranks. */
+#define TICKLESS_TEST_PROBE_HOLD_MICROSECONDS                                                                          \
+    (2u * KERNEL_TICKLESS_FIRST_PROBE_MICROSECONDS * KERNEL_TICKLESS_PROBE_GROWTH * KERNEL_TICKLESS_PROBE_GROWTH *     \
+     KERNEL_TICKLESS_PROBE_GROWTH)
 
-    kernel_test_check(test, kernel_tickless_probe_sleep_did_not_stop(true, &port),
-                      "a read that returned early with no interrupt did not stop");
-    kernel_test_check(test, !kernel_tickless_probe_sleep_did_not_stop(false, &port),
-                      "one that returned at its deadline did");
-    kernel_test_check(test, !kernel_tickless_probe_sleep_did_not_stop(true, &interrupted_port),
-                      "one another interrupt ended did");
+_Static_assert(KERNEL_TICKLESS_PROBES == 4u, "the probe hold doubles the fourth and longest probe sleep");
+
+/** The ranks of a probe's two longest sleeps, the only ones its verdict reads. */
+#define TICKLESS_TEST_LONGEST_RANKS ((1u << (KERNEL_TICKLESS_PROBES - 1u)) | (1u << (KERNEL_TICKLESS_PROBES - 2u)))
+
+/**
+ * @struct TicklessTestPortProbe_t
+ * @brief What the first stop of the tick made of the made-up port depth.
+ */
+typedef struct {
+    bool granted;      /**< Depth 1 was granted. */
+    bool stopped;      /**< The tick stopped. */
+    uint32_t refused;  /**< Depths refused meanwhile. */
+    uint32_t returned; /**< The ranks whose reads returned before their deadline. */
+    uint32_t halted;   /**< The ranks whose reads stopped the processor. */
+    uint32_t taught;   /**< Wake-ups depth 1 learned. */
+    uint32_t retakes;  /**< Probe sleeps taken again meanwhile. */
+} TicklessTestPortProbe_t;
+
+/**
+ * @brief Adopts the made-up port depth, stops the tick with every probe sleep held @p before_the_read microseconds
+ *        before its read and @p after_the_read once it returned, and gives back what the probe made of it, the ladder
+ *        and depth 1's estimate as they were.
+ * @param before_the_read How long each probe sleep is held before its read.
+ * @param after_the_read  How long each is held once its read returned.
+ * @return What the probe made of the depth.
+ */
+static TicklessTestPortProbe_t tickless_test_probe_the_made_up_port(uint32_t before_the_read, uint32_t after_the_read)
+{
+    static ProcessorSleepLadder_t ladder;
+    KernelWakeLatency_t held = {0};
+    TicklessTestPortProbe_t seen = {0};
+
+    tickless_test_adopt_a_made_up_port_depth(&ladder);
+    seen.granted = kernel_processor_sleep_request_depth(1u);
+    kernel_tickless_debug_exchange_depth_estimate(1u, &held);
+    const uint32_t refused_before = kernel_processor_sleep_refused_depth_count();
+    const uint32_t retakes_before = kernel_tickless_probe_retakes();
+
+    (void) tickless_test_begin();
+    kernel_tickless_debug_hold_the_probe_sleeps(before_the_read, after_the_read);
+    seen.stopped = kernel_tickless_enable(true, &tickless_test_plan);
+    kernel_tickless_debug_hold_the_probe_sleeps(0u, 0u);
+    seen.refused = kernel_processor_sleep_refused_depth_count() - refused_before;
+    seen.returned = kernel_tickless_unstopped_probe_ranks_at(1u);
+    seen.halted = kernel_tickless_stopped_probe_ranks_at(1u);
+    seen.taught = kernel_tickless_wake_samples_at(1u);
+    seen.retakes = kernel_tickless_probe_retakes() - retakes_before;
+    kernel_tickless_disable();
+    kernel_tickless_debug_exchange_depth_estimate(1u, &held);
+    kernel_processor_sleep_initialize();
+    return seen;
+}
+
+/**
+ * @brief Under a hypervisor, the made-up port depth is judged by its reads whatever the host does around them: held
+ *        once each read returned, past every deadline, none of its long reads stopped and it is refused (#880);
+ *        held before each read, past every deadline, its long reads say nothing, are each taken again
+ *        KERNEL_TICKLESS_PROBE_RETAKES times, and it is refused, no long sleep having stopped. Under a loaded TCG, the
+ *        longest read of the first probe was seen to begin past its deadline on each of its three takes (2 boots in
+ *        40), and so says nothing: the test counts the retakes and lets it be, since a read that says nothing never
+ *        keeps a depth. Skipped on a real processor, whose port may stop it.
+ */
+KERNEL_TEST(a_port_depth_is_judged_by_its_reads_whatever_the_host_does_around_them)
+{
+    CpuIdentity_t identity;
+
+    cpu_identity_read(&identity);
+    if (!identity.hypervisor)
+    {
+        kernel_test_skip(test, "a real processor: the made-up port may well stop it");
+        return;
+    }
+    if (!tickless_test_can_stop_the_tick(test))
+        return;
+
+    const TicklessTestPortProbe_t after =
+        tickless_test_probe_the_made_up_port(0u, TICKLESS_TEST_PROBE_HOLD_MICROSECONDS);
+    const TicklessTestPortProbe_t before =
+        tickless_test_probe_the_made_up_port(TICKLESS_TEST_PROBE_HOLD_MICROSECONDS, 0u);
+
+    kernel_test_check(test, after.granted && after.stopped && before.granted && before.stopped,
+                      "depth 1 is granted, and the tick stops, twice");
     kernel_test_check(test,
-                      !kernel_tickless_probe_sleep_did_not_stop(true, &halt) &&
-                          !kernel_tickless_probe_sleep_did_not_stop(true, &monitor_wait),
-                      "a halt or an MWAIT is no port read");
+                      after.refused == 1u && (after.halted & TICKLESS_TEST_LONGEST_RANKS) == 0u && after.taught == 0u,
+                      "held once each read returned, no long read stopped, and it is refused");
+    kernel_test_check(test,
+                      before.refused == 1u && ((before.returned | before.halted) & TICKLESS_TEST_LONGEST_RANKS) == 0u &&
+                          before.taught == 0u,
+                      "held before each read, its long reads say nothing, and it is refused");
+    kernel_test_check(test, before.retakes == 2u * KERNEL_TICKLESS_PROBE_RETAKES,
+                      "and each of the two long sleeps was taken again, the most a probe takes it");
+    kernel_test_measure(test, "held_after_returned_ranks", after.returned);
+    kernel_test_measure(test, "held_after_stopped_ranks", after.halted);
+    kernel_test_measure(test, "held_before_returned_ranks", before.returned);
+    kernel_test_measure(test, "held_before_stopped_ranks", before.halted);
+    kernel_test_measure(test, "held_before_retakes", before.retakes);
+    kernel_test_measure(test, "held_after_retakes", after.retakes);
 }
 
 /** The latency the made-up deeper depth publishes, in microseconds. */
@@ -1178,8 +1701,8 @@ KERNEL_TEST(a_near_window_at_a_deeper_unlearned_depth_is_planned_on_its_publishe
  * @brief Under a hypervisor, a sleep the bus-master check demoted teaches the depth it entered, never the one asked:
  *        with a validated C3 whose status register reads BM_STS set, a port nothing decodes, and HLT below it, every
  *        sleep of a session enters HLT, which the timer ends, and only its estimate learns; the C3's probe, every one
- *        of its sleeps demoted, teaches nothing and refuses nothing. Skipped on a real processor, whose ports may stop
- *        it.
+ *        of its sleeps demoted, teaches nothing, refuses nothing and takes none of them again. Skipped on a real
+ *        processor, whose ports may stop it.
  */
 KERNEL_TEST(a_sleep_the_bus_master_check_demoted_is_learned_at_the_depth_it_entered)
 {
@@ -1215,10 +1738,12 @@ KERNEL_TEST(a_sleep_the_bus_master_check_demoted_is_learned_at_the_depth_it_ente
     kernel_tickless_debug_exchange_depth_estimate(2u, &held_c3);
     const uint32_t refused_before = kernel_processor_sleep_refused_depth_count();
     const uint32_t demotions_before = kernel_processor_sleep_bus_master_demotion_count();
+    const uint32_t retakes_before = kernel_tickless_probe_retakes();
 
     const uint32_t duty = tickless_test_begin();
     const bool stopped = kernel_tickless_enable(true, &tickless_test_plan);
     const uint32_t probe_taught = kernel_tickless_wake_samples_at(2u);
+    const uint32_t retakes = kernel_tickless_probe_retakes() - retakes_before;
     const uint64_t earliest = asmutils_read_timestamp_counter() +
                               kernel_tickless_cycles_from_microseconds(TICKLESS_TEST_WINDOW_OPENS_MICROSECONDS);
     (void) kernel_wake_planner_arm(&tickless_test_plan, duty, earliest,
@@ -1237,6 +1762,7 @@ KERNEL_TEST(a_sleep_the_bus_master_check_demoted_is_learned_at_the_depth_it_ente
 
     kernel_test_check(test, stopped && tickless_test_runs == 1u, "the tick stops, and the duty is served");
     kernel_test_check(test, probe_taught == 0u && refused == 0u, "the C3's probe teaches nothing, and refuses nothing");
+    kernel_test_check(test, retakes == 0u, "and takes none of its demoted sleeps again");
     kernel_test_check(test, demotions > 0u, "the check demotes the sleeps");
     kernel_test_check(test, halt_taught > 0u, "HLT, the depth they entered, learns");
     kernel_test_check(test, c3_taught == 0u, "the C3, never entered, learns nothing");

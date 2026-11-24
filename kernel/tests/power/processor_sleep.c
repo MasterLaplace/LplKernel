@@ -808,6 +808,39 @@ KERNEL_TEST(the_port_sleep_reads_its_port_before_the_step_that_enables_interrupt
                       "movl 4(%esp), %edx; inb %dx, %al; sti; nop; ret");
 }
 
+/** How far into the timed port sleep its IN is looked for: it saves a register and loads two arguments first. */
+#define PROCESSOR_SLEEP_TEST_TIMED_SLEEP_BYTES 40u
+
+/**
+ * @brief The timed port sleep reads its port between two counter reads, each after an LFENCE, then enables interrupts
+ *        and lets a pending one in before it returns: LFENCE, RDTSC, IN, LFENCE, RDTSC, POP, STI, NOP, RET, so that
+ *        neither an interrupt nor the host after the read lengthens it.
+ */
+KERNEL_TEST(the_timed_port_sleep_reads_its_port_between_two_fenced_counter_reads_before_enabling_interrupts)
+{
+    static const uint8_t lfence_rdtsc[] = {0x0Fu, 0xAEu, 0xE8u, 0x0Fu, 0x31u};
+    static const uint8_t after_the_read[] = {0x0Fu, 0xAEu, 0xE8u, 0x0Fu, 0x31u, 0x5Bu, PROCESSOR_SLEEP_TEST_STI,
+                                             0x90u, 0xC3u};
+    const uint8_t *routine = (const uint8_t *) (uintptr_t) asmutils_timed_input_byte_then_enable_interrupts;
+    uint32_t first = PROCESSOR_SLEEP_TEST_TIMED_SLEEP_BYTES;
+    uint32_t in = PROCESSOR_SLEEP_TEST_TIMED_SLEEP_BYTES;
+
+    for (uint32_t offset = 0u; offset + sizeof(lfence_rdtsc) < PROCESSOR_SLEEP_TEST_TIMED_SLEEP_BYTES; ++offset)
+    {
+        if (first == PROCESSOR_SLEEP_TEST_TIMED_SLEEP_BYTES &&
+            memcmp(routine + offset, lfence_rdtsc, sizeof(lfence_rdtsc)) == 0)
+            first = offset;
+        if (in == PROCESSOR_SLEEP_TEST_TIMED_SLEEP_BYTES && first != PROCESSOR_SLEEP_TEST_TIMED_SLEEP_BYTES &&
+            routine[offset] == 0xECu)
+            in = offset;
+    }
+    kernel_test_check(test, first < in, "LFENCE; RDTSC before the IN");
+    kernel_test_check(test,
+                      in < PROCESSOR_SLEEP_TEST_TIMED_SLEEP_BYTES - sizeof(after_the_read) &&
+                          memcmp(routine + in + 1u, after_the_read, sizeof(after_the_read)) == 0,
+                      "LFENCE; RDTSC right after it, then popl %ebx; sti; nop; ret");
+}
+
 /**
  * @brief A port depth found not to stop the processor is refused, and the active depth lowered to the deepest left;
  *        C1, a depth no longer available and an MWAIT depth are never refused.
@@ -966,6 +999,62 @@ KERNEL_TEST(a_sleep_asked_at_a_depth_enters_it_only_where_a_grant_and_a_probe_al
     kernel_test_check(test, unvalidated.depth == 0u && unvalidated.mode != PROCESSOR_SLEEP_PORT,
                       "the unvalidated depth 1 asked, C1 entered and no port read");
     kernel_test_check(test, floor.depth == 0u, "C1 asked, C1 entered");
+}
+
+/**
+ * @brief The timed sleep at a port depth says when its read began and returned, both within the call, the read first,
+ *        and counts the read timed; at C1, which reads no port, it says zeros and counts nothing. Under a hypervisor,
+ *        whose made-up ports read back at once.
+ */
+KERNEL_TEST(a_timed_port_sleep_says_when_its_read_began_and_returned)
+{
+    static ProcessorSleepLadder_t ladder;
+    CpuIdentity_t identity;
+    uint8_t vector = 0u;
+    uint64_t quarter_tick = 0u;
+    ProcessorSleepRead_t port_read = {0u, 0u};
+    ProcessorSleepRead_t halt_read = {1u, 1u};
+
+    cpu_identity_read(&identity);
+    if (!identity.hypervisor)
+    {
+        kernel_test_skip(test, "a real processor: the made-up port may well stop it");
+        return;
+    }
+    if (!processor_sleep_test_take_a_vector(test, &vector, &quarter_tick))
+        return;
+
+    ladder = *kernel_processor_sleep_ladder();
+    ladder.available |= 1u << 1u;
+    ladder.depths[1] = (ProcessorSleepDepth_t){.entry = PROCESSOR_SLEEP_ENTRY_PORT,
+                                               .port = (uint16_t) (PROCESSOR_SLEEP_TEST_UNDECODED_PORT + 1u),
+                                               .latency_published = true,
+                                               .latency = 18u};
+    kernel_processor_sleep_debug_adopt_ladder(&ladder);
+    (void) kernel_processor_sleep_request_depth(1u);
+    kernel_processor_sleep_begin_probe();
+    kernel_processor_sleep_end_probe(true);
+    const uint32_t timed_before = kernel_processor_sleep_timed_port_read_count();
+    const uint32_t flags = asmutils_save_flags_and_disable_interrupts();
+    const uint64_t before = asmutils_read_timestamp_counter();
+    const ProcessorSleepOutcome_t port = processor_sleep_until_interrupt_at_timing_its_read(1u, &port_read);
+    const uint64_t after = asmutils_read_timestamp_counter();
+    const uint32_t timed_port = kernel_processor_sleep_timed_port_read_count() - timed_before;
+    (void) advanced_pic_ipi_send_fixed(0u, vector, ADVANCED_PIC_IPI_SHORT_SELF);
+    const ProcessorSleepOutcome_t halt = processor_sleep_until_interrupt_at_timing_its_read(0u, &halt_read);
+    asmutils_restore_flags(flags);
+    const uint32_t timed_halt = kernel_processor_sleep_timed_port_read_count() - timed_before - timed_port;
+    device_interrupt_release(vector);
+    kernel_processor_sleep_initialize();
+
+    kernel_test_check(test,
+                      port.mode == PROCESSOR_SLEEP_PORT && before <= port_read.began &&
+                          port_read.began <= port_read.returned && port_read.returned <= after && timed_port == 1u,
+                      "the port read is timed within the call, it began before it returned, and it is counted");
+    kernel_test_check(test,
+                      halt.mode != PROCESSOR_SLEEP_PORT && halt_read.began == 0u && halt_read.returned == 0u &&
+                          timed_halt == 0u,
+                      "a halt reads no port, says zeros, and counts nothing");
 }
 
 /**

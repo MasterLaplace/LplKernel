@@ -177,6 +177,21 @@ extern void asmutils_input_byte_then_enable_interrupts(uint16_t port);
 extern uint64_t asmutils_timed_input_byte(uint16_t port);
 
 /**
+ * @brief Reads a byte from an I/O port with interrupts masked, between two reads of the counter, then enables them
+ *        and lets a pending one in before it returns (LFENCE, RDTSC, IN, LFENCE, RDTSC, STI, NOP).
+ *
+ * @details @ref asmutils_input_byte_then_enable_interrupts, timed as @ref asmutils_timed_input_byte times its read: the
+ *          second read of the counter follows the end of IN and comes before STI, so that an interrupt let in after
+ *          the read, or a host that holds the processor once it returned, does not lengthen it. The same AMD caveat
+ *          holds: without a dispatch serializing LFENCE a read that slept may be timed short.
+ *
+ * @param port       The port.
+ * @param out_began  Receives the counter just before the read.
+ * @return The counter just after the read.
+ */
+extern uint64_t asmutils_timed_input_byte_then_enable_interrupts(uint16_t port, uint64_t *out_began);
+
+/**
  * @brief Execute a CPU no-operation instruction.
  *
  * @details

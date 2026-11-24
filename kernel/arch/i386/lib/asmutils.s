@@ -115,6 +115,25 @@ asmutils_input_byte_then_enable_interrupts:
     nop
     ret
 
+.globl asmutils_timed_input_byte_then_enable_interrupts
+.type asmutils_timed_input_byte_then_enable_interrupts, @function
+asmutils_timed_input_byte_then_enable_interrupts:
+    pushl %ebx
+    movl 8(%esp), %ecx
+    movl 12(%esp), %ebx
+    lfence
+    rdtsc
+    movl %eax, (%ebx)
+    movl %edx, 4(%ebx)
+    movl %ecx, %edx
+    inb %dx, %al
+    lfence
+    rdtsc
+    popl %ebx
+    sti
+    nop
+    ret
+
 .globl asmutils_timed_input_byte
 .type asmutils_timed_input_byte, @function
 asmutils_timed_input_byte:

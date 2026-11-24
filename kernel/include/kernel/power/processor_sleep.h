@@ -103,6 +103,14 @@ typedef struct ProcessorSleepOutcome {
                                     for PROCESSOR_SLEEP_NONE, the one asked. */
 } ProcessorSleepOutcome_t;
 
+/**
+ * @brief When a sleep's port read began and returned, on the timestamp counter.
+ */
+typedef struct ProcessorSleepRead {
+    uint64_t began;    /**< The counter just before the read; 0 when the sleep read no port. */
+    uint64_t returned; /**< The counter just after it, before interrupts are enabled; 0 when it read no port. */
+} ProcessorSleepRead_t;
+
 #define PROCESSOR_SLEEP_DEPTHS        7u /**< Depths a ladder holds: C1, then six deeper at most. */
 #define PROCESSOR_SLEEP_DEPTH_C1      0u /**< The depth of C1, which every processor enters. */
 #define PROCESSOR_SLEEP_DEPTH_DEEPEST (PROCESSOR_SLEEP_DEPTHS - 1u) /**< The deepest depth a request can name. */
@@ -415,6 +423,14 @@ uint32_t kernel_processor_sleep_residency_of(uint32_t depth);
 bool kernel_processor_sleep_depth_of(uint32_t depth, ProcessorSleepDepth_t *out_depth);
 
 /**
+ * @brief Whether depth @p depth of @p ladder is available and entered by a port read.
+ * @param ladder The ladder.
+ * @param depth  A depth; one past PROCESSOR_SLEEP_DEPTH_DEEPEST is none.
+ * @return true when it is.
+ */
+bool kernel_processor_sleep_is_port_depth(const ProcessorSleepLadder_t *ladder, uint32_t depth);
+
+/**
  * @brief The adopted ladder, available or refused, as @ref kernel_processor_sleep_build_ladder built it.
  * @return The ladder.
  */
@@ -475,6 +491,13 @@ void kernel_processor_sleep_port_verdicts(uint32_t out_verdicts[PROCESSOR_SLEEP_
  * @return The count.
  */
 uint32_t kernel_processor_sleep_port_sleep_count(void);
+
+/**
+ * @brief Port reads timed since the accounting began (@ref processor_sleep_until_interrupt_at_timing_its_read): a
+ *        probe's, so that a test sees its reads were timed rather than judged on zeros.
+ * @return The count.
+ */
+uint32_t kernel_processor_sleep_timed_port_read_count(void);
 
 /**
  * @brief The depth a sleep enters once the bus-master check read PM1 status @p status before depth @p depth.
@@ -625,6 +648,18 @@ ProcessorSleepOutcome_t processor_sleep_until_interrupt(void);
  * @return As @ref processor_sleep_until_interrupt.
  */
 ProcessorSleepOutcome_t processor_sleep_until_interrupt_at(uint32_t depth);
+
+/**
+ * @brief Sleeps as @ref processor_sleep_until_interrupt_at does, and times the read of a port depth's port: when it
+ *        began and when it returned, before interrupts are enabled, so that a probe judges the read itself rather than
+ *        what the host did around it (#880).
+ * @details The read is @ref asmutils_timed_input_byte_then_enable_interrupts; every other sleep reads its port untimed.
+ * @param depth    The depth chosen for this sleep.
+ * @param out_read Receives when the read began and returned; zeros when the depth entered reads no port.
+ * @return As @ref processor_sleep_until_interrupt.
+ */
+ProcessorSleepOutcome_t processor_sleep_until_interrupt_at_timing_its_read(uint32_t depth,
+                                                                           ProcessorSleepRead_t *out_read);
 
 /**
  * @brief Whether what a sleeper waits for has happened; called with interrupts masked.
