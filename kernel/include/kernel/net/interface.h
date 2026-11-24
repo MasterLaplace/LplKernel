@@ -263,6 +263,7 @@ typedef struct KernelNetworkInterface {
     uint32_t reserved_slot;                /**< That slot. */
     uint32_t receive_taken;                /**< Frames past the card's oldest held that the poll took. */
     uint32_t receive_released;             /**< Frames given back to the card: the oldest held's arrival. */
+    uint32_t receive_most_held;            /**< The card's receive_most_held, taken at setup. */
     uint32_t arrival;                      /**< The arrival number of the frame being taken. */
     KernelAddressResolutionCache_t cache;  /**< The station addresses learned. */
     uint32_t station_hints[KERNEL_NETWORK_INTERFACE_STATION_HINTS];   /**< The cache entry a send last found, by hop. */
