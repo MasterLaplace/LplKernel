@@ -14,7 +14,7 @@ namespace {
 constexpr lpl::core::u32 kPageBytes = 4096u;
 constexpr lpl::core::u32 kModuleRoomPages = 21u;
 constexpr lpl::core::u32 kOffWordBoundary = 2u;
-constexpr lpl::core::u32 kSecondExpertEntry = 6u;
+constexpr lpl::core::u32 kSecondExpertEntry = 8u; ///< One-based entry of the parity image's second expert.
 constexpr lpl::core::u32 kInsideTheExpert = 1000u;
 constexpr lpl::core::u32 kHeaderAlignmentWord = 12u;
 constexpr lpl::core::u8 kTooSmallAlignmentLog2 = 11u;
@@ -200,8 +200,12 @@ LPL_TEST(the_mind_takes_its_seed_from_a_refused_or_an_empty_slot)
     if (size == 0u)
         return;
 
-    const lpl::core::u64 inExpert =
-        lpl::infer::readModelSegmentEntry(gWritableModule, kSecondExpertEntry).offset + kInsideTheExpert;
+    const lpl::infer::ModelSegment secondExpert =
+        lpl::infer::readModelSegmentEntry(gWritableModule, kSecondExpertEntry - 1u);
+    test.check(secondExpert.role == lpl::infer::ModelSegmentRole::FeedForward && secondExpert.layer == 2u &&
+                   secondExpert.length > kInsideTheExpert,
+               "the entry changed is the second layer's expert");
+    const lpl::core::u64 inExpert = secondExpert.offset + kInsideTheExpert;
     gWritableModule[inExpert] = static_cast<lpl::core::u8>(gWritableModule[inExpert] ^ 0x01u);
     test.check(libassistant_boot_from_slot(0u, &refused), "the mind boots from a slot whose second expert was changed");
     test.check(sameText(libassistant_model_origin(), "seed") &&

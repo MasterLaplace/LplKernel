@@ -93,10 +93,11 @@ typedef struct {
 } ModelSlot_t;
 
 /**
- * @brief Looks for a weights module and checks its header.
+ * @brief Looks for a weights module and checks its magic.
  *
- * Only the header: the extent of every tensor is checked by the reader that knows
- * the shape, and duplicating that arithmetic here would put the layout in two places.
+ * Only the magic: the header's size and the extent of every tensor are checked by the
+ * reader that knows the layout (libassistant_judge_model_slot), and duplicating that
+ * arithmetic here would put the layout in two places.
  *
  * @note The magic is assembled byte by byte rather than read through a uint32_t pointer:
  *       a module lands wherever the loader put it, and a four-byte load from an odd address
@@ -106,6 +107,19 @@ typedef struct {
  * @return true when the slot is loaded.
  */
 bool kernel_model_slot_probe(ModelSlot_t *out);
+
+/**
+ * @brief Judges a module the kernel maps by its magic alone, as kernel_model_slot_probe does once it found one.
+ *
+ * A module too short to hold the magic, or whose first word is not it, is malformed. Any other is loaded, its
+ * header's size left to the reader that knows it, which names a header cut short `too_short`.
+ *
+ * @param bytes The module's first byte, read only when @p size holds the magic.
+ * @param size  Its length in bytes.
+ * @param out   Receives the state, @p bytes, @p size and the first word, 0 when there is none.
+ * @return true when the slot is loaded.
+ */
+bool kernel_model_slot_judge_magic(const uint8_t *bytes, uint32_t size, ModelSlot_t *out);
 
 /**
  * @brief A word for the state, for a boot line.
