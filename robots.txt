@@ -1,0 +1,8 @@
+User-agent: *
+Allow: /
+
+# The emulator payload is large and not useful to index.
+Disallow: /LplKernel/v86/
+Disallow: /LplKernel/isos/
+
+Sitemap: https://masterlaplace.github.io/LplKernel/sitemap.xml
